@@ -12,6 +12,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -373,6 +374,10 @@ export const member = pgTable(
       .notNull(),
   },
   (table) => [
+    uniqueIndex("member_organization_user_uidx").on(
+      table.organizationId,
+      table.userId,
+    ),
     index("member_organizationId_idx").on(table.organizationId),
     index("member_userId_idx").on(table.userId),
     index("member_manager_idx").on(table.managerMemberId),
@@ -1452,10 +1457,9 @@ export const candidates = pgTable(
     ...timestamps(),
   },
   (table) => [
-    uniqueIndex("candidates_workspace_email_idx").on(
-      table.workspaceId,
-      sql`lower(${table.email})`,
-    ),
+    uniqueIndex("candidates_workspace_email_idx")
+      .on(table.workspaceId, sql`lower(${table.email})`)
+      .where(sql`${table.deletedAt} is null`),
     index("candidates_workspace_created_at_idx").on(
       table.workspaceId,
       table.createdAt,
@@ -1576,11 +1580,9 @@ export const applications = pgTable(
     ...timestamps(),
   },
   (table) => [
-    uniqueIndex("applications_workspace_candidate_job_idx").on(
-      table.workspaceId,
-      table.candidateId,
-      table.jobId,
-    ),
+    uniqueIndex("applications_workspace_candidate_job_idx")
+      .on(table.workspaceId, table.candidateId, table.jobId)
+      .where(sql`${table.status} = 'active'`),
     // Composite identity used by dependent business records. It prevents an
     // offer or interview from mixing an application with another workspace,
     // candidate, or job even when every individual UUID exists.
@@ -2325,6 +2327,14 @@ export const scorecards = pgTable(
     ...timestamps(),
   },
   (table) => [
+    unique("scorecards_workspace_application_author_stage_uidx")
+      .on(
+        table.workspaceId,
+        table.applicationId,
+        table.authorId,
+        table.stageId,
+      )
+      .nullsNotDistinct(),
     index("scorecards_workspace_idx").on(table.workspaceId),
     index("scorecards_candidate_created_at_idx").on(
       table.candidateId,
@@ -2336,8 +2346,8 @@ export const scorecards = pgTable(
 );
 
 // Job offers — formal compensation offers extended to a candidate's
-// application. Multiple offers per application are allowed (re-offer after a
-// decline); the UI treats the most recent as active.
+// application. At most one draft/sent offer is active per application;
+// declined/withdrawn/accepted rows remain for history.
 export const offers = pgTable(
   "offers",
   {
@@ -2393,6 +2403,9 @@ export const offers = pgTable(
         applications.jobId,
       ],
     }).onDelete("cascade"),
+    uniqueIndex("offers_application_active_uidx")
+      .on(table.applicationId)
+      .where(sql`${table.status} in ('draft', 'sent')`),
     index("offers_workspace_created_at_idx").on(
       table.workspaceId,
       table.createdAt,
