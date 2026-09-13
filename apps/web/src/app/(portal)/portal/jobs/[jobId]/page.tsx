@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { eq, and, asc, isNull } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull } from "drizzle-orm";
 import type { Route } from "next";
 
 import {
@@ -14,6 +14,7 @@ import {
 import { PORTAL_SESSION_COOKIE, resolvePortalSession } from "@/lib/portal-auth";
 import { PortalShell } from "@/features/portal/PortalShellServer";
 import { JobApplyForm } from "@/features/portal/JobApplyForm";
+import { RichBody } from "@/features/career-page/RichBody";
 import {
   MapPinIcon,
   CurrencyDollarIcon,
@@ -100,6 +101,7 @@ export default async function JobDetailPage({ params }: PageProps) {
         eq(applications.candidateId, session.candidateId),
         eq(applications.jobId, jobId),
         eq(applications.workspaceId, session.workspaceId),
+        inArray(applications.status, ["active", "hired"]),
       ),
     )
     .limit(1);
@@ -164,9 +166,7 @@ export default async function JobDetailPage({ params }: PageProps) {
         {job.description && (
           <div className="rounded-xl border border-border bg-card p-5">
             <h2 className="mb-2 text-sm font-semibold text-foreground">About the role</h2>
-            <div className="prose prose-sm max-w-none text-muted-foreground">
-              {job.description}
-            </div>
+            <RichBody html={job.description} className="prose prose-sm max-w-none text-muted-foreground" />
           </div>
         )}
 
