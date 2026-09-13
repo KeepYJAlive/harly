@@ -1,7 +1,7 @@
 import "server-only";
 
 import { db, domainEventOutbox } from "@harly/db";
-import { and, asc, eq, isNull, lt, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lt, notInArray, or } from "drizzle-orm";
 
 import {
   EVENT_REGISTRY,
@@ -22,8 +22,9 @@ export async function pruneDomainEventOutbox(
     .where(
       and(
         lt(domainEventOutbox.createdAt, cutoff),
+        isNotNull(domainEventOutbox.publishedAt),
         or(
-          isNull(domainEventOutbox.automationsDispatchedAt),
+          isNotNull(domainEventOutbox.automationsDispatchedAt),
           notInArray(domainEventOutbox.eventName, [...WORKFLOW_EVENTS]),
         ),
       ),
