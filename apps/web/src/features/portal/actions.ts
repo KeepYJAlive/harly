@@ -2,7 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { createElement } from "react";
-import { and, eq, asc, count, desc, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, asc, count, desc, gt, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -277,6 +277,7 @@ export async function applyToJobAction(
           eq(applications.candidateId, session.candidateId),
           eq(applications.jobId, input.jobId),
           eq(applications.workspaceId, session.workspaceId),
+          inArray(applications.status, ["active", "hired"]),
         ),
       )
       .limit(1);

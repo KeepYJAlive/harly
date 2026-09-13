@@ -2347,29 +2347,13 @@ export async function permanentlyDeleteCandidate(
   return { ok: false, error: "Candidate not found in trash." } as const;
 }
 
-/** Permanently delete an active candidate from the normal delete action. */
+/** @deprecated Use `trashCandidate`. Kept as an alias for older callers. */
 export async function deleteCandidate(
   candidateId: string,
-  processedBy: string,
+  _processedBy?: string,
 ) {
-  const { organization: workspace } = await getWorkspaceContext();
-  const [movedToTrash] = await db
-    .update(candidates)
-    .set({ deletedAt: new Date() })
-    .where(
-      and(
-        eq(candidates.id, candidateId),
-        eq(candidates.workspaceId, workspace.id),
-        isNull(candidates.deletedAt),
-      ),
-    )
-    .returning({ id: candidates.id });
-
-  if (!movedToTrash) {
-    return { ok: false, error: "Candidate not found." } as const;
-  }
-
-  return permanentlyDeleteCandidate(candidateId, processedBy);
+  void _processedBy;
+  return trashCandidate(candidateId);
 }
 
 // ── Duplicate detection helpers ──────────────────────────────────────────────

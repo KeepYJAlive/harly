@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -554,6 +554,7 @@ export async function importCandidatesAction(input: {
               eq(applications.workspaceId, workspaceId),
               eq(applications.candidateId, candidate.id),
               eq(applications.jobId, job.id),
+              inArray(applications.status, ["active", "hired"]),
             ),
           )
           .limit(1);

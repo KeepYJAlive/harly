@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, exists, getTableColumns, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, getTableColumns, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { ApiError, type Cursor } from "@harly/api";
 import {
@@ -118,7 +118,14 @@ async function notifyApplicationStatusChange(input: {
         type: "rejected",
       },
     );
-    await processEmailOutbox({ ids: [id], workspaceId: input.workspaceId });
+    void processEmailOutbox({ ids: [id], workspaceId: input.workspaceId }).catch(
+      (err) => {
+        log.warn(
+          err,
+          "Background rejection email dispatch failed; scheduled outbox cron will retry",
+        );
+      },
+    );
   }
 }
 
@@ -283,6 +290,7 @@ export async function createApplicationForApi(input: {
           eq(applications.workspaceId, workspaceId),
           eq(applications.candidateId, candidateId),
           eq(applications.jobId, jobId),
+          inArray(applications.status, ["active", "hired"]),
         ),
       )
       .limit(1);
@@ -600,7 +608,7 @@ async function setApplicationStatus(
         and(
           eq(jobStages.workspaceId, input.workspaceId),
           eq(jobStages.jobId, application.jobId),
-          eq(jobStages.name, terminalStageName),
+          sql`lower(${jobStages.name}) = ${terminalStageName.toLowerCase()}`,
         ),
       )
       .limit(1);
