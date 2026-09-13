@@ -1140,7 +1140,7 @@ export async function updateApplicationStatus(
                   and(
                     eq(jobStages.workspaceId, input.workspaceId),
                     eq(jobStages.jobId, application.jobId),
-                    eq(jobStages.name, terminalStageName),
+                    sql`lower(${jobStages.name}) = ${terminalStageName.toLowerCase()}`,
                   ),
                 )
                 .limit(1);

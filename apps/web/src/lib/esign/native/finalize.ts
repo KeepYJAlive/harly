@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import {
   activityEvents,
@@ -25,6 +25,7 @@ import { createSignaturePreview } from "./preview";
 import { storage } from "@/lib/storage";
 import { createLogger } from "@/lib/logger";
 import { persistDomainEvent, type PersistedDomainEvent } from "@/server/events/emit";
+import { withdrawSiblingApplicationsForHire } from "@/features/offers/withdraw-siblings";
 import { isNativeOfferAcceptanceAvailable } from "./fields";
 import {
   purgeExpiredSignatureData,
@@ -267,7 +268,7 @@ export async function finalizeNativeSignature(input: {
           and(
             eq(jobStages.workspaceId, input.workspaceId),
             eq(jobStages.jobId, offer.jobId),
-            eq(jobStages.name, "Hired"),
+            sql`lower(${jobStages.name}) = 'hired'`,
           ),
         )
         .limit(1);
@@ -359,6 +360,12 @@ export async function finalizeNativeSignature(input: {
           movedById: input.actorId ?? nativeOffer.createdById,
         });
       }
+      await withdrawSiblingApplicationsForHire(tx, {
+        workspaceId: input.workspaceId,
+        candidateId: nativeOffer.candidateId,
+        hiredApplicationId: nativeApplication.id,
+        actorUserId: input.actorId ?? nativeOffer.createdById,
+      });
       await tx.insert(activityEvents).values({
         workspaceId: input.workspaceId,
         actorId: input.actorId ?? nativeOffer.createdById,

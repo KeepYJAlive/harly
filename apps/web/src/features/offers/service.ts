@@ -46,6 +46,7 @@ import {
 } from "@/lib/esign/native/offer-signing";
 import { isSignableNativeFieldsSnapshot } from "@/lib/esign/native/fields";
 import { getWorkspaceEsignStatus } from "@/lib/esign/config";
+import { withdrawSiblingApplicationsForHire } from "./withdraw-siblings";
 
 /** Workspace-scoped offer service for REST API. Never reads session state. */
 
@@ -271,6 +272,24 @@ export async function createOfferForApi(input: {
     if (!application) throw ApiError.notFound("Application not found.");
     if (application.status !== "active") {
       throw ApiError.conflict("Only active applications can receive an offer.");
+    }
+
+    const [existingActiveOffer] = await tx
+      .select({ id: offers.id, status: offers.status })
+      .from(offers)
+      .where(
+        and(
+          eq(offers.workspaceId, input.workspaceId),
+          eq(offers.applicationId, application.id),
+          or(eq(offers.status, "draft"), eq(offers.status, "sent")),
+        ),
+      )
+      .limit(1);
+
+    if (existingActiveOffer) {
+      throw ApiError.conflict(
+        `An active offer (${existingActiveOffer.status}) already exists for this application.`,
+      );
     }
 
     const [offer] = await tx
@@ -523,7 +542,7 @@ export async function decideOfferForApi(input: {
           and(
             eq(jobStages.workspaceId, input.workspaceId),
             eq(jobStages.jobId, offer.jobId),
-            eq(jobStages.name, "Hired"),
+            sql`lower(${jobStages.name}) = 'hired'`,
           ),
         )
         .limit(1);
@@ -558,6 +577,12 @@ export async function decideOfferForApi(input: {
           movedById: input.actorUserId,
         });
       }
+      await withdrawSiblingApplicationsForHire(tx, {
+        workspaceId: input.workspaceId,
+        candidateId: offer.candidateId,
+        hiredApplicationId: application.id,
+        actorUserId: input.actorUserId,
+      });
       await tx.insert(activityEvents).values({
         workspaceId: input.workspaceId,
         actorId: input.actorUserId,
