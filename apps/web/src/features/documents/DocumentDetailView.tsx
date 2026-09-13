@@ -996,9 +996,7 @@ export function DocumentDetailView({
                   document.mimeType !== "application/pdf"
                 }
                 onClick={() =>
-                  window.location.assign(
-                    `/dashboard/documents/${document.id}/sign`,
-                  )
+                  router.push(`/dashboard/documents/${document.id}/sign`)
                 }
               >
                 <LockKeyhole className="size-4" />
