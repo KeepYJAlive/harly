@@ -26,7 +26,8 @@
     "db:migrate": "pnpm --filter @harly/db db:migrate",
     "db:studio": "pnpm --filter @harly/db db:studio",
     "db:push": "pnpm --filter @harly/db db:push",
-    "db:seed": "pnpm --filter @harly/db db:seed"
+    "db:seed": "pnpm --filter @harly/db db:seed",
+    "db:seed:demo": "pnpm --filter @harly/db db:seed:demo"
   },
   "devDependencies": {
     "dotenv": "^17.4.2",
