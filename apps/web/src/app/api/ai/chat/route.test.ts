@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getModel: vi.fn(),
   buildHarlyTools: vi.fn(),
   buildHarlySystemPrompt: vi.fn(),
+  getWorkspaceKnowledge: vi.fn(),
   validateUIMessages: vi.fn(),
   convertToModelMessages: vi.fn(),
   streamText: vi.fn(),
@@ -34,6 +35,9 @@ vi.mock("@/lib/ai/registry", () => ({ getModel: mocks.getModel }));
 vi.mock("@/lib/ai/agent", () => ({ buildHarlyTools: mocks.buildHarlyTools }));
 vi.mock("@/lib/ai/agent/system-prompt", () => ({
   buildHarlySystemPrompt: mocks.buildHarlySystemPrompt,
+}));
+vi.mock("@/lib/ai/agent/workspace-knowledge", () => ({
+  getWorkspaceKnowledge: mocks.getWorkspaceKnowledge,
 }));
 vi.mock("@/server/api/ratelimit", () => ({ enforceRateLimit: mocks.enforceRateLimit }));
 vi.mock("@/lib/ai/usage", () => ({ recordAiUsage: mocks.recordAiUsage }));
@@ -71,6 +75,7 @@ describe("POST /api/ai/chat", () => {
     mocks.getModel.mockReturnValue("model");
     mocks.buildHarlyTools.mockReturnValue({ lookup: { execute: vi.fn() } });
     mocks.buildHarlySystemPrompt.mockReturnValue("system");
+    mocks.getWorkspaceKnowledge.mockResolvedValue(null);
     mocks.validateUIMessages.mockResolvedValue([message]);
     mocks.convertToModelMessages.mockResolvedValue([{ role: "user", content: "Hello" }]);
     mocks.enforceRateLimit.mockResolvedValue({ remaining: 1, resetAt: Date.now() + 60_000 });
