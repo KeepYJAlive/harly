@@ -86,3 +86,4 @@ skills-lock.json
 logs/
 public/images/figma-preview/
 .temptoken
+.env*.local

@@ -14,6 +14,9 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/setup",
+  // Demo mode entry screen + its sign-in action (no-op when DEMO_MODE unset).
+  "/enter",
+  "/api/demo",
   "/api/auth",
   "/api/health",
   "/api/metrics",
@@ -73,8 +76,22 @@ function publicRedirectUrl(request: NextRequest, pathname: string): URL {
   return new URL(pathname, configuredOrigin ?? request.nextUrl.origin);
 }
 
+// In demo mode the standard auth entry points are replaced by the shared-
+// credential `/enter` screen. The career board at `/` is untouched.
+const DEMO_REDIRECT_TO_ENTER = ["/login", "/signup", "/forgot-password", "/setup"];
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // ── Demo mode: funnel the normal auth pages to the shared /enter screen ──
+  // Whole-instance behavior (this is a dedicated demo VPS). `/` (the board),
+  // `/enter`, and `/api/*` are left alone so entry + APIs keep working.
+  if (
+    process.env.DEMO_MODE === "true" &&
+    DEMO_REDIRECT_TO_ENTER.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+  ) {
+    return NextResponse.redirect(publicRedirectUrl(request, "/enter"));
+  }
 
   // ── Candidate portal protected routes (cookie-only, no DB) ──────────────
   if (isPortalProtected(pathname)) {

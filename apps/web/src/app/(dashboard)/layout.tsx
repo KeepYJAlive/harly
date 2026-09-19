@@ -10,6 +10,8 @@ import {
   listNotifications,
 } from "@/features/notifications/data";
 import { getUnreadInboxThreadCount } from "@/features/mailbox/data";
+import { isDemoMode } from "@harly/config";
+
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getCurrentPermissions } from "@/features/workspaces/permissions-server";
@@ -22,6 +24,7 @@ import { getMyTasksDueCount } from "@/features/tasks/data";
 import { getOwnProfileAction } from "@/features/people/actions";
 import { RealtimeProvider } from "@/components/dashboard/RealtimeProvider";
 import { RealtimePageSync } from "@/components/dashboard/RealtimePageSync";
+import { DemoBanner } from "@/features/demo/DemoBanner";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { organization } = await getWorkspaceContext();
@@ -38,6 +41,7 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { organization, user, role } = await getWorkspaceContext();
+  const demo = isDemoMode();
   const [
     workspaceOptions,
     notifications,
@@ -97,6 +101,7 @@ export default async function DashboardLayout({
               assignableRoles={assignableRoles}
             />
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-pure-snow md:my-2 md:mr-2 md:rounded-[var(--radius-shell)] md:border md:border-hairline">
+              <DemoBanner />
               <TopBar
                 user={{
                   name: user.name,
@@ -106,7 +111,9 @@ export default async function DashboardLayout({
                 }}
                 role={role}
                 workspace={workspace}
-                workspaceOptions={workspaceOptions}
+                // Demo: one shared account is a member of the pool workspace(s);
+                // hide the switcher so a visitor can't hop into another one.
+                workspaceOptions={demo ? [] : workspaceOptions}
                 notifications={notifications}
                 unreadNotificationCount={unreadNotificationCount}
                 userPermissions={userPermissions}

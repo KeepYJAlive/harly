@@ -14,6 +14,8 @@ import {
   type SlackDelivery,
 } from "@harly/db";
 
+import { isDemoMode } from "@harly/config";
+
 import { getWorkspaceSlackConfig } from "@/lib/slack/config";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
 import { createLogger } from "@/lib/logger";
@@ -200,6 +202,13 @@ export async function deliverSlack(
   delivery: SlackDelivery,
   workerId: string,
 ): Promise<"success" | "failed" | "dead_letter"> {
+  // Public demo: never post to real Slack workspaces. Mark done so the queue
+  // drains instead of retrying.
+  if (isDemoMode()) {
+    log.info({ deliveryId: delivery.id }, "[slack] Suppressed delivery (demo mode)");
+    return "success";
+  }
+
   const attempt = delivery.attempts + 1;
   const startedAt = new Date();
   let status: "success" | "failed" | "dead_letter" = "failed";

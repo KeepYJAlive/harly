@@ -61,6 +61,23 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // ── Demo mode ──────────────────────────────────────────────────────────
+    // When true, the ENTIRE instance behaves as a public demo (dedicated VPS):
+    // the career board stays at `/`, a floating "try it" button + `/enter`
+    // provide shared-credential login behind a Turnstile challenge, and the
+    // outbound-effect guards (email/webhooks no-op, etc.) engage. Never enable
+    // on a real workspace's instance.
+    DEMO_MODE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    // The shared login account visitors are signed in as (one-click, no typing).
+    DEMO_LOGIN_EMAIL: optionalEmail,
+    // Turnstile keys used for the demo entry gate. The site key is public
+    // (NEXT_PUBLIC_*) and rendered client-side; the secret is verified
+    // server-side. Independent of any per-workspace captcha config.
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: optionalString,
+    TURNSTILE_SECRET_KEY: optionalString,
   })
   .superRefine((env, ctx) => {
     const url = env.HARLY_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.BETTER_AUTH_URL;
@@ -128,6 +145,14 @@ const envSchema = z
         if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "is required for S3 storage" });
       }
     }
+
+    // Demo mode can't offer a real anti-bot gate without Turnstile keys, so the
+    // entry challenge would silently pass. Require the full pair up front.
+    if (env.DEMO_MODE) {
+      for (const key of ["NEXT_PUBLIC_TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY"] as const) {
+        if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "is required when DEMO_MODE=true" });
+      }
+    }
   });
 
 export type HarlyConfig = Omit<z.infer<typeof envSchema>, "HARLY_URL"> & {
@@ -161,6 +186,20 @@ export function loadHarlyConfig(
     publicUrl: new URL(resolvedUrl),
     deprecatedUrlVariables,
   };
+}
+
+/**
+ * True when this instance runs as a public demo. Reads process.env directly
+ * (cheap, no full config parse) so it can be called from edge/proxy and RSC
+ * without threading config through. The email visitors sign in as defaults to
+ * demo@harly.dev.
+ */
+export function isDemoMode(source: Record<string, string | undefined> = process.env): boolean {
+  return source.DEMO_MODE === "true";
+}
+
+export function demoLoginEmail(source: Record<string, string | undefined> = process.env): string {
+  return (source.DEMO_LOGIN_EMAIL?.trim() || "demo@harly.dev").toLowerCase();
 }
 
 export async function validateRuntimeFilesystem(config: HarlyConfig): Promise<void> {

@@ -13,10 +13,15 @@ import {
   type WebhookDelivery,
   type WebhookEndpoint,
 } from "@harly/db";
+import { isDemoMode } from "@harly/config";
+
 import { decryptSecret } from "@/lib/crypto";
 import { safeFetchWebhook } from "@/lib/ssrf";
+import { createLogger } from "@/lib/logger";
 
 import { MAX_WEBHOOK_ATTEMPTS, RETRY_BACKOFF_MS } from "./events";
+
+const demoLog = createLogger("webhooks");
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const RESPONSE_BODY_LIMIT = 500;
@@ -37,6 +42,17 @@ export async function deliverWebhook(
   endpoint: WebhookEndpoint,
   options?: { workerId?: string },
 ): Promise<"success" | "failed" | "exhausted"> {
+  // Public demo: never make real outbound webhook requests to arbitrary URLs.
+  // Treat the delivery as terminally done so the queue drains instead of
+  // retrying forever.
+  if (isDemoMode()) {
+    demoLog.info(
+      { deliveryId: delivery.id, event: delivery.event },
+      "[webhooks] Suppressed delivery (demo mode)",
+    );
+    return "success";
+  }
+
   const attemptNumber = delivery.attempts + 1;
   const startedAt = new Date();
   const body = JSON.stringify(delivery.payload);
