@@ -70,7 +70,7 @@ function toCriterionRows(
     evaluationId,
     criterionKey: criterion.key,
     label: criterion.label,
-    status: criterion.status,
+    status: ("extendedStatus" in criterion && criterion.extendedStatus) ? criterion.extendedStatus : criterion.status,
     score: criterion.score,
     weight: criterion.weight,
     evidence: criterion.evidence,

@@ -355,7 +355,9 @@ export function AiScoreCard({
                     const Logo = PROVIDER_LOGO[evaluation.provider as AiProviderId];
                     return Logo ? <Logo className="size-3.5" /> : null;
                   })()}
-                  {evaluation.source === "rules" ? "Harly Algorithm · rules-v2" : formatModelLabel(evaluation.modelId)}
+                  {evaluation.source === "rules"
+                    ? `Harly Algorithm · ${evaluation.modelId || "rules-v4"}`
+                    : formatModelLabel(evaluation.modelId)}
                 </Badge>
                 <span className="inline-flex items-center gap-1">
                   <FileText className="size-3.5" />
@@ -377,7 +379,7 @@ export function AiScoreCard({
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
                 {evaluation.source === "rules"
-                  ? "Evaluación automática basada en reglas y evidencia explícita. Revisa la información faltante y decide con criterio humano."
+                  ? "Deterministic evaluation based on structured resume parsing, rule criteria, and verified evidence. Review missing information and apply human discretion."
                   : "AI guidance only — review the evidence and make the hiring decision yourself. Do not use this score as the sole basis for a decision."}
               </p>
             </CardContent>
