@@ -5,14 +5,31 @@ import {
 } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
 import { db, passkeys } from "@harly/db";
+import { isDemoMode } from "@harly/config";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { RP_ID, RP_NAME, ORIGIN, storeChallenge, consumeChallenge } from "@/lib/passkey";
 
 const log = createLogger("api-passkey-register");
 
+// Demo lockdown, Layer 3: passkey registration is a hand-rolled WebAuthn route
+// outside Better Auth, so Layer 1's hook can't reach it. Adding a passkey to the
+// shared demo account persists across resets and could gate every future
+// visitor behind a credential they don't hold. Refuse both the options (GET) and
+// the verify+store (POST) steps in demo mode. Server-side, keyed off DEMO_MODE.
+function demoBlockedResponse(): NextResponse {
+  return NextResponse.json(
+    { error: "This action is disabled in the demo." },
+    { status: 403 },
+  );
+}
+
 // GET , generate registration options for the authenticated user.
 export async function GET(req: NextRequest) {
+  if (isDemoMode()) {
+    return demoBlockedResponse();
+  }
+
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,6 +61,10 @@ export async function GET(req: NextRequest) {
 
 // POST , verify and store the registration response.
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) {
+    return demoBlockedResponse();
+  }
+
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
