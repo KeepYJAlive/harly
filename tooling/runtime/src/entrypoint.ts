@@ -168,6 +168,15 @@ const jobs: Job[] = [
     path: "/api/cron/scheduled-reports",
     intervalMs: 60_000,
   },
+  // Public demo only. The route is a 404 unless DEMO_MODE=true, so scheduling
+  // it everywhere is harmless — on a normal install it just returns 404 and the
+  // scheduler moves on. Fixed 2-hour cadence: a full reseed is cheap for one
+  // workspace and gives every visitor an identical clean slate.
+  {
+    name: "demo-reset",
+    path: "/api/cron/demo-reset",
+    intervalMs: 2 * 60 * 60_000,
+  },
 ];
 
 const schedulerStaleAfterMs = Math.max(
