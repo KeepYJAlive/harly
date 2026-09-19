@@ -11,6 +11,7 @@ import { describeSchedulerRuns as describeSchedulerRunsForJobs } from "./schedul
 
 import {
   formatConfigError,
+  isDemoMode,
   loadHarlyConfig,
   validateRuntimeFilesystem,
 } from "../../../packages/config/src/index";
@@ -168,16 +169,30 @@ const jobs: Job[] = [
     path: "/api/cron/scheduled-reports",
     intervalMs: 60_000,
   },
-  // Public demo only. The route is a 404 unless DEMO_MODE=true, so scheduling
-  // it everywhere is harmless — on a normal install it just returns 404 and the
-  // scheduler moves on. Fixed 2-hour cadence: a full reseed is cheap for one
-  // workspace and gives every visitor an identical clean slate.
-  {
-    name: "demo-reset",
-    path: "/api/cron/demo-reset",
-    intervalMs: 2 * 60 * 60_000,
-  },
 ];
+
+// Public demo only. The route is a 404 unless DEMO_MODE=true, so this job is
+// scheduled ONLY in demo mode — otherwise a normal install's scheduler would
+// call the endpoint, get a 404, and log it as a failed run (polluting health).
+// Keeping it out of the base list also keeps doctor()'s scheduler check honest:
+// it never expects a demo-reset run where none should happen. Fixed ~2-hour
+// cadence: a full reseed is cheap for one workspace and gives every visitor an
+// identical clean slate.
+const demoResetJob: Job = {
+  name: "demo-reset",
+  path: "/api/cron/demo-reset",
+  intervalMs: 2 * 60 * 60_000,
+};
+
+/**
+ * The jobs this instance should actually run and be judged healthy against.
+ * demo-reset joins the set only when DEMO_MODE=true, so both the scheduler and
+ * the doctor agree on the same list — no phantom "never ran" job on normal
+ * installs, and no missing job on the demo VPS.
+ */
+function activeJobs(): Job[] {
+  return isDemoMode() ? [...jobs, demoResetJob] : jobs;
+}
 
 const schedulerStaleAfterMs = Math.max(
   60_000,
@@ -268,9 +283,10 @@ async function scheduler() {
   await database`delete from cron_runs where created_at < now() - interval '30 days'`.catch(
     () => undefined,
   );
-  jobs.forEach((job, index) => schedule(job, index * 1_000));
+  const scheduled = activeJobs();
+  scheduled.forEach((job, index) => schedule(job, index * 1_000));
   const heartbeat = setInterval(
-    () => jsonLog("info", "scheduler.heartbeat", { jobs: jobs.length }),
+    () => jsonLog("info", "scheduler.heartbeat", { jobs: scheduled.length }),
     60_000,
   );
 
@@ -293,6 +309,8 @@ async function doctor() {
   const config = await runtimeConfig({ validateFilesystem: false });
   const appOrigin = process.env.HARLY_INTERNAL_URL ?? config.HARLY_URL;
   const database = postgres(config.DATABASE_URL!, { max: 1, prepare: false });
+  const expectedJobs = activeJobs();
+  const expectedJobNames = expectedJobs.map((job) => job.name);
   const checks: Array<{ name: string; ok: boolean; detail?: string }> = [];
   try {
     const health = await fetch(`${appOrigin}/api/health/ready`, {
@@ -315,7 +333,7 @@ async function doctor() {
           from (
             select job, max(created_at) filter (where status in ('success', 'skipped')) as last_run
             from cron_runs
-            where job in ('domain-events', 'email-outbox', 'webhooks-dispatch', 'esign-reconciliation', 'interview-sync', 'evaluation-jobs', 'mailbox-sync', 'document-expiry', 'retention-enforcement', 'candidate-deletions', 'candidate-reconciliation', 'mail-reconciliation', 'scheduled-reports')
+            where job = any(${expectedJobNames})
             group by job
           ) scheduler_runs
         ) as scheduler_runs,
@@ -327,7 +345,7 @@ async function doctor() {
     `;
     checks.push({ name: "migrations", ok: row?.migrated === true });
     const scheduler = describeSchedulerRunsForJobs(
-      jobs,
+      expectedJobs,
       row?.scheduler_runs as Record<string, string | null> | null | undefined,
       schedulerStaleAfterMs,
     );
