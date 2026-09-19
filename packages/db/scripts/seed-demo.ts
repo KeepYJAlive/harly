@@ -18,12 +18,16 @@ import { buildResumeLines, linesToPdf } from "./fake-resumes";
  * Run: pnpm db:seed:demo   (or SEED_EMAIL=you@x.com pnpm db:seed:demo)
  */
 
-const SEED_EMAIL = process.env.SEED_EMAIL ?? "maxi@acme.test";
+const SEED_EMAIL = process.env.SEED_EMAIL ?? "demo@harly.dev";
 // Where the web app serves local uploads from (its LocalAdapter resolves
 // `uploads/` against the app's cwd, i.e. apps/web).
 const webUploadsRoot = path.resolve(process.cwd(), "../../apps/web/uploads");
-// The dev account name carried a typo ("Maximliano"); normalise it on seed.
-const OWNER_NAME = "Maximiliano Moldenhauer";
+// Owner display name for the demo workspace.
+const OWNER_NAME = "Alex Morgan";
+// Fixed CDN host for demo assets (avatars, logos, hero). These live under
+// /demo/* on the CDN so the periodic reset restores them identically every
+// time. Override with DEMO_CDN_URL for local/preview environments.
+const DEMO_CDN = (process.env.DEMO_CDN_URL ?? "https://cdn.harly.dev").replace(/\/$/, "");
 
 const DEFAULT_STAGES = [
   { name: "Applied", color: "#E0F2FE" },
@@ -39,11 +43,11 @@ type StageName = (typeof DEFAULT_STAGES)[number]["name"];
 // Demo teammates — real `user` + `member` rows (no auth) so the dashboard can
 // show ownership, interviewers and a live team-activity feed.
 const TEAMMATES = [
-  { key: "sarah", id: "seed-teammate-sarah", name: "Sarah Chen", email: "sarah.chen@ploxhost.test" },
-  { key: "james", id: "seed-teammate-james", name: "James Park", email: "james.park@ploxhost.test" },
-  { key: "emma", id: "seed-teammate-emma", name: "Emma Wilson", email: "emma.wilson@ploxhost.test" },
-  { key: "diego", id: "seed-teammate-diego", name: "Diego Martinez", email: "diego.martinez@ploxhost.test" },
-  { key: "sofia", id: "seed-teammate-sofia", name: "Sofia Romero", email: "sofia.romero@ploxhost.test" },
+  { key: "sarah", id: "seed-teammate-sarah", name: "Sarah Chen", email: "sarah.chen@syntrix.com", avatar: "sarah" },
+  { key: "james", id: "seed-teammate-james", name: "James Park", email: "james.park@syntrix.com", avatar: "james" },
+  { key: "emma", id: "seed-teammate-emma", name: "Emma Wilson", email: "emma.wilson@syntrix.com", avatar: "emma" },
+  { key: "diego", id: "seed-teammate-diego", name: "Diego Martinez", email: "diego.martinez@syntrix.com", avatar: "diego" },
+  { key: "sofia", id: "seed-teammate-sofia", name: "Sofia Romero", email: "sofia.romero@syntrix.com", avatar: "sofia" },
 ];
 const teammateId = (key: string) => TEAMMATES.find((t) => t.key === key)?.id;
 
@@ -104,7 +108,7 @@ const JOBS = [
     salaryPeriod: "annual",
     status: "open",
     description:
-      "<p>Join our platform team building the APIs that power PloxHost. Strong Go and distributed-systems experience required.</p>",
+      "<p>Join our platform team building the APIs that power Syntrix. Strong Go and distributed-systems experience required.</p>",
   },
   {
     title: "Product Designer",
@@ -196,10 +200,28 @@ const JOBS = [
     description:
       "<p>Generate and qualify pipeline for our account executives. Hungry, coachable, and resilient — prior SaaS outbound a plus.</p>",
   },
+  {
+    title: "Junior Software Engineer (PHP)",
+    department: "Engineering",
+    sector: "Software",
+    location: "Remote (Europe)",
+    employmentType: "full_time",
+    workplaceType: "remote",
+    experienceLevel: "Entry (1+ years)",
+    education: "Any",
+    keywords: ["PHP", "Laravel", "MySQL", "REST", "Git"],
+    salaryMin: 40000,
+    salaryMax: 60000,
+    currency: "EUR",
+    salaryPeriod: "annual",
+    status: "open",
+    description:
+      "<p>Kick off your engineering career on our web platform team. You'll ship features in PHP/Laravel with mentorship from senior engineers.</p>",
+  },
 ];
 
 // Hiring manager (teammate key) per job index — drives the ownership labels.
-const JOB_HM = ["sarah", "james", "emma", "sarah", "james", "diego", "emma"];
+const JOB_HM = ["sarah", "james", "emma", "sarah", "james", "diego", "emma", "james"];
 // Extra interviewers assigned to each job's hiring team.
 const JOB_INTERVIEWERS = [
   ["sofia", "diego"],
@@ -209,13 +231,14 @@ const JOB_INTERVIEWERS = [
   ["sofia"],
   ["diego"],
   ["emma"],
+  ["diego", "sarah"],
 ];
 
 const CANDIDATES = [
   { firstName: "Ava", lastName: "Thompson", email: "ava.thompson@gmail.com", location: "San Francisco, CA", headline: "Senior Frontend Engineer · ex-Vercel", github: "https://github.com/avathompson" },
   { firstName: "Liam", lastName: "Chen", email: "liam.chen@outlook.com", location: "Toronto, Canada", headline: "Full-stack engineer, React + Node", github: "https://github.com/liamchen" },
   { firstName: "Sofía", lastName: "Martínez", email: "sofia.martinez@gmail.com", location: "Madrid, Spain", headline: "Product Designer · design systems", website: "https://sofiamartinez.design" },
-  { firstName: "Noah", lastName: "Williams", email: "noah.williams@proton.me", location: "Austin, TX", headline: "Backend engineer, Go & Postgres", github: "https://github.com/noahw" },
+  { firstName: "Noah", lastName: "Williams", email: "noah.williams@outlook.com", location: "Austin, TX", headline: "Backend engineer, Go & Postgres", github: "https://github.com/noahw" },
   { firstName: "Emma", lastName: "Müller", email: "emma.mueller@gmail.com", location: "Berlin, Germany", headline: "Platform engineer, distributed systems", github: "https://github.com/emmamueller" },
   { firstName: "Kwame", lastName: "Mensah", email: "kwame.mensah@gmail.com", location: "Accra, Ghana", headline: "Growth marketer, B2B SaaS" },
   { firstName: "Priya", lastName: "Nair", email: "priya.nair@gmail.com", location: "Bangalore, India", headline: "Frontend engineer, TypeScript + React", github: "https://github.com/priyanair" },
@@ -302,7 +325,7 @@ const SCORECARDS = [
 
 const MESSAGES = [
   { c: 0, subject: "Next steps — Senior Frontend Engineer", body: "Hi Ava, we loved your onsite. We'd like to move forward with an offer — call you tomorrow to discuss details." },
-  { c: 3, subject: "Welcome to PloxHost!", body: "Hi Noah, thrilled to have you on board. Your start details and onboarding plan are attached." },
+  { c: 3, subject: "Welcome to Syntrix!", body: "Hi Noah, thrilled to have you on board. Your start details and onboarding plan are attached." },
   { c: 16, subject: "Quick comp conversation", body: "Hi Hannah, great to connect. Could we chat briefly about compensation expectations before the next round?" },
 ];
 
@@ -377,17 +400,113 @@ async function main() {
     const workspaceId = org.id;
     console.log(`Seeding workspace "${org.name}" (${org.slug}) for ${SEED_EMAIL}…`);
 
-    // Normalise the owner's display name (fixes the "Maximliano" typo).
-    if (user.name !== OWNER_NAME) {
-      await db.update(schema.user).set({ name: OWNER_NAME }).where(eq(schema.user.id, user.id));
-    }
+    // ── Organization identity: unify naming to "Syntrix" + CDN logos ──
+    await db
+      .update(schema.organization)
+      .set({
+        name: "Syntrix",
+        logo: `${DEMO_CDN}/demo/company/logo.svg`,
+        logoEmail: `${DEMO_CDN}/demo/company/email-logo.png`,
+      })
+      .where(eq(schema.organization.id, workspaceId));
+
+    // ── Workspace settings: clean Syntrix branding, NO real integrations ──
+    // Seeded here (the script never touched this table before) so a wipe+reseed
+    // fully restores branding and guarantees no real account stays connected.
+    // AI config (aiEnabled + encrypted key) is intentionally left off — it
+    // depends on the OpenCode Zen provider work and encryptSecret, handled in a
+    // later step. Every integration toggle is false: no outbound side effects.
+    await db
+      .insert(schema.workspaceSettings)
+      .values({
+        organizationId: workspaceId,
+        tagline: "Hiring the team behind Syntrix",
+        description: "Syntrix is a demo company powering the Harly ATS public demo.",
+        websiteUrl: "https://syntrix.com",
+        primaryColor: "#d97656",
+        heroImageUrl: `${DEMO_CDN}/demo/company/hero.jpg`,
+        sidebarLogoUrl: `${DEMO_CDN}/demo/company/logo.svg`,
+        sidebarLogoDarkUrl: `${DEMO_CDN}/demo/company/logo-dark.svg`,
+        // Integrations: all disconnected in the demo.
+        aiEnabled: false,
+        emailEnabled: false,
+        emailInboundEnabled: false,
+        calEnabled: false,
+        turnstileEnabled: false,
+        // Legal identity — fully fictional, all @syntrix.com.
+        legalEntityName: "Syntrix Inc.",
+        legalEntityEmail: "legal@syntrix.com",
+        legalEntityWebsite: "https://syntrix.com",
+        dpoEmail: "privacy@syntrix.com",
+      })
+      .onConflictDoUpdate({
+        target: schema.workspaceSettings.organizationId,
+        set: {
+          tagline: "Hiring the team behind Syntrix",
+          description: "Syntrix is a demo company powering the Harly ATS public demo.",
+          websiteUrl: "https://syntrix.com",
+          primaryColor: "#d97656",
+          heroImageUrl: `${DEMO_CDN}/demo/company/hero.jpg`,
+          sidebarLogoUrl: `${DEMO_CDN}/demo/company/logo.svg`,
+          sidebarLogoDarkUrl: `${DEMO_CDN}/demo/company/logo-dark.svg`,
+          // Re-assert every real integration OFF on reseed (clears anything a
+          // visitor or prior manual test connected).
+          aiEnabled: false,
+          aiProvider: null,
+          aiModelId: null,
+          aiApiKeyCiphertext: null,
+          aiApiKeyIv: null,
+          aiApiKeyTag: null,
+          emailEnabled: false,
+          emailProvider: null,
+          emailFrom: null,
+          emailApiKeyCiphertext: null,
+          emailApiKeyIv: null,
+          emailApiKeyTag: null,
+          emailInboundEnabled: false,
+          calEnabled: false,
+          calApiKeyCiphertext: null,
+          calApiKeyIv: null,
+          calApiKeyTag: null,
+          gcalEnabled: false,
+          gcalAccountEmail: null,
+          gcalRefreshTokenCiphertext: null,
+          gcalRefreshTokenIv: null,
+          gcalRefreshTokenTag: null,
+          outlookEnabled: false,
+          outlookAccountEmail: null,
+          zoomEnabled: false,
+          slackEnabled: false,
+          telegramEnabled: false,
+          turnstileEnabled: false,
+          legalEntityName: "Syntrix Inc.",
+          legalEntityEmail: "legal@syntrix.com",
+          legalEntityWebsite: "https://syntrix.com",
+          dpoEmail: "privacy@syntrix.com",
+        },
+      });
+
+    // Normalise the owner's display name + avatar for the demo identity.
+    await db
+      .update(schema.user)
+      .set({ name: OWNER_NAME, image: `${DEMO_CDN}/demo/team/alex.jpg` })
+      .where(eq(schema.user.id, user.id));
 
     // ── Demo teammates (user + workspace membership; no auth) ──
     for (const t of TEAMMATES) {
       await db
         .insert(schema.user)
-        .values({ id: t.id, name: t.name, email: t.email, emailVerified: true })
-        .onConflictDoNothing();
+        .values({
+          id: t.id,
+          name: t.name,
+          email: t.email,
+          emailVerified: true,
+          image: `${DEMO_CDN}/demo/team/${t.avatar}.jpg`,
+        })
+        .onConflictDoUpdate({
+          target: schema.user.id,
+          set: { name: t.name, email: t.email, image: `${DEMO_CDN}/demo/team/${t.avatar}.jpg` },
+        });
       await db
         .insert(schema.member)
         .values({
@@ -400,32 +519,32 @@ async function main() {
         .onConflictDoNothing();
     }
 
-    // ── Wipe existing domain data for this workspace (children → parents) ──
-    const wipeOrder = [
-      schema.tasks,
-      schema.interviews,
-      schema.activityEvents,
-      schema.mailUnificationMigrations,
-      schema.mailAttachments,
-      schema.mailMessages,
-      schema.mailThreads,
-      schema.candidateMessages,
-      schema.scorecards,
-      schema.candidateTags,
-      schema.applicationAnswers,
-      schema.applicationStageHistory,
-      schema.candidateNotes,
-      schema.candidateFiles,
-      schema.applications,
-      schema.jobHiringTeam,
-      schema.applicationQuestions,
-      schema.jobStages,
-      schema.candidates,
-      schema.jobs,
-    ];
-    for (const table of wipeOrder) {
-      await db.delete(table).where(eq(table.workspaceId, workspaceId));
-    }
+    // ── Wipe ALL workspace-scoped data for this workspace ──
+    // Catalog-driven: every table carrying a `workspace_id` column is cleared,
+    // so new tables are covered automatically and nothing survives a reseed —
+    // visitor uploads, AI chats, audit logs, notifications, workflow runs,
+    // signatures, offers, etc. FK triggers are disabled for the transaction so
+    // delete order doesn't matter (children and parents go together).
+    //
+    // Note: identity/config tables key off `organization_id`, not
+    // `workspace_id` (user, member, organization, workspace_settings), so they
+    // are intentionally NOT touched here — the org, teammates and the freshly
+    // seeded workspace_settings all survive.
+    const scopedTables = await sql<{ table_name: string }[]>`
+      SELECT table_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'workspace_id'
+      ORDER BY table_name
+    `;
+    await sql.begin(async (tx) => {
+      // Disable FK/trigger enforcement for the wipe so we can delete in any
+      // order without hitting reference constraints.
+      await tx`SET LOCAL session_replication_role = 'replica'`;
+      for (const { table_name } of scopedTables) {
+        await tx`DELETE FROM ${tx(table_name)} WHERE workspace_id = ${workspaceId}`;
+      }
+    });
+    console.log(`Wiped ${scopedTables.length} workspace-scoped tables.`);
 
     // ── Jobs + stages ──
     const jobStageMap = new Map<number, Map<StageName, string>>();
@@ -494,6 +613,13 @@ async function main() {
     const candidateIds: string[] = [];
     for (let c = 0; c < CANDIDATES.length; c++) {
       const cand = CANDIDATES[c];
+      // Deterministic slug (accent-stripped) → CDN avatar under /demo/candidates.
+      const slug = `${cand.firstName}-${cand.lastName}`
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
       const [created] = await db
         .insert(schema.candidates)
         .values({
@@ -506,6 +632,7 @@ async function main() {
           linkedinUrl: `https://linkedin.com/in/${cand.firstName.toLowerCase()}-${cand.lastName.toLowerCase().replace(/[^a-z]/g, "")}`,
           githubUrl: cand.github ?? null,
           websiteUrl: cand.website ?? null,
+          avatarUrl: `${DEMO_CDN}/demo/candidates/${slug}.jpg`,
           headline: cand.headline,
           createdAt: daysAgo(28 - c),
         })
@@ -640,10 +767,21 @@ async function main() {
     }
 
     // ── Scorecards (varied authors + recency → team activity) ──
+    // Link each scorecard to the candidate's application + the matching stage.
+    // The unique index (workspace_id, application_id, author_id, stage_id) is
+    // NULLS NOT DISTINCT, so leaving app/stage null collides whenever one author
+    // has two scorecards — populate both to keep every row distinct and real.
     for (const card of SCORECARDS) {
+      const appEntry = APPLICATIONS.find((a) => a.c === card.c);
+      const applicationId = appEntry ? appIds.get(`${appEntry.c}-${appEntry.j}`) ?? null : null;
+      const stageId = appEntry
+        ? jobStageMap.get(appEntry.j)?.get(card.stageName as StageName) ?? null
+        : null;
       await db.insert(schema.scorecards).values({
         workspaceId,
         candidateId: candidateIds[card.c],
+        applicationId,
+        stageId,
         authorId: teammateId(card.author) ?? user.id,
         rating: card.rating as "strong" | "mixed" | "weak",
         comment: card.comment,
