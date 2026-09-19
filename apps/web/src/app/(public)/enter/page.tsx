@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { demoLoginEmail, isDemoMode } from "@harly/config";
+import { demoLoginEmail, demoPasswordDisplay, isDemoMode } from "@harly/config";
 
 import { DemoEnterForm } from "./_components/demo-enter-form";
 
@@ -13,10 +13,6 @@ export const metadata: Metadata = {
   title: "Enter the demo",
   robots: { index: false, follow: false },
 };
-
-// Shown as informational credentials only — the visitor never types them; the
-// server action signs the shared demo account in after the Turnstile check.
-const DEMO_PASSWORD_DISPLAY = "demo1234";
 
 export default async function EnterPage({
   searchParams,
@@ -28,6 +24,10 @@ export default async function EnterPage({
   }
 
   const email = demoLoginEmail();
+  // Informational only — the visitor never types this; the server signs the
+  // shared session after the Turnstile check. Sourced from config so it stays
+  // in sync with the password the demo owner was created with at /setup.
+  const passwordDisplay = demoPasswordDisplay();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
   const { error } = await searchParams;
   const captchaFailed = error === "captcha";
@@ -60,8 +60,8 @@ export default async function EnterPage({
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             The workspace is already filled with sample data and resets
-            every two hours. Feel free to change things, create things, or
-            delete them.
+            about every two hours. Feel free to change things, create things,
+            or delete them.
           </p>
 
           <div className="mt-8 rounded-xl border border-border bg-muted/40 p-4">
@@ -75,7 +75,7 @@ export default async function EnterPage({
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">password</dt>
-                <dd>{DEMO_PASSWORD_DISPLAY}</dd>
+                <dd>{passwordDisplay}</dd>
               </div>
             </dl>
           </div>

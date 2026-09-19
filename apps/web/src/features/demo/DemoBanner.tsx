@@ -14,8 +14,8 @@ export function DemoBanner() {
         aria-hidden="true"
         className="size-1.5 shrink-0 rounded-full bg-chartreuse-signal"
       />
-      Live demo — shared workspace, resets every 2 hours. Don&apos;t enter real
-      candidate data.
+      Live demo — shared workspace, resets about every 2 hours. Don&apos;t
+      enter real candidate data.
     </div>
   );
 }
