@@ -16,6 +16,7 @@ import { auth } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit-log";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { requirePermission } from "@/features/workspaces/permissions-server";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { createLogger } from "@/lib/logger";
 import { encryptSecret, isEncryptionConfigured } from "@/lib/crypto";
 import { normalizeSecurityPolicy } from "@/server/security/policy";
@@ -37,6 +38,7 @@ async function getSession() {
 }
 
 export async function deletePasskeyAction(passkeyId: string) {
+  assertNotDemo();
   const session = await getSession();
   const { organization } = await getWorkspaceContext();
 
@@ -61,6 +63,7 @@ export async function toggleForce2FAAction(
   require2fa: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    assertNotDemo();
     const { organization, roleKey, user } =
       await requirePermission("security:manage");
     if (roleKey !== "owner")
@@ -102,6 +105,7 @@ export async function updateAdvancedSecurityPolicyAction(input: {
   requirePasskey: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
+    assertNotDemo();
     const { organization, roleKey, user } = await requirePermission("security:manage");
     if (roleKey !== "owner") throw new Error("Only owners can change security policy.");
     await requireSensitiveReauth(user.id, organization.id);
@@ -192,6 +196,7 @@ export async function saveOAuthProviderAction(input: {
     if (roleKey !== "owner") {
       return { ok: false, error: "Only owners can configure OAuth providers." };
     }
+    assertNotDemo();
 
     if (!isEncryptionConfigured()) {
       return {

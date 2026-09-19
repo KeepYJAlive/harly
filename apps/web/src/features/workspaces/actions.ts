@@ -40,6 +40,7 @@ import {
   assignRolePrivilegeError,
   requirePermission,
 } from "@/features/workspaces/permissions-server";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import {
   boardBrandingSchema,
   boardStyles,
@@ -512,6 +513,7 @@ export async function inviteWorkspaceMemberAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:invite");
     const parsed = inviteMemberSchema.safeParse({
       email: formData.get("email"),
@@ -588,6 +590,7 @@ export async function inviteWorkspaceMembersAction(
   formData: FormData,
 ): Promise<BulkInviteResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:invite");
 
     const raw = formData.get("invites");
@@ -654,6 +657,7 @@ export async function updateWorkspaceMemberRoleAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:edit");
     const parsed = updateMemberRoleSchema.safeParse({
       memberId: formData.get("memberId"),
@@ -773,6 +777,7 @@ export async function updateMemberRolesAction(input: {
   changes: { memberId: string; role: string }[];
 }): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:edit");
     const parsed = bulkRolesSchema.safeParse(input);
     if (!parsed.success) {
@@ -860,6 +865,7 @@ export async function updateMemberAccessAction(input: {
   status: "active" | "inactive" | "suspended";
 }): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:edit");
     const parsed = updateMemberAccessSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: "Invalid member access profile." };
@@ -889,6 +895,7 @@ export async function removeWorkspaceMemberAction(
   formData: FormData,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:remove");
     const parsed = removeMemberSchema.safeParse({
       memberId: formData.get("memberId"),
@@ -960,6 +967,7 @@ export async function resendWorkspaceInvitationAction(
   invitationId: string,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:invite");
     const appUrl = getHarlyPublicOrigin();
 
@@ -1027,6 +1035,7 @@ export async function cancelWorkspaceInvitationAction(
   invitationId: string,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("members:invite");
 
     await db
@@ -1064,6 +1073,7 @@ export async function acceptWorkspaceInvitationAction(
   invitationId: string,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const requestHeaders = await headers();
     const session = await auth.api.getSession({ headers: requestHeaders });
 
@@ -1186,6 +1196,7 @@ export async function acceptWorkspaceInvitationAction(
 
 export async function leaveWorkspaceAction(): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await getWorkspaceContext();
 
     if (
@@ -1259,6 +1270,7 @@ export async function enableInviteLinkAction(
   formData: FormData,
 ): Promise<InviteLinkResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("invite_links:manage");
 
     const parsed = inviteLinkRoleSchema.safeParse({ role: formData.get("role") });
@@ -1320,6 +1332,7 @@ export async function enableInviteLinkAction(
 /** Disable the shareable link (keeps the token so re-enabling reuses it). */
 export async function disableInviteLinkAction(): Promise<InviteLinkResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("invite_links:manage");
     await db
       .insert(workspaceSettings)
@@ -1342,6 +1355,7 @@ export async function disableInviteLinkAction(): Promise<InviteLinkResult> {
 /** Mint a fresh token, invalidating all previously shared URLs. */
 export async function rotateInviteLinkAction(): Promise<InviteLinkResult> {
   try {
+    assertNotDemo();
     const context = await requirePermission("invite_links:manage");
     const token = crypto.randomBytes(18).toString("base64url");
     await db
@@ -1372,6 +1386,7 @@ export async function joinViaInviteLinkAction(
   token: string,
 ): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const requestHeaders = await headers();
     const session = await auth.api.getSession({ headers: requestHeaders });
     if (!session) {
@@ -1511,6 +1526,7 @@ export async function setMemberPasswordAction(input: {
   password: string;
 }): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const parsed = setMemberPasswordSchema.safeParse(input);
     if (!parsed.success) {
       return {
@@ -1597,6 +1613,7 @@ export async function editMemberProfileAction(input: {
   email: string;
 }): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const parsed = editMemberProfileSchema.safeParse(input);
     if (!parsed.success) {
       return {
@@ -1700,6 +1717,7 @@ export async function createMemberAction(input: {
   jobTitle?: string;
 }): Promise<ActionResult> {
   try {
+    assertNotDemo();
     const context = await getWorkspaceContext();
     if (!isOwnerRole(context.roleKey)) {
       return { success: false, error: "Only the workspace owner can do this." };
