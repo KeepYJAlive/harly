@@ -1,18 +1,51 @@
 import type { CandidateScore } from "@/lib/ai/schemas";
-import { extractResumeAutofillFields } from "@/features/applications/resume-autofill";
+import { parseResumeFacts } from "./ats-parser";
+import { buildStructuredCriteria } from "./criteria-builder";
+import { matchCriteriaAgainstFacts } from "./ats-matcher";
 import type { EvaluationMode } from "./mode";
+import type {
+  CriterionImportance,
+  CriterionOrigin,
+  CriterionStatus,
+  CriterionType,
+  EvidenceStrength,
+  MatchMethod,
+  StructuredCriterionResult,
+} from "./types";
 
-/** Immutable engine identifier persisted with every deterministic evaluation. */
-export const RULES_EVALUATION_VERSION = "rules-v3";
+export * from "./types";
+
+/** Immutable engine identifier persisted with every evaluation. */
+export const RULES_EVALUATION_VERSION = "rules-v4";
+
+/** Centralized, calibratable scoring and tier constants */
+export const SCORING_CONSTANTS = {
+  /** Neutral baseline score for unverified/not_demonstrated criteria */
+  UNVERIFIED_EVIDENCE_BASELINE: 40,
+  /** Multiplier for preferred criteria weight */
+  PREFERRED_WEIGHT_FACTOR: 0.5,
+  /** Multiplier for required criteria weight */
+  REQUIRED_WEIGHT_FACTOR: 1.0,
+  /** Strong Yes tier thresholds */
+  STRONG_YES_MIN_SCORE: 85,
+  STRONG_YES_MIN_COVERAGE: 80,
+  STRONG_YES_MIN_CONFIDENCE: 75,
+  /** Yes tier thresholds */
+  YES_MIN_SCORE: 70,
+  YES_MIN_COVERAGE: 65,
+  /** Maybe tier minimum threshold */
+  MAYBE_MIN_SCORE: 45,
+} as const;
 
 export type RulesCriterion = {
   key: string;
   label: string;
-  type: "skill" | "experience_years" | "education";
-  importance: "required" | "preferred";
+  type: CriterionType;
+  importance: CriterionImportance;
   weight: number;
   aliases: string[];
   minimumValue?: number;
+  isKnockout?: boolean;
 };
 
 export type RulesRubric = {
@@ -30,6 +63,11 @@ export type RuleCriterionResult = {
   evidenceSource: "resume" | "profile" | "evaluation" | null;
   confidence: number;
   missingReason: string | null;
+  // Extended v4 fields:
+  extendedStatus?: CriterionStatus;
+  evidenceStrength?: EvidenceStrength;
+  matchMethod?: MatchMethod;
+  isKnockout?: boolean;
 };
 
 export type RulesEvaluation = {
@@ -39,6 +77,9 @@ export type RulesEvaluation = {
   evidenceCoverage: number;
   confidence: number;
   requiresHumanReview: boolean;
+  // Extended v4 metrics:
+  demonstratedScore: number;
+  coverageAdjustedScore: number;
 };
 
 export type RulesInput = {
@@ -46,287 +87,221 @@ export type RulesInput = {
     title: string;
     description: string;
     requirements: string | null;
+    sector?: string | null;
     experienceLevel: string | null;
     education: string | null;
     keywords: string[];
     evaluationMode?: EvaluationMode;
   };
   candidate: {
+    fullName?: string;
+    headline?: string | null;
+    location?: string | null;
     resumeText: string | null;
     answers: Array<{ question: string; answer: string }>;
     skills?: string[];
     experienceYears?: number | null;
   };
-  /** Optional recruiter-approved rubric. If absent, derive a conservative one. */
   rubric?: RulesRubric;
 };
 
-function plain(value: string | null): string {
-  return (value ?? "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalized(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, " ")
-    .trim();
-}
-
-function includesTerm(haystack: string, term: string): boolean {
-  const value = normalized(term);
-  if (!value) return false;
-  const source = ` ${normalized(haystack)} `;
-  return source.includes(` ${value} `);
-}
-
-function evidenceFor(text: string, aliases: string[]): string | null {
-  const source = text.replace(/\s+/g, " ").trim();
-  for (const alias of aliases) {
-    const index = normalized(source).indexOf(normalized(alias));
-    if (index < 0) continue;
-    const start = Math.max(0, index - 60);
-    const end = Math.min(source.length, index + alias.length + 120);
-    return source.slice(start, end).trim();
-  }
-  return null;
-}
-
-function level(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const text = normalized(value);
-  if (/intern|trainee|entry|junior|jr/.test(text)) return 1;
-  if (/senior|sr|lead|principal|staff/.test(text)) return 3;
-  if (/mid|intermediate|semi/.test(text)) return 2;
-  return null;
-}
-
-function requiredExperience(value: string | null, requirements: string | null): number | null {
-  const explicit = plain(requirements).match(/(\d{1,2})\s*\+?\s*(?:years|yrs|year|años|año)/i);
-  if (explicit) return Number(explicit[1]);
-  const role = level(value);
-  if (role === 1) return 0;
-  if (role === 2) return 2;
-  if (role === 3) return 5;
-  return null;
-}
-
-function educationLevel(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const text = normalized(value);
-  if (/ph d|phd|doctor/.test(text)) return 5;
-  if (/master|msc|mba|magister|maestria|postgrad/.test(text)) return 4;
-  if (/bachelor|bsc|ba|b eng|licenc|ingenier|undergraduate/.test(text)) return 3;
-  if (/associate|tecnico|technician/.test(text)) return 2;
-  if (/high school|secondary|bachillerato|secundaria/.test(text)) return 1;
-  return null;
-}
-
-function hasRequiredMarker(text: string, term: string): boolean {
-  const normalizedText = normalized(text);
-  const index = normalizedText.indexOf(normalized(term));
-  if (index < 0) return false;
-  const window = normalizedText.slice(Math.max(0, index - 80), index + term.length + 80);
-  return /required|must|mandatory|essential|requisito|obligatorio|excluyente/.test(window);
-}
-
-function defaultRubric(input: RulesInput): RulesRubric {
-  const requirements = plain(input.job.requirements);
-  const skills = [...new Set(input.job.keywords.map((keyword) => keyword.trim()).filter(Boolean))]
-    .slice(0, 30);
-  const criteria: RulesCriterion[] = skills.map((skill) => ({
-    key: `skill:${normalized(skill).replace(/\s+/g, "-")}`,
-    label: skill,
-    type: "skill",
-    importance: hasRequiredMarker(requirements, skill) ? "required" : "preferred",
-    weight: 50,
-    aliases: [skill],
-  }));
-  const minimumExperience = requiredExperience(input.job.experienceLevel, requirements);
-  if (minimumExperience !== null) {
-    criteria.push({
-      key: "experience-years",
-      label: "Experience",
-      type: "experience_years",
-      importance: "required",
-      weight: 25,
-      aliases: [],
-      minimumValue: minimumExperience,
-    });
-  }
-  if (input.job.education) {
-    criteria.push({
-      key: "education",
-      label: "Education",
-      type: "education",
-      importance: "required",
-      weight: 15,
-      aliases: [],
-    });
-  }
-  return { version: RULES_EVALUATION_VERSION, criteria };
-}
-
-function clamp(score: number): number {
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-function missingEvidenceScore(
-  criterion: RulesCriterion,
-  mode: EvaluationMode,
-): number {
-  if (criterion.importance === "required") {
-    return mode === "relaxed" ? 35 : mode === "balanced" ? 20 : 0;
-  }
-  return mode === "relaxed" ? 55 : mode === "balanced" ? 35 : 20;
-}
-
-function resultCriterion(
-  label: string,
-  score: number,
-  evidence: string | null,
-): CandidateScore["criteria"][number] {
-  return { label, score: clamp(score), evidence };
+function clamp(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 /**
- * Explainable, conservative evaluation. Unknown evidence is not scored as a
- * failure, but it lowers coverage and forces human review.
+ * Deterministic candidate evaluation with coverage-adjusted score shrinkage.
  */
 export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
-  const rubric = input.rubric ?? defaultRubric(input);
   const resumeText = input.candidate.resumeText ?? "";
-  const profileText = [resumeText, ...(input.candidate.skills ?? [])].join(" ");
-  const extracted = extractResumeAutofillFields({ fileName: "resume.txt", text: resumeText });
-  const candidateEducation = educationLevel(extracted.education);
-  const criterionResults: RuleCriterionResult[] = rubric.criteria.map((criterion) => {
-    if (criterion.type === "skill") {
-      const aliases = criterion.aliases.length > 0 ? criterion.aliases : [criterion.label];
-      const matched = aliases.some((alias) => includesTerm(profileText, alias));
-      return {
-        key: criterion.key,
-        label: criterion.label,
-        status: matched ? "met" : "unknown",
-        score: matched ? 100 : null,
-        weight: criterion.weight,
-        evidence: matched ? evidenceFor(profileText, aliases) : null,
-        evidenceSource: matched ? (includesTerm(resumeText, aliases[0] ?? "") ? "resume" : "profile") : null,
-        confidence: matched ? 90 : 0,
-        missingReason: matched ? null : "No explicit evidence found in the available profile or resume.",
-      };
-    }
+  const facts = parseResumeFacts(resumeText);
 
-    if (criterion.type === "experience_years") {
-      const actual = input.candidate.experienceYears;
-      if (actual == null || criterion.minimumValue == null) {
-        return {
-          key: criterion.key, label: criterion.label, status: "unknown", score: null,
-          weight: criterion.weight, evidence: null, evidenceSource: null, confidence: 0,
-          missingReason: "Experience duration could not be established.",
-        };
-      }
-      const score = criterion.minimumValue === 0
-        ? 100
-        : clamp((actual / criterion.minimumValue) * 100);
-      return {
-        key: criterion.key, label: criterion.label,
-        status: actual >= criterion.minimumValue ? "met" : "not_met",
-        score, weight: criterion.weight,
-        evidence: `${actual} years found; ${criterion.minimumValue}+ expected.`,
-        evidenceSource: input.candidate.experienceYears != null && resumeText ? "resume" : "profile",
-        confidence: 80, missingReason: null,
-      };
-    }
+  // If candidate had explicit experience years in DB that exceed parsed, use maximum
+  if (input.candidate.experienceYears && input.candidate.experienceYears > facts.totalExperienceYears) {
+    facts.totalExperienceYears = input.candidate.experienceYears;
+    facts.totalWorkDurationMonths = Math.round(input.candidate.experienceYears * 12);
+  }
 
-    if (candidateEducation == null) {
-      return {
-        key: criterion.key, label: criterion.label, status: "unknown", score: null,
-        weight: criterion.weight, evidence: null, evidenceSource: null, confidence: 0,
-        missingReason: "Education level could not be established.",
-      };
+  const structuredCriteria = buildStructuredCriteria(input);
+  const matchedResults = matchCriteriaAgainstFacts(structuredCriteria, facts, {
+    answers: input.candidate.answers,
+    profileSkills: input.candidate.skills,
+  });
+
+  // Calculate weighted demonstrated score and evidence coverage
+  let totalRubricWeight = 0;
+  let scoredRubricWeight = 0;
+  let weightedDemonstratedSum = 0;
+  let confidenceSum = 0;
+
+  for (const cr of matchedResults) {
+    const importanceFactor =
+      cr.importance === "required"
+        ? SCORING_CONSTANTS.REQUIRED_WEIGHT_FACTOR
+        : SCORING_CONSTANTS.PREFERRED_WEIGHT_FACTOR;
+    const effectiveWeight = cr.weight * importanceFactor;
+    totalRubricWeight += effectiveWeight;
+
+    if (cr.rawScore !== null) {
+      scoredRubricWeight += effectiveWeight;
+      weightedDemonstratedSum += effectiveWeight * cr.rawScore;
+      confidenceSum += cr.evidence?.confidence ?? 80;
     }
-    const required = educationLevel(input.job.education);
-    const score = required == null ? 100 : candidateEducation >= required ? 100 : 50;
+  }
+
+  const scoredCount = matchedResults.filter((r) => r.rawScore !== null).length;
+  const demonstratedScore = scoredRubricWeight > 0
+    ? clamp(weightedDemonstratedSum / scoredRubricWeight)
+    : 0;
+
+  const rawCoverage = totalRubricWeight > 0 ? (scoredRubricWeight / totalRubricWeight) * 100 : 0;
+  const evidenceCoverage = clamp(rawCoverage);
+
+  // Coverage-adjusted score with shrinkage toward neutral baseline (40)
+  const coverageRatio = evidenceCoverage / 100;
+  const coverageAdjustedScore = clamp(
+    coverageRatio * demonstratedScore + (1 - coverageRatio) * SCORING_CONSTANTS.UNVERIFIED_EVIDENCE_BASELINE,
+  );
+
+  const confidence = scoredCount > 0
+    ? clamp(confidenceSum / scoredCount)
+    : 0;
+
+  // Determine Knockout Failures
+  const anyKnockoutFailed = matchedResults.some((r) => r.knockoutFailed);
+
+  // Required criteria inspection
+  const requiredCriteria = matchedResults.filter((r) => r.importance === "required");
+  const requiredNotMetCount = requiredCriteria.filter((r) => r.status === "not_met").length;
+  const requiredUnverifiedCount = requiredCriteria.filter(
+    (r) => r.status === "not_demonstrated" || r.status === "unknown",
+  ).length;
+
+  // Recommendation Tiers (Deterministic)
+  let recommendation: CandidateScore["recommendation"] = "maybe";
+
+  if (anyKnockoutFailed || requiredNotMetCount >= 2 || coverageAdjustedScore < SCORING_CONSTANTS.MAYBE_MIN_SCORE) {
+    recommendation = "no";
+  } else if (
+    coverageAdjustedScore >= SCORING_CONSTANTS.STRONG_YES_MIN_SCORE &&
+    evidenceCoverage >= SCORING_CONSTANTS.STRONG_YES_MIN_COVERAGE &&
+    confidence >= SCORING_CONSTANTS.STRONG_YES_MIN_CONFIDENCE &&
+    requiredNotMetCount === 0 &&
+    requiredUnverifiedCount === 0
+  ) {
+    // Note: Preferred criteria do not block Strong Yes!
+    recommendation = "strong_yes";
+  } else if (
+    coverageAdjustedScore >= SCORING_CONSTANTS.YES_MIN_SCORE &&
+    evidenceCoverage >= SCORING_CONSTANTS.YES_MIN_COVERAGE &&
+    requiredNotMetCount === 0 &&
+    requiredUnverifiedCount <= 1
+  ) {
+    recommendation = "yes";
+  } else {
+    recommendation = "maybe";
+  }
+
+  // Human Review Required Trigger
+  const requiresHumanReview =
+    anyKnockoutFailed ||
+    requiredUnverifiedCount > 0 ||
+    evidenceCoverage < SCORING_CONSTANTS.STRONG_YES_MIN_COVERAGE ||
+    confidence < 70 ||
+    facts.workTimelineConfidence === "low";
+
+  // Map to backwards-compatible RuleCriterionResult
+  const criterionResults: RuleCriterionResult[] = matchedResults.map((m) => {
+    let legacyStatus: "met" | "not_met" | "unknown" = "unknown";
+    if (m.status === "met") legacyStatus = "met";
+    else if (m.status === "not_met") legacyStatus = "not_met";
+    else legacyStatus = "unknown";
+
     return {
-      key: criterion.key, label: criterion.label,
-      status: required == null || candidateEducation >= required ? "met" : "not_met",
-      score, weight: criterion.weight,
-      evidence: required == null ? "Education level detected in resume." : "Detected education compared with the job requirement.",
-      evidenceSource: "resume", confidence: 75, missingReason: null,
+      key: m.criterionId,
+      label: m.label,
+      status: legacyStatus,
+      score: m.rawScore,
+      weight: m.weight,
+      evidence: m.evidence?.verbatimSnippet ?? null,
+      evidenceSource: m.evidence ? (m.evidence.provenance.sourceType === "resume" ? "resume" : "profile") : null,
+      confidence: m.evidence?.confidence ?? 0,
+      missingReason: m.missingReason,
+      extendedStatus: m.status,
+      evidenceStrength: m.evidence?.strength,
+      matchMethod: m.evidence?.method,
+      isKnockout: m.isKnockout,
     };
   });
 
-  const criterionByKey = new Map(rubric.criteria.map((criterion) => [criterion.key, criterion]));
-  const known = criterionResults.filter((criterion) => criterion.score !== null);
-  const denominator = rubric.criteria.reduce((sum, criterion) => sum + criterion.weight, 0);
-  const score = denominator === 0
-    ? 0
-    : criterionResults.reduce((sum, criterion) => {
-        const definition = criterionByKey.get(criterion.key);
-        const fallback = definition
-          ? missingEvidenceScore(definition, input.job.evaluationMode ?? "balanced")
-          : 0;
-        return sum + (criterion.score ?? fallback) * (definition?.weight ?? criterion.weight);
-      }, 0) / denominator;
-  const coverage = rubric.criteria.length === 0
-    ? 0
-    : Math.round((known.length / rubric.criteria.length) * 100);
-  const confidence = known.length === 0
-    ? 0
-    : Math.round(known.reduce((sum, criterion) => sum + criterion.confidence, 0) / known.length);
-  const roundedScore = clamp(score);
-  const mode = input.job.evaluationMode ?? "balanced";
-  const requiredGap = criterionResults.some((criterion) => {
-    const definition = criterionByKey.get(criterion.key);
-    return definition?.importance === "required" && criterion.status !== "met";
-  });
-  const requiredFailure = criterionResults.some((criterion) => {
-    const definition = criterionByKey.get(criterion.key);
-    return definition?.importance === "required" && criterion.status === "not_met";
-  });
-  const strongBlocked = mode === "strict" ? requiredGap : requiredFailure;
-  const yesBlocked = mode === "strict" ? requiredGap : requiredFailure;
-  const recommendation =
-    roundedScore >= 85 && !strongBlocked && coverage >= (mode === "relaxed" ? 60 : 80) && confidence >= (mode === "relaxed" ? 60 : 75)
-      ? "strong_yes"
-      : roundedScore >= (mode === "strict" ? 80 : 70) && !yesBlocked && coverage >= (mode === "strict" ? 80 : 60)
-        ? "yes"
-        : roundedScore >= 45
-          ? "maybe"
-          : "no";
-  const requiredUnknown = criterionResults.some((criterion) => criterion.status === "unknown" && rubric.criteria.find((item) => item.key === criterion.key)?.importance === "required");
-  const requiresHumanReview = requiredUnknown || coverage < 80 || confidence < 70;
-  const criteria = criterionResults.map((criterion) => resultCriterion(criterion.label, criterion.score ?? 0, criterion.evidence));
+  // Strengths & Gaps Synthesis
+  const strengths: string[] = [];
+  if (facts.workHistory.length > 0 && facts.totalExperienceYears >= 2) {
+    strengths.push(
+      `Experience: ${facts.totalExperienceYears} years of verified background across ${facts.workHistory.length} roles (${facts.workHistory.map((w) => w.company).slice(0, 3).join(", ")}).`,
+    );
+  }
+  for (const m of matchedResults) {
+    if (m.status === "met" && m.evidence && m.type !== "experience_duration") {
+      strengths.push(`${m.label}: ${m.evidence.verbatimSnippet}`);
+    }
+  }
+
+  const gaps: string[] = [];
+  for (const m of matchedResults) {
+    if (m.status === "not_met") {
+      gaps.push(`${m.label}: ${m.missingReason ?? "Did not meet stated requirement."}`);
+    } else if (m.status === "not_demonstrated" && m.importance === "required") {
+      gaps.push(`${m.label}: Unverified — ${m.missingReason ?? "No mention in resume."}`);
+    }
+  }
+
+  const criteriaResult = criterionResults.map((c) => ({
+    label: c.label,
+    score: c.score ?? 0,
+    evidence: c.evidence,
+  }));
+
+  const summary = requiresHumanReview
+    ? `Automatic evaluation verified ${scoredCount}/${matchedResults.length} criteria (${evidenceCoverage}% coverage). Human review is recommended because some required information is unverified or incomplete.`
+    : `Automatic evaluation verified ${scoredCount}/${matchedResults.length} criteria with high confidence (${evidenceCoverage}% coverage, ${confidence}% confidence).`;
+
+  const rubric: RulesRubric = input.rubric ?? {
+    version: RULES_EVALUATION_VERSION,
+    criteria: structuredCriteria.map((c) => ({
+      key: c.id,
+      label: c.label,
+      type: c.type,
+      importance: c.importance,
+      weight: c.weight,
+      aliases: c.recruiterAliases,
+      minimumValue: c.minimumMonths ? Math.round(c.minimumMonths / 12) : undefined,
+    })),
+  };
 
   return {
     rubric,
     criterionResults,
-    evidenceCoverage: coverage,
+    evidenceCoverage,
     confidence,
     requiresHumanReview,
+    demonstratedScore,
+    coverageAdjustedScore,
     result: {
-      score: roundedScore,
+      score: coverageAdjustedScore,
       recommendation,
-      summary: requiresHumanReview
-        ? `Automatic evaluation found ${known.length}/${rubric.criteria.length} criteria with evidence. Human review is required because information is incomplete or uncertain.`
-        : `Automatic evaluation matched ${known.length}/${rubric.criteria.length} job-related criteria. Review the evidence before deciding.`,
-      strengths: criterionResults.filter((criterion) => criterion.score !== null && criterion.score >= 80).map((criterion) => `${criterion.label}: ${criterion.evidence ?? "strong match"}`).slice(0, 8),
-      gaps: criterionResults.filter((criterion) => criterion.status !== "met" || (criterion.score ?? 0) < 60).map((criterion) => `${criterion.label}: ${criterion.missingReason ?? criterion.evidence ?? "below requirement"}`).slice(0, 8),
-      criteria: criteria.slice(0, 8),
+      summary,
+      strengths: strengths.slice(0, 8),
+      gaps: gaps.slice(0, 8),
+      criteria: criteriaResult.slice(0, 8),
     },
   };
 }
 
-/** Backwards-compatible result used by existing AI/rules call sites. */
 export function scoreCandidateWithRules(input: RulesInput): CandidateScore {
   return evaluateCandidateWithRules(input).result;
 }
 
 export function defaultRulesRubric(input: RulesInput): RulesRubric {
-  return defaultRubric(input);
+  return evaluateCandidateWithRules(input).rubric;
 }
