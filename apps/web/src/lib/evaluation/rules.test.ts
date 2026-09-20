@@ -486,5 +486,233 @@ Sales Rep — FastSales
       const sales = res.criterionResults.find((c) => c.label === "Sales");
       expect(sales?.status).toBe("met");
     });
+
+    it("guarantees snapshot reproducibility and time-frozen tenure using referenceDate", () => {
+      const job = {
+        title: "Frontend Developer",
+        description: "React role",
+        requirements: "Requires 4+ years of experience",
+        experienceLevel: "Senior",
+        education: null,
+        keywords: ["React"],
+      };
+
+      const resumeWithPresent = `Alex Johnson
+alex@example.com
+
+EXPERIENCE
+Frontend Engineer — Acme Corp | Mar 2021 - Present
+• Built React web applications.
+`;
+
+      // Evaluated as of March 2024 (exactly 3 years / 36 months -> does not meet 4+ years)
+      const res2024 = evaluateCandidateWithRules({
+        job,
+        candidate: { resumeText: resumeWithPresent, answers: [] },
+        referenceDate: "2024-03-15",
+      });
+
+      const exp2024 = res2024.criterionResults.find((c) => c.label === "Experience");
+      expect(exp2024?.extendedStatus).toBe("partially_met");
+      expect(exp2024?.evidence).toContain("3 years of experience");
+      expect(res2024.metadata.referenceDate).toBe("2024-03-15");
+      expect(res2024.metadata.engineVersion).toBe("rules-v4");
+      expect(res2024.metadata.neutralEvidenceBaseline).toBe(40);
+
+      // Re-evaluated as of March 2026 (exactly 5 years / 60 months -> meets 4+ years requirement)
+      const res2026 = evaluateCandidateWithRules({
+        job,
+        candidate: { resumeText: resumeWithPresent, answers: [] },
+        referenceDate: "2026-03-15",
+      });
+
+      const exp2026 = res2026.criterionResults.find((c) => c.label === "Experience");
+      expect(exp2026?.status).toBe("met");
+      expect(exp2026?.evidence).toContain("5 years of experience");
+      expect(res2026.metadata.referenceDate).toBe("2026-03-15");
+    });
+
+    it("normalizes skill aliases (e.g. React.js, ReactJS, TS) into canonical concepts", () => {
+      const job = {
+        title: "Frontend Developer",
+        description: "Looking for React and TypeScript developer",
+        requirements: "Must have React and TypeScript",
+        experienceLevel: "Mid",
+        education: null,
+        keywords: ["React", "TypeScript"],
+      };
+
+      const resumeWithAliases = `Jane Dev
+jane@example.com
+
+EXPERIENCE
+Frontend Engineer — Alpha Tech | 2021 - 2023
+• Developed interactive web views using React.js and TS.
+• Managed state using Redux Toolkit.
+`;
+
+      const res = evaluateCandidateWithRules({
+        job,
+        candidate: { resumeText: resumeWithAliases, answers: [] },
+        referenceDate: "2024-01-01",
+      });
+
+      const react = res.criterionResults.find((c) => c.label === "React");
+      expect(react?.status).toBe("met");
+      expect(react?.matchMethod).toBe("built_in_alias");
+
+      const ts = res.criterionResults.find((c) => c.label === "TypeScript");
+      expect(ts?.status).toBe("met");
+      expect(ts?.matchMethod).toBe("built_in_alias");
+    });
+
+    it("isolates criterion-specific tenure: candidate has 8 years total career but only 2 years of Python", () => {
+      const rubric = {
+        version: "custom-v1",
+        criteria: [
+          {
+            key: "crit:exp",
+            label: "Experience",
+            type: "experience_duration" as const,
+            importance: "required" as const,
+            weight: 30,
+            aliases: [],
+            minimumValue: 5, // 5+ years overall career required
+          },
+          {
+            key: "crit:python",
+            label: "Python",
+            type: "skill" as const,
+            importance: "required" as const,
+            weight: 40,
+            aliases: ["Python3", "Py"],
+            minimumValue: 3, // 3+ years of Python specifically required
+          },
+        ],
+      };
+
+      const resume = `Carlos Gomez
+carlos@example.com
+
+EXPERIENCE
+Senior Marketing Analyst — Growth Corp | 2016 - 2020
+• Analyzed market trends using Excel and SQL.
+
+Product Operations — Scale Co | 2020 - 2022
+• Managed cross-functional workflows.
+
+Backend Developer — PyTech | 2022 - 2024
+• Built microservices using Python and FastAPI.
+`;
+
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Senior Backend Developer",
+          description: "Python role",
+          requirements: "5+ years experience, 3+ years Python",
+          experienceLevel: "Senior",
+          education: null,
+          keywords: ["Python"],
+        },
+        candidate: { resumeText: resume, answers: [] },
+        rubric,
+        referenceDate: "2024-06-01",
+      });
+
+      // 1. Overall experience: 2016 to 2024 = 8.0 years -> MEETS 5+ yrs requirement
+      const overallExp = res.criterionResults.find((c) => c.label === "Experience");
+      expect(overallExp?.status).toBe("met");
+      expect(overallExp?.score).toBe(100);
+      expect(overallExp?.evidence).toContain("8 years of experience verified");
+
+      // 2. Python specific experience: ONLY used at PyTech (2022 - 2024 = 2.0 years) -> FAILS 3+ yrs requirement
+      const pythonCrit = res.criterionResults.find((c) => c.label === "Python");
+      expect(pythonCrit?.extendedStatus).toBe("partially_met");
+      expect(pythonCrit?.evidence).toContain("2 years of Python verified across 1 role(s) (PyTech)");
+      expect(pythonCrit?.missingReason).toContain("3+ years of Python required, but only 2 years verified in relevant roles");
+      expect(pythonCrit?.score).toBeLessThan(100);
+    });
+
+    it("evaluates skills declared only in Skills section when duration is required", () => {
+      const rubric = {
+        version: "custom-v1",
+        criteria: [
+          {
+            key: "crit:python",
+            label: "Python",
+            type: "skill" as const,
+            importance: "required" as const,
+            weight: 50,
+            aliases: [],
+            minimumValue: 3, // 3+ years required
+          },
+        ],
+      };
+
+      const resumeWithSkillSectionOnly = `Dev
+dev@example.com
+
+EXPERIENCE
+Project Manager — Biz Corp | 2018 - 2023
+• Managed software delivery timelines.
+
+SKILLS
+• Python
+• Git
+`;
+
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Python Dev",
+          description: "Python",
+          requirements: "3+ years Python",
+          experienceLevel: "Mid",
+          education: null,
+          keywords: ["Python"],
+        },
+        candidate: { resumeText: resumeWithSkillSectionOnly, answers: [] },
+        rubric,
+        referenceDate: "2024-01-01",
+      });
+
+      const pythonCrit = res.criterionResults.find((c) => c.label === "Python");
+      expect(pythonCrit?.extendedStatus).toBe("partially_met");
+      expect(pythonCrit?.evidence).toContain("Declared in Skills section: \"Python\"");
+      expect(pythonCrit?.evidence).toContain("requires 3+ yrs of verified experience");
+      expect(pythonCrit?.missingReason).toContain("only declared as a skill without verified work tenure");
+    });
+
+    it("prevents false positive matches for related but non-equivalent skills (e.g. Next.js does not satisfy React)", () => {
+      const job = {
+        title: "React Developer",
+        description: "Pure React role",
+        requirements: "Requires React experience",
+        experienceLevel: "Mid",
+        education: null,
+        keywords: ["React"],
+      };
+
+      // Candidate only used Angular and Vue (or other frameworks, not React)
+      const resumeWithoutReact = `Frontend Engineer
+candidate@example.com
+
+EXPERIENCE
+Frontend Developer — TechCorp | 2021 - 2023
+• Built client-side web portals using Vue.js and Angular.
+`;
+
+      const res = evaluateCandidateWithRules({
+        job,
+        candidate: { resumeText: resumeWithoutReact, answers: [] },
+        referenceDate: "2024-01-01",
+      });
+
+      const reactCrit = res.criterionResults.find((c) => c.label === "React");
+      expect(reactCrit?.status).toBe("unknown"); // legacy status
+      expect(reactCrit?.extendedStatus).toBe("not_demonstrated");
+      expect(reactCrit?.score).toBeNull();
+    });
   });
 });
+
+

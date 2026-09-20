@@ -1,9 +1,12 @@
 import type { CriterionImportance, CriterionOrigin, CriterionType } from "./types";
 import type { RulesInput, RulesRubric } from "./rules";
+import { resolveSkillConcept } from "./taxonomy/skill-concepts";
 
 export interface StructuredCriterion {
   id: string;
   label: string;
+  canonicalName?: string;
+  conceptId?: string;
   type: CriterionType;
   importance: CriterionImportance;
   isKnockout: boolean;
@@ -75,19 +78,24 @@ function hasRequiredMarker(text: string, term: string): boolean {
  */
 export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[] {
   if (input.rubric && input.rubric.criteria.length > 0) {
-    return input.rubric.criteria.map((c) => ({
-      id: c.key,
-      label: c.label,
-      type: c.type,
-      importance: c.importance,
-      isKnockout: Boolean(c.isKnockout),
-      weight: c.weight,
-      origin: "recruiter_rubric",
-      minimumMonths: c.minimumValue ? c.minimumValue * 12 : undefined,
-      minimumEducationLevelRank: c.type === "education" ? 3 : undefined,
-      targetTokens: [c.label],
-      recruiterAliases: c.aliases ?? [],
-    }));
+    return input.rubric.criteria.map((c) => {
+      const resolved = resolveSkillConcept(c.label, c.aliases ?? []);
+      return {
+        id: c.key,
+        label: c.label,
+        canonicalName: resolved.canonicalName,
+        conceptId: resolved.conceptId,
+        type: c.type,
+        importance: c.importance,
+        isKnockout: Boolean(c.isKnockout),
+        weight: c.weight,
+        origin: "recruiter_rubric",
+        minimumMonths: c.minimumValue ? c.minimumValue * 12 : undefined,
+        minimumEducationLevelRank: c.type === "education" ? 3 : undefined,
+        targetTokens: resolved.searchTokens,
+        recruiterAliases: c.aliases ?? [],
+      };
+    });
   }
 
   const criteria: StructuredCriterion[] = [];
@@ -96,22 +104,30 @@ export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[
 
   for (const skill of keywords) {
     const isRequired = hasRequiredMarker(reqText, skill);
-    const aliases: string[] = [];
-    const lower = skill.toLowerCase();
-    if (lower === "paid acquisition") {
-      aliases.push("paid spend", "paid ads", "google ads", "meta ads", "cac");
-    }
+    const resolved = resolveSkillConcept(skill);
+
+    // Check if requirements explicitly state duration for this skill (e.g. "3+ years Python" or "5 yrs React")
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const tenureRegex = new RegExp(
+      `(\\d{1,2})\\+?\\s*(?:years?|yrs?|años?)\\s*(?:of\\s+)?(?:experience\\s+in\\s+)?${escaped}`,
+      "i",
+    );
+    const tenureMatch = reqText.match(tenureRegex);
+    const minimumMonths = tenureMatch ? Number(tenureMatch[1]) * 12 : undefined;
 
     criteria.push({
       id: `crit:skill:${normalized(skill).replace(/\s+/g, "-")}`,
       label: skill,
+      canonicalName: resolved.canonicalName,
+      conceptId: resolved.conceptId,
       type: "skill",
       importance: isRequired ? "required" : "preferred",
       isKnockout: false,
       weight: 50,
       origin: "structured_job_field",
-      targetTokens: [skill],
-      recruiterAliases: aliases,
+      minimumMonths,
+      targetTokens: resolved.searchTokens,
+      recruiterAliases: [],
     });
   }
 

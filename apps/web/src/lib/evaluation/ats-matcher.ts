@@ -1,11 +1,13 @@
-import type {
-  CandidateFactDocument,
-  TextProvenance,
+import {
+  type CandidateFactDocument,
+  type TextProvenance,
+  unionWorkIntervals,
 } from "./ats-parser";
 import type { StructuredCriterion } from "./criteria-builder";
 import type {
   CriterionMatchEvidence,
   CriterionStatus,
+  MatchMethod,
   StructuredCriterionResult,
 } from "./types";
 
@@ -197,41 +199,197 @@ export function matchCriteriaAgainstFacts(
     const searchTokens = [
       ...criterion.targetTokens,
       ...criterion.recruiterAliases,
-    ];
+    ].sort((a, b) => b.length - a.length);
 
-    // Priority A: Demonstrated in work experience achievements (Gold standard)
+    // Priority A: Search work experience achievements and titles
+    const matchingRoles: Array<{
+      role: (typeof facts.workHistory)[number];
+      snippet: string;
+      provenance: TextProvenance;
+      method: MatchMethod;
+    }> = [];
+
     for (const role of facts.workHistory) {
+      let matchedInRole = false;
       for (const ach of role.achievements) {
         for (const token of searchTokens) {
           if (textMatchesToken(ach.text, token)) {
+            const method: MatchMethod =
+              token.toLowerCase() === criterion.label.toLowerCase()
+                ? "deterministic_exact"
+                : criterion.recruiterAliases.some((a) => a.toLowerCase() === token.toLowerCase())
+                ? "recruiter_alias"
+                : "built_in_alias";
+            matchingRoles.push({
+              role,
+              snippet: ach.text,
+              provenance: ach.provenance,
+              method,
+            });
+            matchedInRole = true;
+            break;
+          }
+        }
+        if (matchedInRole) break;
+      }
+
+      if (!matchedInRole) {
+        for (const token of searchTokens) {
+          if (textMatchesToken(role.title, token)) {
+            matchingRoles.push({
+              role,
+              snippet: `Held role: ${role.title}`,
+              provenance: role.provenance,
+              method:
+                token.toLowerCase() === criterion.label.toLowerCase()
+                  ? "deterministic_exact"
+                  : "built_in_alias",
+            });
+            matchedInRole = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // A1. Skill with specific duration requirement (e.g. "3+ years Python")
+    if (criterion.minimumMonths && criterion.minimumMonths > 0) {
+      const requiredMonths = criterion.minimumMonths;
+      const requiredYears = Math.round((requiredMonths / 12) * 10) / 10;
+
+      if (matchingRoles.length > 0) {
+        const relevantDurationMonths = unionWorkIntervals(matchingRoles.map((m) => m.role));
+        const actualYears = Math.round((relevantDurationMonths / 12) * 10) / 10;
+        const roleSummary = matchingRoles.map((m) => m.role.company).slice(0, 3).join(", ");
+        const first = matchingRoles[0]!;
+
+        if (relevantDurationMonths >= requiredMonths) {
+          const snippet = `${actualYears} years of ${criterion.label} experience verified across ${matchingRoles.length} role(s) (${roleSummary}) (meets ${requiredYears}+ yrs requirement).`;
+          return {
+            criterionId: criterion.id,
+            label: criterion.label,
+            type: criterion.type,
+            status: "met",
+            rawScore: 100,
+            weight: criterion.weight,
+            importance: criterion.importance,
+            isKnockout: criterion.isKnockout,
+            knockoutFailed: false,
+            evidence: {
+              verbatimSnippet: snippet,
+              strength: "demonstrated",
+              method: first.method,
+              confidence: 95,
+              provenance: first.provenance,
+              canonicalSkillName: criterion.canonicalName,
+              relevantDurationMonths,
+            },
+            missingReason: null,
+          };
+        }
+
+        // Less duration than required for this specific skill
+        const ratio = requiredMonths > 0 ? relevantDurationMonths / requiredMonths : 0;
+        const status: CriterionStatus = ratio >= 0.75 ? "partially_met" : (criterion.isKnockout ? "not_met" : "partially_met");
+        const rawScore = Math.max(25, Math.round(ratio * 90));
+        const snippet = `${actualYears} years of ${criterion.label} verified across ${matchingRoles.length} role(s) (${roleSummary}) (${requiredYears}+ yrs required).`;
+
+        return {
+          criterionId: criterion.id,
+          label: criterion.label,
+          type: criterion.type,
+          status,
+          rawScore,
+          weight: criterion.weight,
+          importance: criterion.importance,
+          isKnockout: criterion.isKnockout,
+          knockoutFailed: criterion.isKnockout && status === "not_met",
+          evidence: {
+            verbatimSnippet: snippet,
+            strength: "demonstrated",
+            method: first.method,
+            confidence: 85,
+            provenance: first.provenance,
+            canonicalSkillName: criterion.canonicalName,
+            relevantDurationMonths,
+          },
+          missingReason: `${requiredYears}+ years of ${criterion.label} required, but only ${actualYears} years verified in relevant roles.`,
+        };
+      }
+
+      // Check if skill was declared in skills section without work tenure
+      for (const skill of facts.declaredSkills) {
+        for (const token of searchTokens) {
+          if (textMatchesToken(skill.name, token)) {
             return {
               criterionId: criterion.id,
               label: criterion.label,
               type: criterion.type,
-              status: "met",
-              rawScore: 100, // Demonstrated in work
+              status: "partially_met",
+              rawScore: 40,
               weight: criterion.weight,
               importance: criterion.importance,
               isKnockout: criterion.isKnockout,
-              knockoutFailed: false,
+              knockoutFailed: criterion.isKnockout,
               evidence: {
-                verbatimSnippet: `${role.company} (${role.title}): "${ach.text}"`,
-                strength: "demonstrated",
-                method: "deterministic_exact",
-                confidence: 95,
-                provenance: ach.provenance,
+                verbatimSnippet: `Declared in Skills section: "${skill.name}" (requires ${requiredYears}+ yrs of verified experience).`,
+                strength: "declared",
+                method:
+                  token.toLowerCase() === criterion.label.toLowerCase()
+                    ? "deterministic_exact"
+                    : "built_in_alias",
+                confidence: 75,
+                provenance: skill.provenance,
+                canonicalSkillName: criterion.canonicalName,
+                relevantDurationMonths: 0,
               },
-              missingReason: null,
+              missingReason: `${requiredYears}+ years of ${criterion.label} required, but only declared as a skill without verified work tenure.`,
             };
           }
         }
       }
     }
 
+    // A2. Standard skill matching (no minimum duration constraint)
+    if (matchingRoles.length > 0) {
+      const first = matchingRoles[0]!;
+      const relevantDurationMonths = unionWorkIntervals(matchingRoles.map((m) => m.role));
+      const snippet = `${first.role.company} (${first.role.title}): "${first.snippet}"`;
+
+      return {
+        criterionId: criterion.id,
+        label: criterion.label,
+        type: criterion.type,
+        status: "met",
+        rawScore: 100, // Demonstrated in work
+        weight: criterion.weight,
+        importance: criterion.importance,
+        isKnockout: criterion.isKnockout,
+        knockoutFailed: false,
+        evidence: {
+          verbatimSnippet: snippet,
+          strength: "demonstrated",
+          method: first.method,
+          confidence: 95,
+          provenance: first.provenance,
+          canonicalSkillName: criterion.canonicalName,
+          relevantDurationMonths,
+        },
+        missingReason: null,
+      };
+    }
+
     // Priority B: Declared in Skills section
     for (const skill of facts.declaredSkills) {
       for (const token of searchTokens) {
         if (textMatchesToken(skill.name, token)) {
+          const method: MatchMethod =
+            token.toLowerCase() === criterion.label.toLowerCase()
+              ? "deterministic_exact"
+              : criterion.recruiterAliases.some((a) => a.toLowerCase() === token.toLowerCase())
+              ? "recruiter_alias"
+              : "built_in_alias";
+
           return {
             criterionId: criterion.id,
             label: criterion.label,
@@ -245,9 +403,10 @@ export function matchCriteriaAgainstFacts(
             evidence: {
               verbatimSnippet: `Declared in Skills section: "${skill.name}"`,
               strength: "declared",
-              method: "deterministic_exact",
+              method,
               confidence: 85,
               provenance: skill.provenance,
+              canonicalSkillName: criterion.canonicalName,
             },
             missingReason: null,
           };
@@ -255,34 +414,7 @@ export function matchCriteriaAgainstFacts(
       }
     }
 
-    // Priority C: Job Title / Headline match
-    for (const role of facts.workHistory) {
-      for (const token of searchTokens) {
-        if (textMatchesToken(role.title, token)) {
-          return {
-            criterionId: criterion.id,
-            label: criterion.label,
-            type: criterion.type,
-            status: "met",
-            rawScore: 85,
-            weight: criterion.weight,
-            importance: criterion.importance,
-            isKnockout: criterion.isKnockout,
-            knockoutFailed: false,
-            evidence: {
-              verbatimSnippet: `Held role: ${role.title} at ${role.company}`,
-              strength: "demonstrated",
-              method: "deterministic_exact",
-              confidence: 90,
-              provenance: role.provenance,
-            },
-            missingReason: null,
-          };
-        }
-      }
-    }
-
-    // Priority D: Application Answers or Profile Skills
+    // Priority C: Application Answers or Profile Skills
     if (additionalContext?.answers) {
       for (const qa of additionalContext.answers) {
         for (const token of searchTokens) {
@@ -306,6 +438,7 @@ export function matchCriteriaAgainstFacts(
                   sourceType: "application_qa",
                   rawText: qa.answer,
                 },
+                canonicalSkillName: criterion.canonicalName,
               },
               missingReason: null,
             };

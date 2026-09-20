@@ -38,6 +38,7 @@ export type EvidenceStrength =
 export type MatchMethod =
   | "deterministic_exact"
   | "deterministic_stem"
+  | "built_in_alias"
   | "recruiter_alias"
   | "structural_date_calc"
   | "ai_resolved";
@@ -53,6 +54,8 @@ export interface CriterionMatchEvidence {
     rawEquivalenceConfidence: number;
   };
   provenance: TextProvenance;
+  canonicalSkillName?: string;
+  relevantDurationMonths?: number;
 }
 
 export interface StructuredCriterionResult {
