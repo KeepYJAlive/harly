@@ -101,6 +101,7 @@ export async function generateAiEvaluationAction(input: {
       jobEducation: jobs.education,
       jobKeywords: jobs.keywords,
       evaluationMode: jobs.evaluationMode,
+      appliedAt: applications.appliedAt,
     })
     .from(applications)
     .innerJoin(
@@ -180,6 +181,7 @@ export async function generateAiEvaluationAction(input: {
         skills: candidateSkills,
         experienceYears: row.experienceYears,
       },
+      referenceDate: row.appliedAt ? new Date(row.appliedAt).toISOString() : undefined,
     };
     const source = aiConfig ? "ai" : "rules";
     const publishedRubric = aiConfig

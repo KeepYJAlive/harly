@@ -77,6 +77,7 @@ export async function scheduleAutoScore(
         jobExperienceLevel: jobs.experienceLevel,
         jobEducation: jobs.education,
         jobKeywords: jobs.keywords,
+        appliedAt: applications.appliedAt,
       })
       .from(applications)
       .innerJoin(
@@ -183,6 +184,7 @@ export async function scheduleAutoScore(
         skills: Array.isArray(row.skills) ? (row.skills as string[]) : [],
         experienceYears: row.experienceYears,
       },
+      referenceDate: row.appliedAt ? new Date(row.appliedAt).toISOString() : undefined,
     };
     const source = aiConfig ? "ai" : "rules";
     const publishedRubric = aiConfig

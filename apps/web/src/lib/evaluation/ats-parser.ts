@@ -50,7 +50,52 @@ export interface ParsedDeclaredSkill {
   provenance: TextProvenance;
 }
 
+export interface EvaluationDateContext {
+  referenceYear: number;
+  referenceMonth: number; // 1-12
+  referenceDateStr: string; // ISO date string e.g. "2026-09-19"
+}
+
+export function resolveDateContext(
+  reference?: EvaluationDateContext | string | Date | number,
+): EvaluationDateContext {
+  if (!reference) {
+    const now = new Date();
+    return {
+      referenceYear: now.getFullYear(),
+      referenceMonth: now.getMonth() + 1,
+      referenceDateStr: now.toISOString().slice(0, 10),
+    };
+  }
+  if (typeof reference === "object" && "referenceYear" in reference) {
+    return reference;
+  }
+  if (typeof reference === "number") {
+    return {
+      referenceYear: reference,
+      referenceMonth: 12,
+      referenceDateStr: `${reference}-12-31`,
+    };
+  }
+  if (typeof reference === "string" && /^\d{4}-\d{2}-\d{2}/.test(reference)) {
+    const parts = reference.slice(0, 10).split("-");
+    return {
+      referenceYear: Number(parts[0]),
+      referenceMonth: Number(parts[1]),
+      referenceDateStr: reference.slice(0, 10),
+    };
+  }
+  const dateObj = reference instanceof Date ? reference : new Date(reference);
+  const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
+  return {
+    referenceYear: validDate.getFullYear(),
+    referenceMonth: validDate.getMonth() + 1,
+    referenceDateStr: validDate.toISOString().slice(0, 10),
+  };
+}
+
 export interface CandidateFactDocument {
+  referenceDate: string;
   contact: {
     fullName?: string;
     headline?: string;
@@ -163,7 +208,7 @@ export function cleanBullet(line: string): string {
 
 export function parseDateInterval(
   text: string,
-  referenceYear: number,
+  referenceDateOrContext?: EvaluationDateContext | string | Date | number,
 ): {
   startYear?: number;
   startMonth?: number;
@@ -172,6 +217,10 @@ export function parseDateInterval(
   isCurrent: boolean;
   durationMonths: number;
 } | null {
+  const dateCtx = referenceDateOrContext && typeof referenceDateOrContext === "object" && "referenceYear" in referenceDateOrContext
+    ? referenceDateOrContext
+    : resolveDateContext(referenceDateOrContext);
+
   const cleaned = cleanLine(text);
   const presentRegex = /\b(present|current|now|actualidad|presente|hoy)\b/i;
 
@@ -184,11 +233,11 @@ export function parseDateInterval(
     const startYear = Number(rangeMatch[2]);
     const isNow = Boolean(rangeMatch[5]) || presentRegex.test(rangeMatch[0]);
     const endMonth = isNow
-      ? startMonth ? new Date().getMonth() + 1 : undefined
+      ? startMonth ? dateCtx.referenceMonth : undefined
       : rangeMatch[3]
       ? MONTHS[rangeMatch[3].toLowerCase().slice(0, 3)]
       : undefined;
-    const endYear = isNow ? referenceYear : Number(rangeMatch[4]);
+    const endYear = isNow ? dateCtx.referenceYear : Number(rangeMatch[4]);
 
     if (!Number.isNaN(startYear) && !Number.isNaN(endYear) && endYear >= startYear) {
       let months: number;
@@ -225,7 +274,7 @@ export function parseDateInterval(
 
 export function parseRoleHeader(
   line: string,
-  referenceYear: number,
+  referenceDateOrContext?: EvaluationDateContext | string | Date | number,
 ): {
   title: string;
   company: string;
@@ -234,7 +283,7 @@ export function parseRoleHeader(
   const cleaned = cleanLine(line);
   if (!cleaned || isBulletLine(line)) return null;
 
-  const interval = parseDateInterval(cleaned, referenceYear);
+  const interval = parseDateInterval(cleaned, referenceDateOrContext);
 
   const textWithoutDate = cleaned
     .replace(/\s*\([^)]*(?:19\d{2}|20\d{2}|present|actualidad)[^)]*\)/gi, "")
@@ -269,10 +318,56 @@ function detectSection(line: string): keyof typeof SECTION_PATTERNS | null {
 /**
  * Parses raw resume plain text into structured candidate facts.
  */
+/**
+ * Calculates the contiguous non-overlapping union of work intervals in months.
+ */
+export function unionWorkIntervals(
+  roles: Array<{
+    startYear?: number;
+    startMonth?: number;
+    endYear?: number;
+    endMonth?: number;
+    durationMonths?: number | null;
+  }>,
+): number {
+  const validIntervals = roles
+    .filter((r) => r.startYear && r.endYear && r.endYear >= r.startYear)
+    .map((r) => ({
+      start: r.startYear! * 12 + (r.startMonth ?? 0),
+      end: r.endYear! * 12 + (r.endMonth ?? 0),
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  if (validIntervals.length === 0) {
+    return roles.reduce((sum, r) => sum + (r.durationMonths ?? 0), 0);
+  }
+
+  let mergedSpan = 0;
+  let curStart = validIntervals[0]!.start;
+  let curEnd = validIntervals[0]!.end;
+
+  for (let j = 1; j < validIntervals.length; j++) {
+    const next = validIntervals[j]!;
+    if (next.start <= curEnd) {
+      curEnd = Math.max(curEnd, next.end);
+    } else {
+      mergedSpan += curEnd - curStart;
+      curStart = next.start;
+      curEnd = next.end;
+    }
+  }
+  mergedSpan += curEnd - curStart;
+  return mergedSpan;
+}
+
+/**
+ * Parses raw resume plain text into structured candidate facts.
+ */
 export function parseResumeFacts(
   text: string,
-  referenceYear: number = new Date().getFullYear(),
+  referenceDate?: EvaluationDateContext | string | Date | number,
 ): CandidateFactDocument {
+  const dateCtx = resolveDateContext(referenceDate);
   const rawLines = text.split(/\r?\n/);
   const cleanedLines = rawLines.map(cleanLine);
 
@@ -324,7 +419,7 @@ export function parseResumeFacts(
 
     if (currentSection === "experience") {
       const isBullet = isBulletLine(rawLines[i] ?? line);
-      const parsedHeader = !isBullet ? parseRoleHeader(line, referenceYear) : null;
+      const parsedHeader = !isBullet ? parseRoleHeader(line, dateCtx) : null;
 
       if (parsedHeader) {
         if (currentWork) workHistory.push(currentWork);
@@ -431,32 +526,8 @@ export function parseResumeFacts(
   let workTimelineConfidence: CandidateFactDocument["workTimelineConfidence"] = "high";
 
   if (workHistory.length > 0) {
-    const validIntervals = workHistory
-      .filter((r) => r.startYear && r.endYear)
-      .map((r) => ({
-        start: r.startYear! * 12 + (r.startMonth ?? 0),
-        end: r.endYear! * 12 + (r.endMonth ?? 0),
-      }))
-      .sort((a, b) => a.start - b.start);
-
-    if (validIntervals.length > 0) {
-      let mergedSpan = 0;
-      let curStart = validIntervals[0]!.start;
-      let curEnd = validIntervals[0]!.end;
-
-      for (let j = 1; j < validIntervals.length; j++) {
-        const next = validIntervals[j]!;
-        if (next.start <= curEnd) {
-          curEnd = Math.max(curEnd, next.end);
-        } else {
-          mergedSpan += curEnd - curStart;
-          curStart = next.start;
-          curEnd = next.end;
-        }
-      }
-      mergedSpan += curEnd - curStart;
-      totalWorkDurationMonths = mergedSpan;
-    } else {
+    totalWorkDurationMonths = unionWorkIntervals(workHistory);
+    if (totalWorkDurationMonths === 0) {
       workTimelineConfidence = "low";
       totalWorkDurationMonths = workHistory.reduce(
         (sum, r) => sum + (r.durationMonths ?? 18),
@@ -481,6 +552,7 @@ export function parseResumeFacts(
     : null;
 
   return {
+    referenceDate: dateCtx.referenceDateStr,
     contact: {
       fullName: headerName,
       headline,

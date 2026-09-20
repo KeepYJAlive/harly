@@ -1,5 +1,5 @@
 import type { CandidateScore } from "@/lib/ai/schemas";
-import { parseResumeFacts } from "./ats-parser";
+import { parseResumeFacts, resolveDateContext } from "./ats-parser";
 import { buildStructuredCriteria } from "./criteria-builder";
 import { matchCriteriaAgainstFacts } from "./ats-matcher";
 import type { EvaluationMode } from "./mode";
@@ -36,6 +36,15 @@ export const SCORING_CONSTANTS = {
   /** Maybe tier minimum threshold */
   MAYBE_MIN_SCORE: 45,
 } as const;
+
+export type EvaluationMetadata = {
+  engineVersion: string;
+  referenceDate: string;
+  evaluatedAt: string;
+  totalCriteriaCount: number;
+  scoredCriteriaCount: number;
+  neutralEvidenceBaseline: number;
+};
 
 export type RulesCriterion = {
   key: string;
@@ -80,6 +89,7 @@ export type RulesEvaluation = {
   // Extended v4 metrics:
   demonstratedScore: number;
   coverageAdjustedScore: number;
+  metadata: EvaluationMetadata;
 };
 
 export type RulesInput = {
@@ -103,6 +113,7 @@ export type RulesInput = {
     experienceYears?: number | null;
   };
   rubric?: RulesRubric;
+  referenceDate?: string;
 };
 
 function clamp(value: number): number {
@@ -114,7 +125,8 @@ function clamp(value: number): number {
  */
 export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
   const resumeText = input.candidate.resumeText ?? "";
-  const facts = parseResumeFacts(resumeText);
+  const dateCtx = resolveDateContext(input.referenceDate);
+  const facts = parseResumeFacts(resumeText, dateCtx);
 
   // If candidate had explicit experience years in DB that exceed parsed, use maximum
   if (input.candidate.experienceYears && input.candidate.experienceYears > facts.totalExperienceYears) {
@@ -279,6 +291,15 @@ export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
     })),
   };
 
+  const metadata: EvaluationMetadata = {
+    engineVersion: RULES_EVALUATION_VERSION,
+    referenceDate: dateCtx.referenceDateStr,
+    evaluatedAt: new Date().toISOString(),
+    totalCriteriaCount: matchedResults.length,
+    scoredCriteriaCount: scoredCount,
+    neutralEvidenceBaseline: SCORING_CONSTANTS.UNVERIFIED_EVIDENCE_BASELINE,
+  };
+
   return {
     rubric,
     criterionResults,
@@ -287,6 +308,7 @@ export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
     requiresHumanReview,
     demonstratedScore,
     coverageAdjustedScore,
+    metadata,
     result: {
       score: coverageAdjustedScore,
       recommendation,
