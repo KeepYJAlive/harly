@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isDemoMode } from "@harly/config";
+
 /**
  * Minimal Telegram Bot API client. Host is fixed to api.telegram.org , the
  * token never composes an arbitrary URL, so no SSRF surface.
@@ -19,6 +21,10 @@ async function telegramFetch<T>(
   body?: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
+  // Public demo: never call api.telegram.org (workflow, notify, settings test/save).
+  if (isDemoMode()) {
+    throw new Error("Telegram API is disabled in the demo.");
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
