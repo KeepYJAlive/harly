@@ -333,6 +333,8 @@ export function SignaturePad({ value, onChange, allowSaved = false, onVectorChan
     setSelectedSavedId(signature.id);
     // Fase 2 dual-read: vector rows rasterize to the PNG the bake flow
     // expects. Failure falls back to leaving the canvas untouched.
+    // Always replace vector state: a prior draw/type mark must not outrank
+    // the saved entry the user just picked (finalize prefers vector).
     if (signature.kind === "vector") {
       void vectorToPngDataUrl(signature.vectorData)
         .then((png) => {
@@ -342,12 +344,24 @@ export function SignaturePad({ value, onChange, allowSaved = false, onVectorChan
           }
           internalValueRef.current = png;
           onChange(png);
+          if (vectorEnabled) {
+            emitVector({
+              outlinePath: "",
+              areContours: true,
+              thickness: 0,
+              width: 0,
+              height: 0,
+              curveCount: 0,
+              compressed: signature.vectorData,
+            });
+          }
         })
         .catch(() => toast.error("That vector signature could not be loaded."));
       return;
     }
     internalValueRef.current = signature.dataUrl;
     onChange(signature.dataUrl);
+    if (vectorEnabled) emitVector(null);
   }
 
   function deleteSaved(id: string) {
