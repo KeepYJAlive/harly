@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   evaluateCandidateWithRules,
+  replayRulesEvaluation,
   RULES_EVALUATION_VERSION,
   SCORING_CONSTANTS,
 } from "./rules";
+import { buildStructuredCriteria } from "./criteria-builder";
 
-describe("Harly ATS Deterministic Engine rules-v4", () => {
+describe("Harly ATS Deterministic Engine rules-v5", () => {
   const juniorPhpJob = {
     title: "Junior PHP Engineer",
     description: "Build web applications.",
@@ -31,9 +33,11 @@ PHP Developer - Acme Web (2024 - Present)
 `,
         answers: [],
       },
+      // Phase 0 exit gate: every duration-sensitive test pins an explicit referenceDate.
+      referenceDate: "2026-09-19",
     });
 
-    expect(RULES_EVALUATION_VERSION).toBe("rules-v4");
+    expect(RULES_EVALUATION_VERSION).toBe("rules-v5");
     expect(result.result.score).toBeGreaterThanOrEqual(80);
     expect(result.criterionResults.map((c) => c.label)).toContain("PHP");
     expect(
@@ -89,6 +93,9 @@ B.A. Business & Marketing — State University of Technology (2014–2018)
         resumeText: isabellaResume,
         answers: [],
       },
+      // Pinned: "2023–Present" tenure is referenceDate-relative; freezing keeps
+      // the 8-year gold deterministic (Phase 0 exit gate).
+      referenceDate: "2026-09-19",
     });
 
     // 8.0 years verified across 3 roles (3 yrs + 3 yrs + 2 yrs = 8 yrs exactly)
@@ -153,11 +160,15 @@ Frontend Engineer - Tech Co (2024 - Present)
         resumeText: lowCoverageResume,
         answers: [],
       },
+      referenceDate: "2026-09-19",
     });
 
-    // 11 criteria total (10 skills + Experience)
-    // 3 scored: React (100 @ wt 25), TypeScript (100 @ wt 25), Experience (40 @ wt 25) -> demonstratedScore = (2500 + 2500 + 1000) / 75 = 80
-    expect(result.demonstratedScore).toBe(80);
+    // 12 criteria total (10 skills + Experience + title relevance).
+    // 4 scored: React (100 @ wt 25), TypeScript (100 @ wt 25), Experience (40 @ wt 25),
+    // Senior Full Stack Engineer title (45 @ wt 10 effective — Frontend is related
+    // but not equivalent to Full Stack, §8.4, so partial rather than met).
+    // demonstratedScore = (2500 + 2500 + 1000 + 450) / 85 = 76.
+    expect(result.demonstratedScore).toBe(76);
     // Coverage is low (~27%) because 8 skills are not_demonstrated
     expect(result.evidenceCoverage).toBeLessThan(35);
     // The coverageAdjustedScore shrinks toward the neutral baseline (40)
@@ -192,6 +203,7 @@ Backend Engineer — Cloud Corp (2022 - Present)
         resumeText: resumeWithOnlyRequired,
         answers: [],
       },
+      referenceDate: "2026-09-19",
     });
 
     // Go and Docker are met
@@ -239,6 +251,7 @@ Contract Developer — Company B (2022 - 2024)
         resumeText: overlappingResume,
         answers: [],
       },
+      referenceDate: "2026-09-19",
     });
 
     const expResult = result.criterionResults.find((c) => c.label === "Experience");
@@ -479,7 +492,6 @@ Sales Rep — FastSales
         candidate: { resumeText: resumeWithoutDates, answers: [] },
       });
 
-      const exp = res.criterionResults.find((c) => c.label === "Experience");
       // Low confidence timeline
       expect(res.requiresHumanReview).toBe(true);
       // Sales skill is still identified in the role
@@ -516,8 +528,11 @@ Frontend Engineer — Acme Corp | Mar 2021 - Present
       expect(exp2024?.extendedStatus).toBe("partially_met");
       expect(exp2024?.evidence).toContain("3 years of experience");
       expect(res2024.metadata.referenceDate).toBe("2024-03-15");
-      expect(res2024.metadata.engineVersion).toBe("rules-v4");
+      expect(res2024.metadata.engineVersion).toBe("rules-v5");
       expect(res2024.metadata.neutralEvidenceBaseline).toBe(40);
+      expect(res2024.candidateFacts.schemaVersion).toBe(2);
+      expect(res2024.skillProfiles.schemaVersion).toBe(2);
+      expect(res2024.skillProfiles.profiles.some((p) => p.canonicalName === "React")).toBe(true);
 
       // Re-evaluated as of March 2026 (exactly 5 years / 60 months -> meets 4+ years requirement)
       const res2026 = evaluateCandidateWithRules({
@@ -628,9 +643,13 @@ Backend Developer — PyTech | 2022 - 2024
       // 2. Python specific experience: ONLY used at PyTech (2022 - 2024 = 2.0 years) -> FAILS 3+ yrs requirement
       const pythonCrit = res.criterionResults.find((c) => c.label === "Python");
       expect(pythonCrit?.extendedStatus).toBe("partially_met");
-      expect(pythonCrit?.evidence).toContain("2 years of Python verified across 1 role(s) (PyTech)");
-      expect(pythonCrit?.missingReason).toContain("3+ years of Python required, but only 2 years verified in relevant roles");
+      expect(pythonCrit?.evidence).toContain("roles spanning up to 2 years of Python");
+      expect(pythonCrit?.missingReason).toContain("documented evidence window reaches at most 2 years");
       expect(pythonCrit?.score).toBeLessThan(100);
+
+      const pythonAssessment = res.criterionAssessments.find((c) => c.label === "Python");
+      expect(pythonAssessment?.evidence?.supportingEvidence).toHaveLength(1);
+      expect(pythonAssessment?.evidence?.supportingEvidence?.[0]?.provenance.rawText).toContain("Python");
     });
 
     it("evaluates skills declared only in Skills section when duration is required", () => {
@@ -713,6 +732,462 @@ Frontend Developer — TechCorp | 2021 - 2023
       expect(reactCrit?.score).toBeNull();
     });
   });
+
+  describe("Phase 0 — versioned evaluation snapshots (Audit doc §5)", () => {
+    const snapshotJob = {
+      title: "Backend Developer",
+      description: "Python role",
+      requirements: "Requires Python experience",
+      experienceLevel: "Mid",
+      education: null,
+      keywords: ["Python"],
+    };
+
+    const snapshotResume = `Sam Dev
+sam@example.com
+
+EXPERIENCE
+Backend Developer — Acme Corp | 2020 - 2023
+• Built APIs using Python.
+`;
+
+    function snapshotInput(overrides: Record<string, unknown> = {}) {
+      return {
+        job: snapshotJob,
+        candidate: { resumeText: snapshotResume, answers: [] as Array<{ question: string; answer: string }> },
+        referenceDate: "2024-06-01",
+        evaluatedAt: "2024-06-01T12:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("exposes engine, layer, taxonomy, and configuration versions in metadata", () => {
+      const res = evaluateCandidateWithRules(snapshotInput());
+      expect(res.metadata.engineVersion).toBe("rules-v5");
+      expect(res.metadata.parserVersion).toBe("parser-v2");
+    expect(res.metadata.matcherVersion).toBe("matcher-v3");
+    expect(res.metadata.scoringVersion).toBe("scoring-v3");
+      expect(res.metadata.taxonomyVersion).toBe("skill-taxonomy-v2");
+      expect(res.metadata.referenceDate).toBe("2024-06-01");
+      expect(res.metadata.configuration.neutralEvidenceBaseline).toBe(
+        SCORING_CONSTANTS.UNVERIFIED_EVIDENCE_BASELINE,
+      );
+      expect(res.metadata.configuration.requiredWeightFactor).toBe(SCORING_CONSTANTS.REQUIRED_WEIGHT_FACTOR);
+      expect(res.metadata.configuration.preferredWeightFactor).toBe(SCORING_CONSTANTS.PREFERRED_WEIGHT_FACTOR);
+      expect(res.metadata.configuration.tierThresholds.strongYesMinScore).toBe(
+        SCORING_CONSTANTS.STRONG_YES_MIN_SCORE,
+      );
+    });
+
+    it("fingerprints the exact resume, facts, and rubric inputs", () => {
+      const res = evaluateCandidateWithRules(snapshotInput());
+      for (const hash of [res.metadata.resumeSourceHash, res.metadata.candidateFactsHash, res.metadata.rubricHash]) {
+        expect(hash).toMatch(/^[0-9a-f]{42}$/);
+      }
+      // Hashes are stable: same inputs always produce the same fingerprints.
+      const replay = evaluateCandidateWithRules(snapshotInput());
+      expect(replay.metadata.resumeSourceHash).toBe(res.metadata.resumeSourceHash);
+      expect(replay.metadata.candidateFactsHash).toBe(res.metadata.candidateFactsHash);
+      expect(replay.metadata.rubricHash).toBe(res.metadata.rubricHash);
+    });
+
+    it("reproduces byte-identical output from identical snapshot inputs", () => {
+      const first = evaluateCandidateWithRules(snapshotInput());
+      const second = evaluateCandidateWithRules(snapshotInput());
+      expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+    });
+
+    it("replays from persisted facts, profiles, rubric, and metadata", () => {
+      const original = evaluateCandidateWithRules(snapshotInput());
+      const replay = replayRulesEvaluation({
+        rubric: original.rubric,
+        candidateFacts: original.candidateFacts,
+        skillProfiles: original.skillProfiles,
+        metadata: original.metadata,
+      });
+
+      expect(replay.result).toEqual(original.result);
+      expect(replay.criterionAssessments).toEqual(original.criterionAssessments);
+      expect(replay.metadata.referenceDate).toBe(original.metadata.referenceDate);
+      expect(replay.metadata.evaluatedAt).toBe(original.metadata.evaluatedAt);
+      expect(replay.metadata.resumeSourceHash).toBe(original.metadata.resumeSourceHash);
+      expect(replay.metadata.candidateFactsHash).toBe(original.metadata.candidateFactsHash);
+      expect(replay.metadata.rubricHash).toBe(original.metadata.rubricHash);
+    });
+
+    it("keeps scores and hashes stable when only evaluatedAt differs", () => {
+      const first = evaluateCandidateWithRules(snapshotInput());
+      const second = evaluateCandidateWithRules(
+        snapshotInput({ evaluatedAt: "2024-06-02T12:00:00.000Z" }),
+      );
+      expect(second.result.score).toBe(first.result.score);
+      expect(second.metadata.resumeSourceHash).toBe(first.metadata.resumeSourceHash);
+      expect(second.metadata.candidateFactsHash).toBe(first.metadata.candidateFactsHash);
+      expect(second.metadata.rubricHash).toBe(first.metadata.rubricHash);
+      expect(second.metadata.evaluatedAt).not.toBe(first.metadata.evaluatedAt);
+    });
+
+    it("changes fingerprints when the resume or rubric changes (historical immutability signal)", () => {
+      const base = evaluateCandidateWithRules(snapshotInput());
+      const changedResume = evaluateCandidateWithRules(
+        snapshotInput({ candidate: { resumeText: `${snapshotResume}\n• Also used Go.`, answers: [] } }),
+      );
+      expect(changedResume.metadata.resumeSourceHash).not.toBe(base.metadata.resumeSourceHash);
+      expect(changedResume.metadata.candidateFactsHash).not.toBe(base.metadata.candidateFactsHash);
+
+      const changedRubric = evaluateCandidateWithRules(
+        snapshotInput({
+          job: { ...snapshotJob, keywords: ["Python", "Docker"] },
+        }),
+      );
+      expect(changedRubric.metadata.rubricHash).not.toBe(base.metadata.rubricHash);
+      // Unchanged side stays stable.
+      expect(changedRubric.metadata.resumeSourceHash).toBe(base.metadata.resumeSourceHash);
+    });
+
+    it("does not use candidate identity fields as matching signals", () => {
+      const base = evaluateCandidateWithRules(snapshotInput());
+      const identityChanged = evaluateCandidateWithRules(
+        snapshotInput({
+          candidate: {
+            ...snapshotInput().candidate,
+            fullName: "A completely different name",
+            email: "different@example.test",
+          },
+        }),
+      );
+      expect(identityChanged.result).toEqual(base.result);
+      expect(identityChanged.metadata.resumeSourceHash).toBe(base.metadata.resumeSourceHash);
+      expect(identityChanged.metadata.candidateFactsHash).toBe(base.metadata.candidateFactsHash);
+    });
+
+    it("records a caller-provided evaluationId verbatim and omits it otherwise", () => {
+      const withId = evaluateCandidateWithRules(snapshotInput({ evaluationId: "eval-123" }));
+      expect(withId.metadata.evaluationId).toBe("eval-123");
+      const withoutId = evaluateCandidateWithRules(snapshotInput());
+      expect(withoutId.metadata.evaluationId).toBeUndefined();
+    });
+  });
+
+  describe("Phase 2 — rescore without reparse (exit gate)", () => {
+    const rescoreJob = {
+      title: "Backend Developer",
+      description: "Python role",
+      requirements: "Requires Python experience",
+      experienceLevel: "Mid",
+      education: null,
+      keywords: ["Python"],
+    };
+
+    const rescoreResume = `Sam Dev
+sam@example.com
+
+EXPERIENCE
+Backend Developer — Acme Corp | 2020 - 2023
+• Built APIs using Python.
+`;
+
+    it("reuses persisted snapshots: rubric change re-runs match/score only", () => {
+      const first = evaluateCandidateWithRules({
+        job: rescoreJob,
+        candidate: { resumeText: rescoreResume, answers: [] },
+        referenceDate: "2024-06-01",
+        evaluatedAt: "2024-06-01T12:00:00.000Z",
+      });
+
+      // Rescore with NO resume text, reusing snapshots, against a changed rubric.
+      const second = evaluateCandidateWithRules({
+        job: { ...rescoreJob, keywords: ["Python", "Kubernetes"] },
+        candidate: { resumeText: null, answers: [] },
+        referenceDate: "2024-06-01",
+        evaluatedAt: "2024-06-01T12:00:00.000Z",
+        candidateFacts: first.candidateFacts,
+        skillProfiles: first.skillProfiles,
+      });
+
+      // Same resume inputs -> identical fact identity, no reparse involved.
+      expect(second.metadata.candidateFactsHash).toBe(first.metadata.candidateFactsHash);
+      expect(second.metadata.rubricHash).not.toBe(first.metadata.rubricHash);
+      // New rubric criterion appears and moves the outcome.
+      expect(second.criterionResults.some((c) => c.label === "Kubernetes")).toBe(true);
+      expect(first.criterionResults.some((c) => c.label === "Kubernetes")).toBe(false);
+      expect(second.criterionResults.find((c) => c.label === "Kubernetes")?.extendedStatus).toBe(
+        "not_demonstrated",
+      );
+    });
+
+    it("never mutates caller-provided snapshots (copy-on-write override)", () => {
+      const base = evaluateCandidateWithRules({
+        job: rescoreJob,
+        candidate: { resumeText: rescoreResume, answers: [] },
+        referenceDate: "2024-06-01",
+      });
+      const factsBefore = JSON.stringify(base.candidateFacts);
+      evaluateCandidateWithRules({
+        job: rescoreJob,
+        candidate: { resumeText: null, answers: [], experienceYears: 99 },
+        referenceDate: "2024-06-01",
+        candidateFacts: base.candidateFacts,
+        skillProfiles: base.skillProfiles,
+      });
+      expect(JSON.stringify(base.candidateFacts)).toBe(factsBefore);
+    });
+
+    it("rejects incompatible snapshot schema versions loudly", () => {
+      const base = evaluateCandidateWithRules({
+        job: rescoreJob,
+        candidate: { resumeText: rescoreResume, answers: [] },
+        referenceDate: "2024-06-01",
+      });
+      const staleFacts = { ...base.candidateFacts, schemaVersion: 1 } as never;
+      expect(() =>
+        evaluateCandidateWithRules({
+          job: rescoreJob,
+          candidate: { resumeText: null, answers: [] },
+          referenceDate: "2024-06-01",
+          candidateFacts: staleFacts,
+        }),
+      ).toThrow(/Incompatible candidateFacts snapshot/);
+    });
+
+    it("auto-built criteria never carry knockout or exclusion (governance)", () => {
+      const criteria = buildStructuredCriteria({
+        job: {
+          title: "Backend Engineer",
+          description: "Go and Docker are required. Must have Kubernetes.",
+          requirements: "Go is required. Docker is required. Kubernetes mandatory.",
+          experienceLevel: "Senior (5+ years)",
+          education: "Bachelor's",
+          keywords: ["Go", "Docker", "Kubernetes"],
+        },
+        candidate: { resumeText: null, answers: [] },
+      });
+      expect(criteria.length).toBeGreaterThan(0);
+      for (const c of criteria) {
+        expect(c.isKnockout).toBe(false);
+        expect(c.excluded ?? false).toBe(false);
+      }
+    });
+  });
+
+  describe("Phase 3 — occupation / title normalization (§11, exit gates)", () => {
+    const backendResume = `Bea Dev
+bea@example.com
+
+EXPERIENCE
+Backend Engineer — Cloud Corp (2021 - 2024)
+• Built billing APIs in Go.
+`;
+
+    it("emits a preferred, non-gating domain_title; exact occupation match -> met", () => {
+      const input = {
+        job: {
+          title: "Backend Developer",
+          description: "APIs",
+          requirements: null,
+          experienceLevel: null,
+          education: null,
+          keywords: ["Go"],
+        },
+        candidate: { resumeText: backendResume, answers: [] as Array<{ question: string; answer: string }> },
+        referenceDate: "2024-06-01",
+      };
+      const structured = buildStructuredCriteria(input);
+      const titleCrit = structured.find((c) => c.id === "crit:domain-title");
+      expect(titleCrit?.type).toBe("domain_title");
+      expect(titleCrit?.importance).toBe("preferred");
+      expect(titleCrit?.isKnockout).toBe(false);
+
+      const res = evaluateCandidateWithRules(input);
+      const title = res.criterionResults.find((c) => c.key === "crit:domain-title");
+      expect(title).toBeDefined();
+      expect(title?.extendedStatus).toBe("met");
+      expect(title?.score).toBe(100);
+      expect(title?.isKnockout).toBe(false);
+      expect(title?.evidence).toContain("occupation matches target");
+    });
+
+    it("related-but-not-equivalent titles stay partial, never met (§8.4)", () => {
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Project Manager",
+          description: "Delivery",
+          requirements: null,
+          experienceLevel: null,
+          education: null,
+          keywords: ["Planning"],
+        },
+        candidate: {
+          resumeText: `Pam Lead
+pam@example.com
+
+EXPERIENCE
+Product Manager — Acme Corp (2021 - 2024)
+• Owned roadmap planning and delivery.
+`,
+          answers: [],
+        },
+        referenceDate: "2024-06-01",
+      });
+      const title = res.criterionResults.find((c) => c.key === "crit:domain-title");
+      expect(title?.extendedStatus).toBe("partially_met");
+      expect(title?.score).toBe(45);
+      expect(title?.evidence).toContain("related but not equivalent");
+    });
+
+    it("ambiguous titles emit no criterion and leave scores untouched", () => {
+      const jobBase = {
+        description: "APIs",
+        requirements: null,
+        experienceLevel: null,
+        education: null,
+        keywords: ["Go"],
+      };
+      const withAmbiguousTitle = evaluateCandidateWithRules({
+        job: { ...jobBase, title: "Ninja Guru of Synergy" },
+        candidate: { resumeText: backendResume, answers: [] },
+        referenceDate: "2024-06-01",
+        evaluatedAt: "2024-06-01T12:00:00.000Z",
+      });
+      const withEmptyTitle = evaluateCandidateWithRules({
+        job: { ...jobBase, title: "" },
+        candidate: { resumeText: backendResume, answers: [] },
+        referenceDate: "2024-06-01",
+        evaluatedAt: "2024-06-01T12:00:00.000Z",
+      });
+      expect(withAmbiguousTitle.criterionResults.some((c) => c.key === "crit:domain-title")).toBe(false);
+      expect(withAmbiguousTitle.result.score).toBe(withEmptyTitle.result.score);
+      expect(withAmbiguousTitle.coverageAdjustedScore).toBe(withEmptyTitle.coverageAdjustedScore);
+    });
+
+    it("title mismatch never blocks Strong Yes: preferred is non-gating (§15.6)", () => {
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Product Manager",
+          description: "Backend APIs",
+          requirements: "Go required. Docker required.",
+          experienceLevel: "Mid (3+ years)",
+          education: null,
+          keywords: ["Go", "Docker"],
+        },
+        candidate: {
+          resumeText: `Bea Dev
+bea@example.com
+
+EXPERIENCE
+Backend Engineer — Cloud Corp (2021 - Present)
+• Built billing APIs in Go and shipped containers with Docker.
+`,
+          answers: [],
+        },
+        referenceDate: "2026-09-19",
+      });
+      const title = res.criterionResults.find((c) => c.key === "crit:domain-title");
+      expect(title?.extendedStatus).toBe("not_demonstrated");
+      expect(res.result.recommendation).toBe("strong_yes");
+    });
+  });
+
+  describe("Phase 5 — quantified impact enriches evidence, never scoring (§13)", () => {    it("surfaces Isabella's quantified achievements while scores stay pinned", () => {
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Growth Marketing Manager",
+          description: "Growth",
+          requirements: null,
+          experienceLevel: null,
+          education: null,
+          keywords: ["SEO"],
+        },
+        candidate: {
+          resumeText: `Isabella Rossi
+isabella@example.com
+
+EXPERIENCE
+Growth Marketing Manager — Nimbus Labs (2023–Present)
+• Grew pipeline 3.2x in 18 months through SEO and referrals.
+• Cut blended CAC 28% by reallocating spend.
+• Managed $1M+ paid-acquisition budget.
+`,
+          answers: [],
+        },
+        referenceDate: "2026-09-19",
+      });
+      expect(res.impactHighlights.length).toBeGreaterThanOrEqual(3);
+      expect(res.impactHighlights[0]!.metrics.map((m) => m.type)).toContain("multiplier");
+      // Phase 5 exit gate: no arbitrary score bonus from quantified bullets.
+      expect(res.demonstratedScore).toBe(100);
+      expect(res.coverageAdjustedScore).toBe(100);
+      expect(res.result.score).toBe(100);
+    });
+
+    it("metric-free resumes yield empty highlights without affecting evaluation", () => {
+      const res = evaluateCandidateWithRules({
+        job: {
+          title: "Backend Engineer",
+          description: "APIs",
+          requirements: null,
+          experienceLevel: null,
+          education: null,
+          keywords: ["Python"],
+        },
+        candidate: {
+          resumeText: `Sam Dev
+sam@example.com
+
+EXPERIENCE
+Backend Developer — Acme Corp (2020 - 2023)
+• Built APIs using Python.
+`,
+          answers: [],
+        },
+        referenceDate: "2024-06-01",
+      });
+      expect(res.impactHighlights).toEqual([]);
+      expect(res.criterionResults.find((c) => c.label === "Python")?.extendedStatus).toBe("met");
+    });
+  });
+
+  describe("Phase 7 — recency/depth signals are collected but inert (§15.4)", () => {
+    const recencyJob = {
+      title: "Backend Engineer",
+      description: "APIs",
+      requirements: null,
+      experienceLevel: null,
+      education: null,
+      keywords: ["Python"],
+    };
+
+    function recencyResume(roleLine: string) {
+      return `Sam Dev
+sam@example.com
+
+EXPERIENCE
+${roleLine}
+• Built APIs using Python.
+`;
+    }
+
+    it("stale vs current evidence yields identical primary scores (no global decay)", () => {
+      const current = evaluateCandidateWithRules({
+        job: recencyJob,
+        candidate: { resumeText: recencyResume("Backend Developer — Acme Corp (2023-Present)"), answers: [] },
+        referenceDate: "2026-09-19",
+      });
+      const stale = evaluateCandidateWithRules({
+        job: recencyJob,
+        candidate: { resumeText: recencyResume("Backend Developer — Acme Corp (2015-2017)"), answers: [] },
+        referenceDate: "2026-09-19",
+      });
+      // Recency is recorded in the profiles...
+      const currentProfile = current.skillProfiles.profiles.find((p) => p.canonicalName === "Python")!;
+      const staleProfile = stale.skillProfiles.profiles.find((p) => p.canonicalName === "Python")!;
+      expect(currentProfile.currentlyUsed).toBe(true);
+      expect(staleProfile.currentlyUsed).toBe(false);
+      expect(staleProfile.lastUsedMonthsAgo).toBeGreaterThan(0);
+      // ...but must not move the score without benchmark evidence (§15.4).
+      expect(stale.result.score).toBe(current.result.score);
+      expect(stale.coverageAdjustedScore).toBe(current.coverageAdjustedScore);
+      expect(stale.result.recommendation).toBe(current.result.recommendation);
+    });
+  });
 });
-
-
