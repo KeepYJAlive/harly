@@ -9,6 +9,9 @@
  * - Strict preservation of technical symbols (+, #, .)
  */
 
+/** Version of the built-in skill taxonomy (Audit doc §5.1, §8.5). Bump when concepts/aliases change. */
+export const SKILL_TAXONOMY_VERSION = "skill-taxonomy-v2";
+
 export type SkillCategory =
   | "frontend"
   | "backend"
@@ -56,7 +59,8 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:nextjs",
     canonicalName: "Next.js",
-    aliases: ["NextJS", "Next", "Next.JS"],
+    // "Next" alone is too ambiguous for alias equivalence (Next.js ≠ next steps).
+    aliases: ["NextJS", "Next.JS"],
     category: "frontend",
     relatedSkills: ["React"],
   },
@@ -77,8 +81,17 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:angular",
     canonicalName: "Angular",
-    aliases: ["AngularJS", "Angular.js", "Angular 2+"],
+    // AngularJS is a different framework — related, never equivalent.
+    aliases: ["Angular 2+", "Angular2", "Angular 2"],
     category: "frontend",
+    relatedSkills: ["AngularJS"],
+  },
+  {
+    id: "skill:angularjs",
+    canonicalName: "AngularJS",
+    aliases: ["Angular.js", "Angular 1", "AngularJS 1"],
+    category: "frontend",
+    relatedSkills: ["Angular"],
   },
   {
     id: "skill:svelte",
@@ -109,8 +122,23 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:css",
     canonicalName: "CSS",
-    aliases: ["CSS3", "Sass", "SCSS", "Tailwind", "TailwindCSS", "Tailwind CSS"],
+    aliases: ["CSS3"],
     category: "frontend",
+    relatedSkills: ["Sass", "SCSS", "Tailwind", "Tailwind CSS"],
+  },
+  {
+    id: "skill:sass",
+    canonicalName: "Sass",
+    aliases: ["SCSS", "Sassy CSS"],
+    category: "frontend",
+    relatedSkills: ["CSS"],
+  },
+  {
+    id: "skill:tailwind",
+    canonicalName: "Tailwind CSS",
+    aliases: ["Tailwind", "TailwindCSS"],
+    category: "frontend",
+    relatedSkills: ["CSS"],
   },
   {
     id: "skill:redux",
@@ -129,19 +157,23 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:nodejs",
     canonicalName: "Node.js",
-    aliases: ["Node", "NodeJS", "Node.JS"],
+    // Bare "Node" is ambiguous in free text; keep NodeJS / Node.JS only.
+    aliases: ["NodeJS", "Node.JS"],
     category: "backend",
   },
   {
     id: "skill:python",
     canonicalName: "Python",
-    aliases: ["Python 3", "Python3", "Py"],
+    // Drop short "Py" alias — too ambiguous for free-text scans.
+    aliases: ["Python 3", "Python3"],
     category: "backend",
   },
   {
     id: "skill:golang",
     canonicalName: "Go",
-    aliases: ["Golang"],
+    // Prefer Golang for alias lookup; short "Go" stays canonical but scanners
+    // must use word-boundary / short-token guards (see matchSkillConceptsInText).
+    aliases: ["Golang", "Go Lang"],
     category: "backend",
   },
   {
@@ -181,14 +213,37 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:ruby",
     canonicalName: "Ruby",
-    aliases: ["Ruby on Rails", "Rails"],
+    aliases: ["Ruby MRI"],
     category: "backend",
+    relatedSkills: ["Ruby on Rails", "Rails"],
+  },
+  {
+    id: "skill:rails",
+    canonicalName: "Ruby on Rails",
+    aliases: ["Rails", "RoR"],
+    category: "backend",
+    relatedSkills: ["Ruby"],
   },
   {
     id: "skill:php",
     canonicalName: "PHP",
-    aliases: ["Laravel", "Symfony"],
+    aliases: ["PHP7", "PHP8"],
     category: "backend",
+    relatedSkills: ["Laravel", "Symfony"],
+  },
+  {
+    id: "skill:laravel",
+    canonicalName: "Laravel",
+    aliases: ["Laravel PHP"],
+    category: "backend",
+    relatedSkills: ["PHP"],
+  },
+  {
+    id: "skill:symfony",
+    canonicalName: "Symfony",
+    aliases: ["Symfony PHP"],
+    category: "backend",
+    relatedSkills: ["PHP"],
   },
   {
     id: "skill:django",
@@ -219,8 +274,16 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:mysql",
     canonicalName: "MySQL",
-    aliases: ["MariaDB"],
+    aliases: ["MySQL DB"],
     category: "data",
+    relatedSkills: ["MariaDB"],
+  },
+  {
+    id: "skill:mariadb",
+    canonicalName: "MariaDB",
+    aliases: ["Maria DB"],
+    category: "data",
+    relatedSkills: ["MySQL"],
   },
   {
     id: "skill:mongodb",
@@ -270,9 +333,31 @@ export const BUILT_IN_SKILL_CONCEPTS: SkillConcept[] = [
   {
     id: "skill:kubernetes",
     canonicalName: "Kubernetes",
-    aliases: ["K8s", "EKS", "GKE", "AKS"],
+    aliases: ["K8s"],
     category: "devops_cloud",
-    relatedSkills: ["Docker"],
+    // Managed K8s offerings are related platforms, not the same skill claim.
+    relatedSkills: ["Docker", "EKS", "GKE", "AKS"],
+  },
+  {
+    id: "skill:eks",
+    canonicalName: "EKS",
+    aliases: ["Amazon EKS", "Elastic Kubernetes Service"],
+    category: "devops_cloud",
+    relatedSkills: ["Kubernetes", "GKE", "AKS"],
+  },
+  {
+    id: "skill:gke",
+    canonicalName: "GKE",
+    aliases: ["Google Kubernetes Engine"],
+    category: "devops_cloud",
+    relatedSkills: ["Kubernetes", "EKS", "AKS"],
+  },
+  {
+    id: "skill:aks",
+    canonicalName: "AKS",
+    aliases: ["Azure Kubernetes Service"],
+    category: "devops_cloud",
+    relatedSkills: ["Kubernetes", "EKS", "GKE"],
   },
   {
     id: "skill:aws",
@@ -441,11 +526,127 @@ export function resolveSkillConcept(
  * Checks if candidateSkill is merely related to targetSkill rather than equivalent.
  */
 export function isRelatedButNotEquivalent(targetSkill: string, candidateSkill: string): boolean {
-  const targetConcept = CANONICAL_MAP.get(normalizeLookupKey(targetSkill));
-  if (!targetConcept || !targetConcept.relatedSkills) return false;
+  const targetKey = normalizeLookupKey(targetSkill);
+  const targetConcept =
+    CANONICAL_MAP.get(targetKey) ?? ALIAS_MAP.get(targetKey);
+  if (!targetConcept?.relatedSkills?.length) return false;
 
   const candidateKey = normalizeLookupKey(candidateSkill);
-  return targetConcept.relatedSkills.some(
-    (related) => normalizeLookupKey(related) === candidateKey,
-  );
+  const candidateConcept =
+    CANONICAL_MAP.get(candidateKey) ?? ALIAS_MAP.get(candidateKey);
+  const candidateNames = new Set<string>([candidateKey]);
+  if (candidateConcept) {
+    candidateNames.add(normalizeLookupKey(candidateConcept.canonicalName));
+    for (const alias of candidateConcept.aliases) {
+      candidateNames.add(normalizeLookupKey(alias));
+    }
+  }
+
+  return targetConcept.relatedSkills.some((related) => {
+    const relatedKey = normalizeLookupKey(related);
+    if (candidateNames.has(relatedKey)) return true;
+    const relatedConcept =
+      CANONICAL_MAP.get(relatedKey) ?? ALIAS_MAP.get(relatedKey);
+    if (!relatedConcept) return false;
+    return (
+      candidateNames.has(normalizeLookupKey(relatedConcept.canonicalName)) ||
+      relatedConcept.aliases.some((alias) => candidateNames.has(normalizeLookupKey(alias))) ||
+      (candidateConcept != null && relatedConcept.id === candidateConcept.id)
+    );
+  });
+}
+
+/** Related concept labels for a target skill (never treated as automatic met). */
+export function relatedSkillLabels(targetSkill: string): string[] {
+  const key = normalizeLookupKey(targetSkill);
+  const concept = CANONICAL_MAP.get(key) ?? ALIAS_MAP.get(key);
+  return concept?.relatedSkills ? [...concept.relatedSkills] : [];
+}
+
+const SUPPORTED_SYMBOL_CHARS = new Set(["+", "#", "."]);
+
+/** Multi-word n-gram window used when scanning free text for known concepts. */
+const MAX_CONCEPT_WORDS = 3;
+
+/**
+ * Splits a free-text fragment into candidate skill tokens while preserving
+ * technical symbols required by the acceptance matrix (C++, C#, .NET, Node.js).
+ * Stops at sentence punctuation so achievements stay segmented.
+ */
+export function tokenizeSkillText(text: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+
+  const flush = () => {
+    const cleaned = current.trim().replace(/^[,;:()]+|[,;:()]+$/g, "");
+    current = "";
+    if (cleaned.length >= 2) tokens.push(cleaned);
+  };
+
+  for (const char of text) {
+    if (/[a-zA-Z0-9]/.test(char) || SUPPORTED_SYMBOL_CHARS.has(char)) {
+      current += char;
+    } else {
+      flush();
+    }
+  }
+  flush();
+
+  return tokens;
+}
+
+/**
+ * Scans free text for known skill concepts (canonical names or aliases) and
+ * returns every distinct resolution found. Preserves technical symbols and
+ * tries multi-word n-grams so "Machine Learning" / "Node.js" resolve correctly.
+ */
+export function matchSkillConceptsInText(
+  text: string,
+  recruiterAliases?: string[],
+): SkillResolutionResult[] {
+  const words = tokenizeSkillText(text);
+  const found = new Map<string, SkillResolutionResult>();
+
+  const record = (term: string) => {
+    const trimmed = term.trim();
+    // Short ambiguous tokens (Go, JS, TS, Next) must not auto-hit from free text
+    // unless they carry a tech symbol (C++, C#) or are multi-char acronyms with
+    // digits / punctuation. Explicit criterion labels still resolve via resolveSkillConcept.
+    const compact = trimmed.replace(/[\s\-_.]+/g, "");
+    if (compact.length <= 2 && !/[+#.]/.test(trimmed)) {
+      return;
+    }
+    if (/^(go|next|node|js|ts|py)$/i.test(compact)) {
+      return;
+    }
+    const resolved = resolveSkillConcept(trimmed, recruiterAliases);
+    if (resolved.conceptId && !found.has(resolved.conceptId)) {
+      found.set(resolved.conceptId, { ...resolved, canonicalName: resolved.canonicalName });
+    }
+  };
+
+  // Single words (covers C++, C#, .NET, Node.js, React, etc.)
+  for (const word of words) record(word);
+
+  // Multi-word n-grams (covers "Machine Learning", "Paid acquisition", etc.)
+  for (let n = 2; n <= MAX_CONCEPT_WORDS; n++) {
+    for (let i = 0; i + n <= words.length; i++) {
+      const windowWords = words.slice(i, i + n);
+      if (windowWords.some((w) => /[+#.]$/.test(w))) continue;
+      record(windowWords.join(" "));
+    }
+  }
+
+  return [...found.values()];
+}
+
+/**
+ * Resolves a free-text fragment to the first known skill concept, or null if
+ * none of its tokens belong to the taxonomy.
+ */
+export function matchSkillConceptInText(
+  text: string,
+  recruiterAliases?: string[],
+): SkillResolutionResult | null {
+  return matchSkillConceptsInText(text, recruiterAliases)[0] ?? null;
 }
