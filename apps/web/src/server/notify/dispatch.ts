@@ -418,6 +418,11 @@ export async function sendWorkflowChatMessage(
   data: Record<string, unknown>,
   options: { signal?: AbortSignal; database?: typeof db } = {},
 ): Promise<{ queued: boolean; provider: "slack" | "discord" }> {
+  // Public demo: workflow Slack/Discord must not POST to real webhooks or queue
+  // OAuth Slack deliveries that could leave the demo for a visitor's channel.
+  if (isDemoMode()) {
+    return { queued: false, provider: "slack" };
+  }
   const database = options.database ?? db;
   const slack = await getWorkspaceSlackConfig(workspaceId, database);
   if (slack) {
@@ -464,6 +469,10 @@ export async function sendWorkflowTelegramMessage(
   data: Record<string, unknown>,
   options: { signal?: AbortSignal; database?: typeof db } = {},
 ): Promise<{ provider: "telegram" }> {
+  // Public demo: workflow Telegram must match notifyTelegramEvent — no real Bot API calls.
+  if (isDemoMode()) {
+    return { provider: "telegram" };
+  }
   const config = await getWorkspaceTelegramConfig(workspaceId, options.database ?? db);
   if (!config) throw new Error("No Telegram integration is configured");
   await sendTelegramMessage({
@@ -481,6 +490,10 @@ export async function sendWorkflowDiscordMessage(
   data: Record<string, unknown>,
   options: { signal?: AbortSignal; database?: typeof db } = {},
 ): Promise<{ provider: "discord" }> {
+  // Public demo: never POST to visitor-configured Discord webhooks from workflows.
+  if (isDemoMode()) {
+    return { provider: "discord" };
+  }
   const database = options.database ?? db;
   const config = await getWorkspaceChatConfig(workspaceId, database);
   if (!config || config.provider !== "discord") {

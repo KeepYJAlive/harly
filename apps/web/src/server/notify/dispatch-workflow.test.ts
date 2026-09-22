@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   getWorkspaceChatConfig: vi.fn(),
   getWorkspaceSlackConfig: vi.fn(),
   getWorkspaceTelegramConfig: vi.fn(),
+  sendTelegramMessage: vi.fn(),
+  isDemoMode: vi.fn(() => false),
 }));
 
 vi.mock("@harly/db", () => {
@@ -25,12 +27,14 @@ vi.mock("@harly/db", () => {
 vi.mock("@/lib/notify/config", () => ({ getWorkspaceChatConfig: mocks.getWorkspaceChatConfig }));
 vi.mock("@/lib/slack/config", () => ({ getWorkspaceSlackConfig: mocks.getWorkspaceSlackConfig }));
 vi.mock("@/lib/telegram/config", () => ({ getWorkspaceTelegramConfig: mocks.getWorkspaceTelegramConfig }));
-vi.mock("@/lib/telegram/client", () => ({ sendTelegramMessage: vi.fn() }));
+vi.mock("@/lib/telegram/client", () => ({ sendTelegramMessage: mocks.sendTelegramMessage }));
+vi.mock("@harly/config", () => ({ isDemoMode: () => mocks.isDemoMode() }));
 vi.mock("@/lib/public-origin", () => ({ getHarlyPublicOrigin: () => "https://app.example.test" }));
 
 import {
   sendWorkflowChatMessage,
   sendWorkflowDiscordMessage,
+  sendWorkflowTelegramMessage,
   WorkflowChatDeliveryUncertainError,
 } from "./dispatch";
 
@@ -40,6 +44,9 @@ describe("workflow chat delivery", () => {
     mocks.getWorkspaceChatConfig.mockReset();
     mocks.getWorkspaceSlackConfig.mockReset();
     mocks.getWorkspaceTelegramConfig.mockReset();
+    mocks.sendTelegramMessage.mockReset();
+    mocks.isDemoMode.mockReset();
+    mocks.isDemoMode.mockReturnValue(false);
     mocks.getWorkspaceSlackConfig.mockResolvedValue(null);
     mocks.getWorkspaceTelegramConfig.mockResolvedValue(null);
     mocks.getWorkspaceChatConfig.mockResolvedValue({
@@ -95,5 +102,47 @@ describe("workflow chat delivery", () => {
 
     const [, request] = mocks.fetch.mock.calls[0] as [string, RequestInit];
     expect(new Headers(request.headers).get("Idempotency-Key")).toBe("effect-discord-1");
+  });
+  it("no-ops workflow Telegram delivery in demo mode without calling the Bot API", async () => {
+    mocks.isDemoMode.mockReturnValue(true);
+    mocks.getWorkspaceTelegramConfig.mockResolvedValue({
+      botToken: "secret-token",
+      chatId: "-1001",
+      events: [],
+    });
+
+    await expect(
+      sendWorkflowTelegramMessage("workspace-1", "candidate.created", {
+        candidate: { name: "Ada" },
+      }),
+    ).resolves.toEqual({ provider: "telegram" });
+
+    expect(mocks.sendTelegramMessage).not.toHaveBeenCalled();
+    expect(mocks.getWorkspaceTelegramConfig).not.toHaveBeenCalled();
+  });
+
+  it("no-ops workflow Discord delivery in demo mode without fetching the webhook", async () => {
+    mocks.isDemoMode.mockReturnValue(true);
+
+    await expect(
+      sendWorkflowDiscordMessage("workspace-1", "candidate.created", {
+        eventId: "effect-demo-discord",
+      }),
+    ).resolves.toEqual({ provider: "discord" });
+
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("no-ops workflow Slack/Discord chat delivery in demo mode", async () => {
+    mocks.isDemoMode.mockReturnValue(true);
+
+    await expect(
+      sendWorkflowChatMessage("workspace-1", "candidate.created", {
+        eventId: "effect-demo-chat",
+      }),
+    ).resolves.toEqual({ queued: false, provider: "slack" });
+
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.getWorkspaceSlackConfig).not.toHaveBeenCalled();
   });
 });
