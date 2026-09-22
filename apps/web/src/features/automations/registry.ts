@@ -141,7 +141,7 @@ export type ActionResult = {
   /** UI/AI-safe diagnostics; never include credentials or raw provider bodies. */
   errorDetails?: {
     fieldPath?: string;
-    category?: "validation" | "authorization" | "not_found" | "configuration" | "provider" | "network" | "unknown";
+    category?: "validation" | "authorization" | "not_found" | "configuration" | "provider" | "network" | "policy" | "unknown";
     retryAdvice?: "never" | "after_backoff" | "reconcile" | "fix_configuration";
   };
   /** Whether the worker should retry this action after a backoff. */
