@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { demoLoginEmail, isDemoMode } from "@harly/config";
+import { demoLoginEmail, demoWorkspaceId, isDemoMode } from "@harly/config";
 import { db, member, user as userTable } from "@harly/db";
 import { eq, sql as dsql } from "drizzle-orm";
 
@@ -107,17 +107,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Point the session at the single workspace this account owns/belongs to, so
-  // the dashboard resolves a workspace immediately.
+  // the dashboard resolves a workspace immediately. When DEMO_WORKSPACE_ID is
+  // set, refuse membership matches (same pin as demo-reset) so enter cannot
+  // activate a different org if the shared account were multi-homed.
   const [membership] = await db
     .select({ organizationId: member.organizationId })
     .from(member)
     .where(eq(member.userId, account.id))
     .limit(1);
-  if (membership) {
-    await ctx.internalAdapter.updateSession(session.token, {
-      activeOrganizationId: membership.organizationId,
-    });
+  if (!membership) {
+    log.error({ email }, "Demo workspace membership not found");
+    return NextResponse.json({ error: "Demo is not configured." }, { status: 503 });
   }
+
+  const pinned = demoWorkspaceId();
+  if (pinned && pinned !== membership.organizationId) {
+    log.error(
+      { email, pinned, actual: membership.organizationId },
+      "demo-enter: workspace id does not match DEMO_WORKSPACE_ID",
+    );
+    return NextResponse.json({ error: "Demo is not configured." }, { status: 503 });
+  }
+
+  await ctx.internalAdapter.updateSession(session.token, {
+    activeOrganizationId: membership.organizationId,
+  });
 
   const response = NextResponse.redirect(new URL("/dashboard", request.url), { status: 303 });
 
