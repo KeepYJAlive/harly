@@ -66,11 +66,17 @@ export function NotificationIsland({
       if (window.localStorage.getItem(DEMO_SEEN_KEY) === "1") return;
       window.localStorage.setItem(DEMO_SEEN_KEY, "1");
     } catch {
-      // private mode / blocked storage — still show once this mount
+      // private mode / blocked storage - still show once this mount
     }
-    setDemoNotice(true);
-    const timer = window.setTimeout(() => setDemoNotice(false), DEMO_AUTO_HIDE_MS);
-    return () => window.clearTimeout(timer);
+    // Defer setState so the effect only schedules work (eslint react-hooks/set-state-in-effect).
+    const showTimer = window.setTimeout(() => {
+      setDemoNotice(true);
+    }, 0);
+    const hideTimer = window.setTimeout(() => setDemoNotice(false), DEMO_AUTO_HIDE_MS);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
   }, [demoMode]);
 
   const springTransition = reduceMotion
