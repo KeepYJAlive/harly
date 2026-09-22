@@ -120,6 +120,7 @@ export async function saveChatSettingsAction(input: {
 }
 
 export async function disableChatAction(): Promise<ChatSettingsActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   await db

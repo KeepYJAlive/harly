@@ -59,7 +59,7 @@ async function clearGCalToken(organizationId: string): Promise<void> {
 
 /** List writable calendars for the connected Google account. */
 export async function listGCalCalendarsAction(): Promise<
-  { assertNotDemo(); ok: true; calendars: GCalCalendar[] } | { ok: false; error: string }
+  { ok: true; calendars: GCalCalendar[] } | { ok: false; error: string }
 > {
   assertNotDemo();
   const context = await requirePermission("integrations:manage");
