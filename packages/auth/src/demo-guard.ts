@@ -18,10 +18,21 @@ import { isDemoMode } from "@harly/config";
  * isDemoMode()).
  *
  * Paths here are Better Auth's plugin-relative paths (no `/api/auth` prefix),
- * matching ctx.path. Read/list/sign-in/sign-out/set-active are intentionally
- * NOT blocked so demo navigation and the shared login keep working.
+ * matching ctx.path. Sign-out / get-session / set-active stay allowed so the
+ * shared demo session can navigate. Credential sign-in is BLOCKED — the only
+ * allowed entry is POST /api/demo/enter (Turnstile + server-minted session).
  */
 export const DEMO_BLOCKED_AUTH_PATHS: readonly string[] = [
+  // Enter-only: block password/social sign-in so Turnstile cannot be bypassed
+  "/sign-in/email",
+  "/sign-in/social",
+  "/sign-in/email-otp",
+  "/sign-in/username",
+  "/sign-in/passkey",
+  "/email-otp/send-verification-otp",
+  "/forget-password",
+  "/request-password-reset",
+  "/reset-password",
   // Core account credentials + identity
   "/change-password",
   "/set-password",

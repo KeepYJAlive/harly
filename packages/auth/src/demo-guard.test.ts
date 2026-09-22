@@ -22,11 +22,16 @@ describe("isDemoBlockedAuthPath", () => {
     expect(isDemoBlockedAuthPath("/organization/leave")).toBe(true);
   });
 
-  it("does not block login, sign-out, read, or set-active navigation", () => {
-    // These must keep working so a visitor can enter and move around the demo.
+  it("blocks credential sign-in so only /api/demo/enter can mint sessions", () => {
+    expect(isDemoBlockedAuthPath("/sign-in/email")).toBe(true);
+    expect(isDemoBlockedAuthPath("/sign-in/social")).toBe(true);
+    expect(isDemoBlockedAuthPath("/forget-password")).toBe(true);
+    expect(isDemoBlockedAuthPath("/reset-password")).toBe(true);
+  });
+
+  it("does not block sign-out, read, or set-active navigation", () => {
+    // These must keep working so a visitor can leave and move around the demo.
     for (const path of [
-      "/sign-in/email",
-      "/sign-in/social",
       "/sign-out",
       "/get-session",
       "/list-sessions",
@@ -56,8 +61,14 @@ describe("shouldBlockAuthPath", () => {
     expect(shouldBlockAuthPath("/two-factor/enable", false)).toBe(false);
   });
 
-  it("never blocks a safe path, in demo mode or not", () => {
-    expect(shouldBlockAuthPath("/sign-in/email", true)).toBe(false);
+  it("blocks sign-in/email only when demo mode is ON", () => {
+    expect(shouldBlockAuthPath("/sign-in/email", true)).toBe(true);
     expect(shouldBlockAuthPath("/sign-in/email", false)).toBe(false);
+  });
+
+  it("never blocks a safe navigation path, in demo mode or not", () => {
+    expect(shouldBlockAuthPath("/sign-out", true)).toBe(false);
+    expect(shouldBlockAuthPath("/sign-out", false)).toBe(false);
+    expect(shouldBlockAuthPath("/get-session", true)).toBe(false);
   });
 });
