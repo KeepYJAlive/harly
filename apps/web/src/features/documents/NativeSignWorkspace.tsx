@@ -15,6 +15,7 @@ import {
   signDocumentNatively,
 } from "./native-sign-actions";
 import type { SignaturePlacement } from "@/lib/esign/native/bake";
+import type { VectorSignatureData } from "./signature-vector";
 
 const EMPTY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -28,17 +29,20 @@ export function NativeSignWorkspace({
 }) {
   const router = useRouter();
   const [signature, setSignature] = useState("");
+  const [vectorSignature, setVectorSignature] = useState<VectorSignatureData | null>(null);
   const [consent, setConsent] = useState(false);
   const [placements, setPlacements] = useState<SignaturePlacement[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [allowSaved, setAllowSaved] = useState(false);
+  const [vectorEnabled, setVectorEnabled] = useState<boolean | undefined>(undefined);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    void getNativeSignatureSettings().then((settings) =>
-      setAllowSaved(Boolean(settings?.savedSignaturesEnabled)),
-    );
+    void getNativeSignatureSettings().then((settings) => {
+      setAllowSaved(Boolean(settings?.savedSignaturesEnabled));
+      setVectorEnabled(Boolean(settings?.vectorSignaturesEnabled));
+    });
   }, []);
 
   function addPlacement() {
@@ -67,6 +71,8 @@ export function NativeSignWorkspace({
         documentId,
         placements,
         signaturePngBase64: signature,
+        // Fase 3: vector wins in finalize when present; PNG stays as fallback.
+        ...(vectorSignature?.compressed ? { signatureVectorBase64: vectorSignature.compressed } : {}),
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -159,6 +165,8 @@ export function NativeSignWorkspace({
             value={signature}
             onChange={handleSignatureChange}
             allowSaved={allowSaved}
+            vectorEnabled={vectorEnabled}
+            onVectorChange={setVectorSignature}
           />
           <label className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
             <Checkbox

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PdfFieldFiller, type FillableField } from "@/features/documents/PdfFieldFiller";
 import { SignaturePad } from "@/features/documents/SignaturePad";
+import type { VectorSignatureData } from "@/features/documents/signature-vector";
 
 const emptyPng =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -22,6 +23,7 @@ export function NativeSigningPage({ token }: { token: string }) {
     requiresOtp: boolean;
   } | null>(null);
   const [signature, setSignature] = useState("");
+  const [vectorSignature, setVectorSignature] = useState<VectorSignatureData | null>(null);
   const [consent, setConsent] = useState(false);
   const [challengeId, setChallengeId] = useState("");
   const [otp, setOtp] = useState("");
@@ -101,6 +103,8 @@ export function NativeSigningPage({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signaturePngBase64: signature,
+          // Fase 3: vector wins in finalize when present; PNG stays as fallback.
+          ...(vectorSignature?.compressed ? { signatureVectorBase64: vectorSignature.compressed } : {}),
           textValues,
           consentAt: new Date().toISOString(),
         }),
@@ -218,7 +222,7 @@ export function NativeSigningPage({ token }: { token: string }) {
                 field on the document.
               </p>
             </div>
-            <SignaturePad value={signature} onChange={setSignature} />
+            <SignaturePad value={signature} onChange={setSignature} onVectorChange={setVectorSignature} />
             <label className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
               <Checkbox
                 checked={consent}
