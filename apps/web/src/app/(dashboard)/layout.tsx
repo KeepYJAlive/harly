@@ -24,7 +24,6 @@ import { getMyTasksDueCount } from "@/features/tasks/data";
 import { getOwnProfileAction } from "@/features/people/actions";
 import { RealtimeProvider } from "@/components/dashboard/RealtimeProvider";
 import { RealtimePageSync } from "@/components/dashboard/RealtimePageSync";
-import { DemoBanner } from "@/features/demo/DemoBanner";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { organization } = await getWorkspaceContext();
@@ -101,7 +100,6 @@ export default async function DashboardLayout({
               assignableRoles={assignableRoles}
             />
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-pure-snow md:my-2 md:mr-2 md:rounded-[var(--radius-shell)] md:border md:border-hairline">
-              <DemoBanner />
               <TopBar
                 user={{
                   name: user.name,
@@ -119,6 +117,7 @@ export default async function DashboardLayout({
                 userPermissions={userPermissions}
                 inboxCount={unreadInboxThreadCount}
                 taskDueCount={taskDueCount}
+                demoMode={demo}
               />
               <PageTitleProvider>
                 <main className="min-h-0 w-full flex-1 overflow-y-auto px-4 pb-8 pt-2 md:px-7">

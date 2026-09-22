@@ -46,6 +46,8 @@ type TopBarProps = {
   userPermissions: Permission[];
   inboxCount: number;
   taskDueCount: number;
+  /** When true, show a one-time demo notice in the dynamic island. */
+  demoMode?: boolean;
 };
 
 /**
@@ -67,6 +69,7 @@ export function TopBar({
   userPermissions,
   inboxCount,
   taskDueCount,
+  demoMode = false,
 }: TopBarProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -118,6 +121,7 @@ export function TopBar({
             <NotificationIsland
               workspace={workspace}
               workspaceOptions={workspaceOptions}
+              demoMode={demoMode}
             />
           </div>
         </div>
