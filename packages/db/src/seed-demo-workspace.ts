@@ -29,6 +29,169 @@ const OWNER_NAME = "Alex Morgan";
 // time. Override with DEMO_CDN_URL for local/preview environments.
 const DEMO_CDN = (process.env.DEMO_CDN_URL ?? "https://cdn.harly.dev").replace(/\/$/, "");
 
+/** Career board layout + copy captured from the live demo workspace.
+ *  Gallery/team image URLs require matching files on DEMO_CDN under demo/careers/.
+ */
+const DEMO_CAREER_PAGE_CONFIG = {
+  cta: {
+    body: "We are always opening new opportunities for great people. Reach out.",
+    color: "#d97656",
+    title: "Don't see a role that fits?",
+    enabled: true,
+    buttonText: "Get in touch"
+  },
+  faq: {
+    items: [],
+    title: "Frequently asked questions",
+    enabled: false
+  },
+  seo: {
+    title: "",
+    indexable: true,
+    faviconUrl: null,
+    description: "",
+    socialImageUrl: null
+  },
+  hero: {
+    overlay: "none",
+    subhead: "",
+    headline: "Syntrix",
+    imageUrl: null,
+    logoType: "logo",
+    showName: false,
+    overlayTo: null,
+    overlayFrom: null,
+    logoPosition: "center",
+    showHeadline: false,
+    bannerEnabled: true,
+    ctaButtonText: "View jobs",
+    bannerLogoDark: null,
+    overlayOpacity: 40,
+    bannerLogoLight: null,
+    bannerLogoVariant: "dark"
+  },
+  intro: {
+    body: "<p style=\"text-align: left;\">Syntrix is an Open-Source company dedicated to create and distribute Open Source Software to democrate access to all technologies possible.</p>",
+    chips: [
+      {
+        icon: "users",
+        label: "People"
+      },
+      {
+        icon: "heart",
+        label: "Personality"
+      },
+      {
+        icon: "flame",
+        label: "Passion"
+      },
+      {
+        icon: "smile",
+        label: "Positive"
+      },
+      {
+        icon: "sparkles",
+        label: "Craft"
+      }
+    ]
+  },
+  theme: {
+    font: "sans",
+    mode: "light",
+    accent: "#d97555",
+    rounded: "soft",
+    background: "#ffffff"
+  },
+  footer: {
+    socials: [
+      {
+        url: "https://linkedin.com/company/syntrixllc",
+        platform: "linkedin"
+      },
+      {
+        url: "https://instagram.com/syntrixco",
+        platform: "instagram"
+      },
+      {
+        url: "https://syntrix.com",
+        platform: "website"
+      }
+    ],
+    legalLinks: [ "privacy-policy", "terms-of-service", "cookie-policy", "candidate-notice" ]
+  },
+  values: {
+    items: [
+      {
+        body: "We adapt our roadmap to what users actually need.",
+        title: "Agile"
+      },
+      {
+        body: "Our methods are transparent and co-constructed.",
+        title: "Open"
+      },
+      {
+        body: "We invest heavily in figuring things out.",
+        title: "Inventive"
+      },
+      {
+        body: "We are proactive and we listen.",
+        title: "Present"
+      }
+    ],
+    title: "Our values",
+    enabled: true
+  },
+  gallery: {
+    speed: "slow",
+    images: [
+      `${DEMO_CDN}/demo/careers/gallery/1.webp`,
+      `${DEMO_CDN}/demo/careers/gallery/2.webp`,
+      `${DEMO_CDN}/demo/careers/gallery/3.webp`,
+      `${DEMO_CDN}/demo/careers/gallery/4.webp`
+    ],
+    enabled: true,
+    autoplay: true
+  },
+  overview: {
+    stats: [
+      {
+        icon: "calendar",
+        label: "Founded",
+        value: "2017"
+      },
+      {
+        icon: "users",
+        label: "Team",
+        value: "941"
+      },
+      {
+        icon: "map-pin",
+        label: "Locations",
+        value: "10"
+      }
+    ],
+    title: "Overview",
+    enabled: true
+  },
+  template: "playful",
+  positions: {
+    title: "Our open positions",
+    filters: [ "department", "location", "type" ]
+  },
+  testimonials: {
+    items: [
+      {
+        name: "Isabella Ashfield",
+        role: "Product Manager - Lead",
+        quote: "Syntrix is the best place that i ever worked, great team and also delisious food, really like it.",
+        avatar: `${DEMO_CDN}/demo/careers/team/isabella.webp`
+      }
+    ],
+    title: "What our team says",
+    enabled: false
+  }
+};
+
 // Where fictional resume PDFs get written. The web app's LocalAdapter serves
 // `uploads/` relative to its own cwd (apps/web). The CLI runs from packages/db,
 // so it passes an explicit path; callers inside the app can rely on the default.
@@ -489,13 +652,17 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
       .insert(schema.workspaceSettings)
       .values({
         organizationId: workspaceId,
-        tagline: "Hiring the team behind Syntrix",
-        description: "Syntrix is a demo company powering the Harly ATS public demo.",
-        websiteUrl: "https://syntrix.com",
-        primaryColor: "#d97656",
+        tagline: null,
+        description: null,
+        websiteUrl: "https://syntrix.cl",
+        primaryColor: "#e76a17",
         heroImageUrl: `${DEMO_CDN}/demo/company/hero.jpg`,
         sidebarLogoUrl: `${DEMO_CDN}/demo/company/logo.svg`,
         sidebarLogoDarkUrl: `${DEMO_CDN}/demo/company/logo-dark.svg`,
+        boardStyle: "minimal",
+        logoStyle: "bordered",
+        sidebarLogoStyle: "full",
+        careerPageConfig: DEMO_CAREER_PAGE_CONFIG,
         // Integrations: all disconnected in the demo.
         aiEnabled: false,
         emailEnabled: false,
@@ -511,13 +678,17 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
       .onConflictDoUpdate({
         target: schema.workspaceSettings.organizationId,
         set: {
-          tagline: "Hiring the team behind Syntrix",
-          description: "Syntrix is a demo company powering the Harly ATS public demo.",
-          websiteUrl: "https://syntrix.com",
-          primaryColor: "#d97656",
+          tagline: null,
+          description: null,
+          websiteUrl: "https://syntrix.cl",
+          primaryColor: "#e76a17",
           heroImageUrl: `${DEMO_CDN}/demo/company/hero.jpg`,
           sidebarLogoUrl: `${DEMO_CDN}/demo/company/logo.svg`,
           sidebarLogoDarkUrl: `${DEMO_CDN}/demo/company/logo-dark.svg`,
+          boardStyle: "minimal",
+          logoStyle: "bordered",
+          sidebarLogoStyle: "full",
+          careerPageConfig: DEMO_CAREER_PAGE_CONFIG,
           // Re-assert every real integration OFF on reseed (clears anything a
           // visitor or prior manual test connected).
           aiEnabled: false,
