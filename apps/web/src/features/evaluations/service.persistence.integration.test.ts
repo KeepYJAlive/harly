@@ -60,9 +60,13 @@ integration("evaluation persistence round trip", () => {
       candidateFactsHash: "facts-hash",
       rubricHash: "rubric-hash",
       configuration: {
+        evaluationMode: "balanced",
+        modeTableVersion: "mode-thresholds-v1",
         neutralEvidenceBaseline: 40,
         requiredWeightFactor: 1,
         preferredWeightFactor: 0.5,
+        knockoutSoftness: "hard",
+        semanticThresholds: { equivalent: 0.85, related: 0.7 },
         tierThresholds: {
           strongYesMinScore: 85,
           strongYesMinCoverage: 80,
