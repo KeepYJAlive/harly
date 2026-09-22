@@ -402,6 +402,32 @@ export type SeedDemoOptions = {
  * workspace-scoped data and re-inserts the canonical Syntrix dataset. Does NOT
  * open or close the DB connection; the caller owns its lifecycle.
  */
+
+async function wipeWorkspaceScopedData(input: {
+  sql: SeedClient["sql"];
+  workspaceId: string;
+  ownerUserId: string;
+}): Promise<number> {
+  const { sql, workspaceId, ownerUserId } = input;
+  const scopedTables = await sql<{ table_name: string }[]>`
+    SELECT table_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_name = 'workspace_id'
+    ORDER BY table_name
+  `;
+  await sql.begin(async (tx) => {
+    await tx`SET LOCAL session_replication_role = 'replica'`;
+    for (const { table_name } of scopedTables) {
+      await tx`DELETE FROM ${tx(table_name)} WHERE workspace_id = ${workspaceId}`;
+    }
+    await tx`DELETE FROM invitation WHERE organization_id = ${workspaceId}`;
+    await tx`DELETE FROM member_sender_identity WHERE organization_id = ${workspaceId}`;
+    await tx`DELETE FROM session WHERE user_id = ${ownerUserId}`;
+    await tx`DELETE FROM session WHERE user_id LIKE 'seed-teammate-%'`;
+  });
+  return scopedTables.length;
+}
+
 export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedDemoResult> {
   const { db, sql, workspaceId } = options;
   const webUploadsRoot = resolveUploadsRoot(options.uploadsRoot);
@@ -634,28 +660,15 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
     // `workspace_id` (user, member, organization, workspace_settings), so they
     // are intentionally NOT touched here — the org, teammates and the freshly
     // seeded workspace_settings all survive.
-    const scopedTables = await sql<{ table_name: string }[]>`
-      SELECT table_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public' AND column_name = 'workspace_id'
-      ORDER BY table_name
-    `;
-    await sql.begin(async (tx) => {
-      // Disable FK/trigger enforcement for the wipe so we can delete in any
-      // order without hitting reference constraints.
-      await tx`SET LOCAL session_replication_role = 'replica'`;
-      for (const { table_name } of scopedTables) {
-        await tx`DELETE FROM ${tx(table_name)} WHERE workspace_id = ${workspaceId}`;
-      }
-      // Org-scoped leftovers (no workspace_id column) that must not survive reset.
-      await tx`DELETE FROM invitation WHERE organization_id = ${workspaceId}`;
-      await tx`DELETE FROM member_sender_identity WHERE organization_id = ${workspaceId}`;
-      // Shared-account sessions: every visitor gets a fresh enter after reset.
-      await tx`DELETE FROM session WHERE user_id = ${user.id}`;
-      // Also drop sessions for seeded teammates (no auth, but keep identity clean).
-      await tx`DELETE FROM session WHERE user_id LIKE 'seed-teammate-%'`;
+    // Catalog wipe in one transaction. Product inserts below are not in the
+    // same tx (drizzle + volume); on insert failure we re-wipe so the workspace
+    // never sits half-seeded — cron can retry a clean empty slate.
+    const wipedTables = await wipeWorkspaceScopedData({
+      sql,
+      workspaceId,
+      ownerUserId: user.id,
     });
-    console.log(`Wiped ${scopedTables.length} workspace-scoped tables + sessions/invites.`);
+    console.log(`Wiped ${wipedTables} workspace-scoped tables + sessions/invites.`);
 
     // Purge on-disk uploads for this workspace (DB rows are gone; blobs must go too).
     const workspaceUploadDir = path.join(webUploadsRoot, "workspaces", workspaceId);
@@ -683,6 +696,7 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
       .where(eq(schema.user.id, user.id));
     await db.delete(schema.usernameHistory).where(eq(schema.usernameHistory.userId, user.id));
 
+    try {
     // ── Jobs + stages ──
     const jobStageMap = new Map<number, Map<StageName, string>>();
     const jobIds: string[] = [];
@@ -1021,11 +1035,24 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
 
     return {
       workspaceId,
-      wipedTables: scopedTables.length,
+      wipedTables,
       jobs: JOBS.length,
       candidates: CANDIDATES.length,
       applications: APPLICATIONS.length,
       interviews: interviewCount,
     };
+    } catch (error) {
+      console.error("Demo seed insert failed after wipe; re-wiping to empty workspace.", error);
+      try {
+        await wipeWorkspaceScopedData({
+          sql,
+          workspaceId,
+          ownerUserId: user.id,
+        });
+      } catch (wipeError) {
+        console.error("Demo re-wipe after failed seed also failed.", wipeError);
+      }
+      throw error;
+    }
   }
 }
