@@ -4,6 +4,9 @@ import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
+
+import { validateVectorSaveInput } from "@/features/documents/signature-vector";
 
 export const NATIVE_ENVELOPE_MAX_BYTES = 20 * 1024 * 1024;
 export const NATIVE_SIGNATURE_MAX_BYTES = 500 * 1024;
@@ -140,7 +143,6 @@ export async function bakeFieldsIntoPdf(input: {
       page.drawImage(image!, { x: drawX, y: drawY, width: drawWidth, height: drawHeight });
       continue;
     }
-
     // Text: single-line, auto-shrink to fit the box width, floor at
     // MIN_TEXT_FONT_SIZE then clip with an ellipsis rather than shrinking
     // further into illegibility.
@@ -167,4 +169,110 @@ export async function bakeFieldsIntoPdf(input: {
   }
 
   return Buffer.from(await pdf.save({ useObjectStreams: false }));
+}
+
+/** Pixels per capture-pixel when rasterizing a vector outline (Fase A). */
+export const VECTOR_BAKE_SCALE = 3;
+/** Hard cap on either raster dimension — keeps output far under the PNG cap. */
+export const VECTOR_BAKE_MAX_DIM = 1600;
+
+export type RenderedVectorSignature = {
+  pngBytes: Buffer;
+  width: number;
+  height: number;
+  areContours: boolean;
+};
+
+/**
+ * Fase A vector bake, step 1: verify + decompress a stored compressed payload
+ * and rasterize its outline to a Hi-DPI PNG (sharp, same pattern as
+ * `native/preview.ts`). Coordinates from the extractor are normalized 0..1,
+ * so the path is scaled into pixel space with `<g transform>` and the ink
+ * stroke keeps its capture-relative weight (`thickness / captureWidth`).
+ * Throws fail-closed on any invalid payload — callers never fall back to a
+ * different signature silently.
+ */
+export async function renderVectorSignaturePng(input: {
+  vectorData: string;
+  scale?: number;
+  maxDim?: number;
+}): Promise<RenderedVectorSignature> {
+  const shaped = validateVectorSaveInput({ vectorData: input.vectorData });
+  if (!shaped.ok) throw new Error("The vector signature is invalid.");
+  const scale = input.scale ?? VECTOR_BAKE_SCALE;
+  const maxDim = input.maxDim ?? VECTOR_BAKE_MAX_DIM;
+
+  const { SignatureExtractor } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const data = (await SignatureExtractor.decompressSignature(shaped.vectorData)) as {
+    outlines: Array<{ points: number[] } | Float32Array>;
+    areContours: boolean;
+    thickness: number;
+    width: number;
+    height: number;
+  } | null;
+  if (!data || !Array.isArray(data.outlines) || data.outlines.length === 0) {
+    throw new Error("The vector signature is invalid.");
+  }
+  if (data.outlines.length > NATIVE_FIELD_MAX_COUNT * 5) {
+    throw new Error("The vector signature is invalid.");
+  }
+  const curves = data.outlines.map((o) =>
+    Array.isArray(o) || ArrayBuffer.isView(o)
+      ? { points: Array.from(o as ArrayLike<number>) }
+      : o,
+  );
+  const rebuilt = SignatureExtractor.processDrawnLines({
+    lines: { curves, thickness: data.thickness, width: data.width, height: data.height },
+    pageWidth: data.width,
+    pageHeight: data.height,
+    rotation: 0,
+    innerMargin: 0,
+    mustSmooth: false,
+    areContours: data.areContours,
+  });
+  const outlinePath = rebuilt?.outline.toSVGPath() ?? null;
+  if (!outlinePath) throw new Error("The vector signature is invalid.");
+
+  const aspect = data.width / Math.max(1, data.height);
+  let width = Math.min(Math.round(data.width * scale), maxDim);
+  let height = Math.round(width / Math.max(aspect, 1 / 8));
+  if (height > maxDim) {
+    height = maxDim;
+    width = Math.round(height * Math.min(aspect, 8));
+  }
+  width = Math.max(8, width);
+  height = Math.max(8, height);
+
+  const thickness = Number.isFinite(data.thickness) ? data.thickness : 0;
+  const strokeUnits = data.areContours ? 0 : thickness / Math.max(1, data.width);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 1 1">` +
+    `<g transform="scale(${width} ${height})">` +
+    `<path d="${outlinePath}" fill="${data.areContours ? "#171717" : "none"}" ` +
+    `stroke="${data.areContours ? "none" : "#171717"}" stroke-width="${strokeUnits}" ` +
+    `stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
+  const pngBytes = await sharp(Buffer.from(svg)).png().toBuffer();
+  if (pngBytes.byteLength <= 0 || pngBytes.byteLength > NATIVE_SIGNATURE_MAX_BYTES) {
+    throw new Error("The signature image is empty or exceeds the 500 KB limit.");
+  }
+  return { pngBytes, width, height, areContours: data.areContours };
+}
+
+/**
+ * Fase A vector bake, step 2: same geometry/text contract as
+ * `bakeFieldsIntoPdf`, but the signature image is rendered Hi-DPI from the
+ * vector outline instead of stretched from a canvas PNG. One shared render
+ * is reused across every signature field (downscaling stays crisp).
+ */
+export async function bakeVectorIntoPdf(input: {
+  pdfBytes: Buffer;
+  vectorData: string;
+  fields: FieldPlacement[];
+}): Promise<Buffer> {
+  const rendered = await renderVectorSignaturePng({ vectorData: input.vectorData });
+  return bakeFieldsIntoPdf({
+    pdfBytes: input.pdfBytes,
+    signaturePngBytes: rendered.pngBytes,
+    fields: input.fields,
+  });
 }

@@ -19,7 +19,7 @@ import {
   signatureRecipients,
 } from "@harly/db";
 
-import { bakeFieldsIntoPdf, type FieldPlacement, type SignaturePlacement } from "./bake";
+import { bakeFieldsIntoPdf, renderVectorSignaturePng, type FieldPlacement, type SignaturePlacement } from "./bake";
 import { createCompletionCertificate, NATIVE_CERTIFICATE_VERSION } from "./certificate";
 import { createSignaturePreview } from "./preview";
 import { storage } from "@/lib/storage";
@@ -146,6 +146,12 @@ export async function finalizeNativeSignature(input: {
   signerEmail: string;
   /** Required only if the resolved field set includes a required signature field. */
   signaturePngBytes?: Buffer;
+  /**
+   * Fase 3: compressed vector outline. Verified + rendered Hi-DPI into
+   * `signaturePngBytes` before field resolution; wins over a directly
+   * supplied PNG when present. PNG-only callers are unaffected.
+   */
+  signatureVector?: string;
   /** New path: per-text-field values, keyed by the field's id in documents.fieldsSnapshot. */
   textValues?: Record<string, string>;
   /** Legacy path: only consulted when the document has no fieldsSnapshot. */
@@ -164,10 +170,22 @@ export async function finalizeNativeSignature(input: {
   const expectedStatus = input.existingEnvelopeId ? "pending" : "unsigned";
   if (!document || document.status !== "active" || document.signatureStatus !== expectedStatus || document.mimeType !== "application/pdf") throw new Error("This document is no longer available for signing.");
 
+  // Fase 3: normalize a vector outline into the same PNG bytes the frozen
+  // field resolution expects. Throws fail-closed — never silently signs
+  // with a different mark than the signer drew. Runs before resolveFields
+  // so vector-only submissions satisfy the required-signature check.
+  let signaturePngBytes = input.signaturePngBytes;
+  let signatureMode: "png" | "vector" = "png";
+  if (input.signatureVector) {
+    const rendered = await renderVectorSignaturePng({ vectorData: input.signatureVector });
+    signaturePngBytes = rendered.pngBytes;
+    signatureMode = "vector";
+  }
+
   const fields = resolveFields({
     documentId: input.documentId,
     fieldsSnapshot: document.fieldsSnapshot,
-    signaturePngBytes: input.signaturePngBytes ?? null,
+    signaturePngBytes: signaturePngBytes ?? null,
     textValues: input.textValues,
     legacyPlacements: input.placements,
     requireFrozenFields: Boolean(input.offerId),
@@ -175,7 +193,7 @@ export async function finalizeNativeSignature(input: {
 
   const originalBytes = await storage.read(document.storageKey);
   const originalSha256 = sha256(originalBytes);
-  const signedBytes = await bakeFieldsIntoPdf({ pdfBytes: originalBytes, signaturePngBytes: input.signaturePngBytes, fields });
+  const signedBytes = await bakeFieldsIntoPdf({ pdfBytes: originalBytes, signaturePngBytes, fields });
   const signedDocumentSha256 = sha256(signedBytes);
   const signedAt = new Date();
   const previews = await Promise.all(([400, 1200] as const).map(async (width) => { const bytes = await createSignaturePreview({ documentName: document.name, signedAt, signedDocumentSha256, width }); return { width, bytes, checksum: sha256(bytes) }; }));
@@ -312,8 +330,8 @@ export async function finalizeNativeSignature(input: {
     // Fully-resolved server-side fields, not raw client input — proves what
     // the signer actually saw (snapshot geometry + submitted content).
     await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "signature_placed", payload: { fields } });
-    await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "signature_validated", payload: { originalSha256, consentAt: input.consentAt?.toISOString() ?? null } });
-    await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "baked", payload: { signedDocumentSha256 } });
+    await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "signature_validated", payload: { originalSha256, consentAt: input.consentAt?.toISOString() ?? null, signatureMode } });
+    await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "baked", payload: { signedDocumentSha256, signatureMode } });
     await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "completed", payload: { certificateVersion: NATIVE_CERTIFICATE_VERSION, ipAddress: input.ipAddress ?? null, userAgent: input.userAgent ?? null } });
     await tx.insert(activityEvents).values({ workspaceId: input.workspaceId, actorId: input.actorId, entityType: "document", entityId: input.documentId, type: "document.signature_changed", metadata: { status: "signed", provider: "native", versionNumber } });
     if (nativeOffer && nativeApplication) {
