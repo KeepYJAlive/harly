@@ -18,7 +18,7 @@ import { WEBHOOK_EVENT_LABELS, type WebhookEvent } from "@/server/webhooks/event
  * emission points as outbound webhooks (see server/webhooks/emit.ts).
  */
 
-const EVENT_EMOJI: Record<WebhookEvent, string> = {
+const EVENT_EMOJI: Partial<Record<WebhookEvent, string>> = {
   "application.created": "📥",
   "application.stage_changed": "↗️",
   "application.hired": "🎉",
@@ -31,7 +31,9 @@ const EVENT_EMOJI: Record<WebhookEvent, string> = {
   "interview.canceled": "❌",
   "interview.completed": "✅",
   "interview.rescheduled": "🔄",
+  "task.completed": "✅",
   "job.published": "📣",
+  "webhook.received": "↔️",
 };
 
 const APP_URL = getHarlyPublicOrigin();
@@ -50,6 +52,7 @@ type Normalized = {
   emoji: string;
   title: string;
   detail: string | null;
+  message?: string | null;
   href: string;
   fields: ChatField[];
   branding: ChatBranding;
@@ -69,6 +72,7 @@ function describe(event: WebhookEvent, data: Record<string, unknown>): string | 
   const application = data.application as Record<string, unknown> | undefined;
   const job = data.job as Record<string, unknown> | undefined;
   const interview = data.interview as Record<string, unknown> | undefined;
+  const task = data.task as Record<string, unknown> | undefined;
 
   const who =
     (candidate?.name as string) ||
@@ -80,6 +84,7 @@ function describe(event: WebhookEvent, data: Record<string, unknown>): string | 
     null;
 
   if (event === "job.published") return role ? `“${role}” is now live` : null;
+  if (event === "task.completed") return task?.title ? String(task.title) : null;
   if (interview?.title) return String(interview.title);
   if (who && role) return `${who} → ${role}`;
   return who ?? role ?? null;
@@ -90,9 +95,11 @@ function buildHref(event: WebhookEvent, data: Record<string, unknown>): string {
   const application = data.application as Record<string, unknown> | undefined;
   const interview = data.interview as Record<string, unknown> | undefined;
   const job = data.job as Record<string, unknown> | undefined;
+  const task = data.task as Record<string, unknown> | undefined;
   const candidateId = candidate?.id ?? application?.candidateId ?? interview?.candidateId;
 
   if (candidateId) return `${APP_URL}/dashboard/candidates/${encodeURIComponent(String(candidateId))}`;
+  if (event === "task.completed" && task?.id) return `${APP_URL}/dashboard/tasks`;
   // Jobs currently have a shared dashboard view rather than a stable public
   // detail route. Keep this link valid until the job detail route is exposed.
   if (event === "job.published" && job?.id) return `${APP_URL}/dashboard/jobs`;
@@ -139,8 +146,8 @@ function hexToDiscordColor(value: string): number {
   return match ? Number.parseInt(match[1], 16) : 0x2f6f4e;
 }
 
-async function getWorkspaceChatBranding(workspaceId: string): Promise<ChatBranding> {
-  const [row] = await db
+async function getWorkspaceChatBranding(workspaceId: string, database: typeof db = db): Promise<ChatBranding> {
+  const [row] = await database
     .select({
       name: organization.name,
       logoUrl: organization.logo,
@@ -172,6 +179,7 @@ async function getWorkspaceChatBranding(workspaceId: string): Promise<ChatBrandi
 async function enrichChatData(
   workspaceId: string,
   data: Record<string, unknown>,
+  database: typeof db = db,
 ): Promise<Record<string, unknown>> {
   const candidate = data.candidate as Record<string, unknown> | undefined;
   const application = data.application as Record<string, unknown> | undefined;
@@ -184,7 +192,7 @@ async function enrichChatData(
 
   const [candidateRow, jobRow] = await Promise.all([
     candidateId
-      ? db
+      ? database
           .select({ firstName: candidates.firstName, lastName: candidates.lastName })
           .from(candidates)
           .where(
@@ -197,7 +205,7 @@ async function enrichChatData(
           .limit(1)
       : Promise.resolve([]),
     jobId
-      ? db
+      ? database
           .select({ title: jobs.title })
           .from(jobs)
           .where(and(eq(jobs.workspaceId, workspaceId), eq(jobs.id, jobId)))
@@ -225,10 +233,15 @@ function normalize(
   data: Record<string, unknown>,
   branding: ChatBranding = DEFAULT_BRANDING,
 ): Normalized {
+  const customMessage = typeof data.workflowMessage === "string" && data.workflowMessage.trim().length > 0
+    ? data.workflowMessage.trim()
+    : null;
+
   return {
     emoji: EVENT_EMOJI[event] ?? "🔔",
     title: WEBHOOK_EVENT_LABELS[event] ?? event,
     detail: describe(event, data),
+    message: customMessage,
     href: buildHref(event, data),
     fields: buildFields(event, data),
     branding,
@@ -236,16 +249,20 @@ function normalize(
 }
 
 function slackPayload(n: Normalized): unknown {
-  const line = n.detail ? `${n.emoji} *${n.title}* , ${n.detail}` : `${n.emoji} *${n.title}*`;
+  const line = n.detail ? `${n.emoji} *${n.title}* · ${n.detail}` : `${n.emoji} *${n.title}*`;
+  const blocks: unknown[] = [
+    { type: "section", text: { type: "mrkdwn", text: line } },
+  ];
+  if (n.message) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: n.message } });
+  }
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: `<${n.href}|Open in Harly>` }],
+  });
   return {
-    text: `${n.title}${n.detail ? ` , ${n.detail}` : ""}`,
-    blocks: [
-      { type: "section", text: { type: "mrkdwn", text: line } },
-      {
-        type: "context",
-        elements: [{ type: "mrkdwn", text: `<${n.href}|Open in Harly>` }],
-      },
-    ],
+    text: `${n.title}${n.detail ? ` · ${n.detail}` : ""}${n.message ? `: ${n.message}` : ""}`,
+    blocks,
   };
 }
 
@@ -253,13 +270,16 @@ function discordPayload(n: Normalized): unknown {
   const brandingFooter = n.branding.hideHarlyBranding
     ? n.branding.name
     : `${n.branding.name} · Powered by Harly`;
+  const description = [n.detail, n.message ? `> ${n.message}` : null]
+    .filter(Boolean)
+    .join("\n\n");
   return {
     username: n.branding.name.slice(0, 80),
     ...(n.branding.logoUrl ? { avatar_url: n.branding.logoUrl } : {}),
     embeds: [
       {
         title: `${n.emoji} ${n.title}`,
-        description: n.detail ?? undefined,
+        description: description || undefined,
         url: n.href,
         fields: n.fields,
         color: hexToDiscordColor(n.branding.primaryColor),
@@ -282,25 +302,70 @@ export async function sendChatMessage(
   event: WebhookEvent,
   data: Record<string, unknown>,
   branding: ChatBranding = DEFAULT_BRANDING,
+  options: { signal?: AbortSignal; idempotencyKey?: string } = {},
 ): Promise<{ ok: boolean; status?: number; error?: string }> {
   const n = normalize(event, data, branding);
   const body = config.provider === "slack" ? slackPayload(n) : discordPayload(n);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = AbortSignal.timeout(8000);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
     const res = await fetch(config.webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.idempotencyKey
+          ? {
+              "Idempotency-Key": options.idempotencyKey,
+              "X-Harly-Idempotency-Key": options.idempotencyKey,
+            }
+          : {}),
+      },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal,
     });
-    clearTimeout(timeout);
     if (!res.ok) return { ok: false, status: res.status };
     return { ok: true, status: res.status };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "send failed" };
   }
+}
+
+/** A synchronous chat webhook may have accepted the message before the
+ * response was lost. Workflow callers must reconcile this, never replay it. */
+export class WorkflowChatDeliveryUncertainError extends Error {
+  readonly uncertain: boolean;
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { uncertain?: boolean; retryable?: boolean } = {}) {
+    super(message);
+    this.name = options.uncertain === false
+      ? "WorkflowChatDeliveryError"
+      : "WorkflowChatDeliveryUncertainError";
+    this.uncertain = options.uncertain ?? true;
+    this.retryable = options.retryable ?? false;
+  }
+}
+
+function chatDeliveryError(result: { status?: number; error?: string }) {
+  const status = result.status;
+  // A 429 is an explicit provider back-pressure response: it is safe to
+  // retry, while a 4xx response is an actionable configuration/payload error.
+  if (status === 429) {
+    return new WorkflowChatDeliveryUncertainError(
+      result.error ?? "Chat provider rate limited the request",
+      { uncertain: false, retryable: true },
+    );
+  }
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    return new WorkflowChatDeliveryUncertainError(
+      result.error ?? `Chat provider rejected the request (${status})`,
+      { uncertain: false },
+    );
+  }
+  return new WorkflowChatDeliveryUncertainError(
+    result.error ?? `Chat webhook returned ${status ?? "an error"}`,
+  );
 }
 
 /**
@@ -324,7 +389,9 @@ export async function notifyChatEvent(
       enrichChatData(workspaceId, data),
       getWorkspaceChatBranding(workspaceId),
     ]);
-    const result = await sendChatMessage(config, event, enrichedData, branding);
+    const result = await sendChatMessage(config, event, enrichedData, branding, {
+      idempotencyKey: typeof data.eventId === "string" ? data.eventId : undefined,
+    });
     if (!result.ok) {
       console.error("[notify] chat send failed", {
         workspaceId,
@@ -339,6 +406,43 @@ export async function notifyChatEvent(
   }
 }
 
+/**
+ * Workflow-owned chat delivery. A workflow action must not turn a missing
+ * integration or failed webhook into a successful run step. OAuth Slack is
+ * persisted in slack_deliveries; custom Slack/Discord webhooks carry the
+ * workflow effect key and ambiguous responses become `uncertain`.
+ */
+export async function sendWorkflowChatMessage(
+  workspaceId: string,
+  event: WebhookEvent,
+  data: Record<string, unknown>,
+  options: { signal?: AbortSignal; database?: typeof db } = {},
+): Promise<{ queued: boolean; provider: "slack" | "discord" }> {
+  const database = options.database ?? db;
+  const slack = await getWorkspaceSlackConfig(workspaceId, database);
+  if (slack) {
+    const { notifySlackEvent } = await import("@/server/notify/slack");
+    const result = await notifySlackEvent(workspaceId, event, data, { force: true, database });
+    if (!result.queued) throw new Error("Slack delivery was not queued");
+    return { queued: true, provider: "slack" };
+  }
+
+  const config = await getWorkspaceChatConfig(workspaceId, database);
+  if (!config) throw new Error("No Slack or Discord integration is configured");
+  const [enrichedData, branding] = await Promise.all([
+    enrichChatData(workspaceId, data, database),
+    getWorkspaceChatBranding(workspaceId, database),
+  ]);
+  const result = await sendChatMessage(config, event, enrichedData, branding, {
+    signal: options.signal,
+    idempotencyKey: typeof data.eventId === "string" ? data.eventId : undefined,
+  });
+  if (!result.ok) {
+    throw chatDeliveryError(result);
+  }
+  return { queued: false, provider: config.provider };
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -350,7 +454,48 @@ function escapeHtml(value: string): string {
 export function telegramText(event: WebhookEvent, data: Record<string, unknown>): string {
   const n = normalize(event, data);
   const detail = n.detail ? ` , ${escapeHtml(n.detail)}` : "";
-  return `${n.emoji} <b>${escapeHtml(n.title)}</b>${detail}\n<a href="${n.href}">Open in Harly</a>`;
+  const message = n.message ? `\n\n${escapeHtml(n.message)}` : "";
+  return `${n.emoji} <b>${escapeHtml(n.title)}</b>${detail}${message}\n<a href="${n.href}">Open in Harly</a>`;
+}
+
+export async function sendWorkflowTelegramMessage(
+  workspaceId: string,
+  event: WebhookEvent,
+  data: Record<string, unknown>,
+  options: { signal?: AbortSignal; database?: typeof db } = {},
+): Promise<{ provider: "telegram" }> {
+  const config = await getWorkspaceTelegramConfig(workspaceId, options.database ?? db);
+  if (!config) throw new Error("No Telegram integration is configured");
+  await sendTelegramMessage({
+    botToken: config.botToken,
+    chatId: config.chatId,
+    text: telegramText(event, data),
+    signal: options.signal,
+  });
+  return { provider: "telegram" };
+}
+
+export async function sendWorkflowDiscordMessage(
+  workspaceId: string,
+  event: WebhookEvent,
+  data: Record<string, unknown>,
+  options: { signal?: AbortSignal; database?: typeof db } = {},
+): Promise<{ provider: "discord" }> {
+  const database = options.database ?? db;
+  const config = await getWorkspaceChatConfig(workspaceId, database);
+  if (!config || config.provider !== "discord") {
+    throw new Error("No Discord integration is configured");
+  }
+  const [enrichedData, branding] = await Promise.all([
+    enrichChatData(workspaceId, data, database),
+    getWorkspaceChatBranding(workspaceId, database),
+  ]);
+  const result = await sendChatMessage(config, event, enrichedData, branding, {
+    signal: options.signal,
+    idempotencyKey: typeof data.eventId === "string" ? data.eventId : undefined,
+  });
+  if (!result.ok) throw chatDeliveryError(result);
+  return { provider: "discord" };
 }
 
 /**

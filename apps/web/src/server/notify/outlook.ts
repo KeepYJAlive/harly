@@ -4,7 +4,7 @@ import { getWorkspaceOutlookConfig } from "@/lib/outlook/config";
 import { sendMail } from "@/lib/outlook/client";
 import { WEBHOOK_EVENT_LABELS, type WebhookEvent } from "@/server/webhooks/events";
 
-const EVENT_EMOJI: Record<WebhookEvent, string> = {
+const EVENT_EMOJI: Partial<Record<WebhookEvent, string>> = {
   "application.created": "📥",
   "application.stage_changed": "↗️",
   "application.hired": "🎉",
@@ -17,6 +17,7 @@ const EVENT_EMOJI: Record<WebhookEvent, string> = {
   "interview.canceled": "❌",
   "interview.completed": "✅",
   "interview.rescheduled": "🔄",
+  "task.completed": "✅",
   "job.published": "📣",
 };
 
