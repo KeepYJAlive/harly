@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isDemoMode } from "@harly/config";
+
 import { and, eq, isNull } from "drizzle-orm";
 
 import {
@@ -631,6 +633,8 @@ export async function runApiInterviewSideEffects(input: {
   strictSideEffects?: boolean;
   database?: typeof db;
 }): Promise<void> {
+  // Public demo: persist the interview locally, but never call Zoom/GCal/Outlook/Jitsi.
+  if (isDemoMode()) return;
   const database = input.database ?? db;
   let context: InterviewContext | null;
   try {
