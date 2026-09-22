@@ -28,6 +28,7 @@ import {
   rejectApplicationForApi,
 } from "@/features/applications/service";
 import { assertTaskReferences } from "@/features/tasks/service";
+import { isDemoMode } from "@harly/config";
 
 /**
  * The workflow action registry (§2.5). Each entry maps an ActionType to:
@@ -630,6 +631,9 @@ const httpRequestHandler: ActionHandler<z.infer<typeof httpRequestSchema>> = {
   label: "HTTP request",
   summarize: (input) => `${input.method} ${input.url}`,
   async run(input, ctx) {
+    if (isDemoMode()) {
+      return { success: true, data: { suppressed: true, reason: "demo_mode" } };
+    }
     try {
       const headerEntries = await Promise.all(
         Object.entries(input.headers ?? {}).map(async ([key, val]) => {
