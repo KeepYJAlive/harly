@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, isNull, lte, max, or, sql } from "drizzle-orm";
 
 import {
   aiEvaluations,
+  aiEvaluationRevisions,
   db,
   evaluationCriteria,
   evaluationCriterionResults,
@@ -12,7 +13,14 @@ import {
   evaluationRubrics,
 } from "@harly/db";
 import type { CandidateScore } from "@/lib/ai/schemas";
-import type { RuleCriterionResult, RulesRubric } from "@/lib/evaluation/rules";
+import type {
+  EvaluationMetadata,
+  RuleCriterionResult,
+  RulesRubric,
+} from "@/lib/evaluation/rules";
+import type { StructuredCriterionResult } from "@/lib/evaluation/types";
+import type { CandidateFactDocument, TextProvenance } from "@/lib/evaluation/ats-parser";
+import { fingerprintSnapshot, stableJson } from "@/lib/evaluation/snapshot";
 
 type PersistEvaluationInput = {
   workspaceId: string;
@@ -29,6 +37,13 @@ type PersistEvaluationInput = {
   rubricSnapshot?: RulesRubric | null;
   result: CandidateScore;
   criterionResults?: RuleCriterionResult[];
+  candidateFactsSnapshot?: unknown;
+  skillProfilesSnapshot?: unknown;
+  /** Full-fidelity trace (§17.3): version metadata + per-criterion details. */
+  evaluationMetadataSnapshot?: EvaluationMetadata | null;
+  criterionDetailsSnapshot?: StructuredCriterionResult[] | RuleCriterionResult[] | null;
+  /** Phase 5 (§13): display-only quantified achievements, never scored. */
+  impactHighlightsSnapshot?: unknown;
   evidenceCoverage?: number | null;
   confidence?: number | null;
   requiresHumanReview?: boolean;
@@ -37,17 +52,33 @@ type PersistEvaluationInput = {
   inputFingerprintSource: unknown;
 };
 
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  return `{${Object.entries(value as Record<string, unknown>)
-    .sort(([first], [second]) => first.localeCompare(second))
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-    .join(",")}}`;
-}
-
+/** SHA-256 over locale-independent stableJson (shared with snapshot.ts). */
 function hash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+function asTextProvenance(value: unknown): TextProvenance | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.sourceType !== "resume" &&
+      candidate.sourceType !== "job_description" &&
+      candidate.sourceType !== "application_qa" &&
+      candidate.sourceType !== "candidate_profile") ||
+    typeof candidate.rawText !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    sourceType: candidate.sourceType,
+    rawText: candidate.rawText,
+    ...(typeof candidate.section === "string" ? { section: candidate.section as TextProvenance["section"] } : {}),
+    ...(typeof candidate.charStart === "number" ? { charStart: candidate.charStart } : {}),
+    ...(typeof candidate.charEnd === "number" ? { charEnd: candidate.charEnd } : {}),
+    ...(typeof candidate.lineIndex === "number" ? { lineIndex: candidate.lineIndex } : {}),
+    ...(typeof candidate.blockId === "string" ? { blockId: candidate.blockId } : {}),
+    ...(typeof candidate.pageNumber === "number" ? { pageNumber: candidate.pageNumber } : {}),
+  };
 }
 
 function toCriterionRows(
@@ -146,6 +177,11 @@ async function ensureRubric(
       weight: criterion.weight,
       aliases: criterion.aliases,
       minimumValue: criterion.minimumValue ?? null,
+      // Phase 2 governance (§2.3, §3.4): gate semantics must survive the
+      // normalized rubric read path, not just the JSON snapshot.
+      isKnockout: criterion.isKnockout ?? false,
+      excluded: criterion.excluded ?? false,
+      sourceProvenance: criterion.sourceProvenance ?? null,
     })),
   );
   return rubric.id;
@@ -172,6 +208,11 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
     requiresHumanReview: input.requiresHumanReview ?? true,
     evaluationStatus: "completed",
     rubricSnapshot: input.rubricSnapshot ?? null,
+    candidateFactsSnapshot: input.candidateFactsSnapshot ?? null,
+    skillProfilesSnapshot: input.skillProfilesSnapshot ?? null,
+    evaluationMetadataSnapshot: input.evaluationMetadataSnapshot ?? null,
+    criterionDetailsSnapshot: input.criterionDetailsSnapshot ?? null,
+    impactHighlightsSnapshot: input.impactHighlightsSnapshot ?? null,
     provider: input.provider,
     modelId: input.modelId,
     score: input.result.score,
@@ -187,6 +228,37 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
   return db.transaction(async (tx) => {
     const rubricId = input.rubricId ?? await ensureRubric(tx, input);
     values.rubricId = rubricId;
+
+    // Preserve the exact previous evaluation before replacing the compatibility
+    // current row. This makes regeneration and resume replacement historical
+    // events instead of destructive rewrites (§5.3, §17.3).
+    const [previous] = await tx
+      .select()
+      .from(aiEvaluations)
+      .where(
+        and(
+          eq(aiEvaluations.workspaceId, input.workspaceId),
+          eq(aiEvaluations.applicationId, input.applicationId),
+        ),
+      )
+      .limit(1);
+    if (previous) {
+      const [latestRevision] = await tx
+        .select({ revision: max(aiEvaluationRevisions.revision) })
+        .from(aiEvaluationRevisions)
+        .where(eq(aiEvaluationRevisions.evaluationId, previous.id));
+      await tx
+        .insert(aiEvaluationRevisions)
+        .values({
+          evaluationId: previous.id,
+          workspaceId: previous.workspaceId,
+          applicationId: previous.applicationId,
+          revision: Number(latestRevision?.revision ?? 0) + 1,
+          snapshot: JSON.parse(JSON.stringify(previous)) as Record<string, unknown>,
+        })
+        .onConflictDoNothing();
+    }
+
     const [evaluation] = await tx
       .insert(aiEvaluations)
       .values(values)
@@ -197,6 +269,18 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
       .returning({ id: aiEvaluations.id });
 
     if (!evaluation) throw new Error("Could not persist candidate evaluation.");
+
+    if (input.evaluationMetadataSnapshot && !input.evaluationMetadataSnapshot.evaluationId) {
+      await tx
+        .update(aiEvaluations)
+        .set({
+          evaluationMetadataSnapshot: {
+            ...input.evaluationMetadataSnapshot,
+            evaluationId: evaluation.id,
+          },
+        })
+        .where(eq(aiEvaluations.id, evaluation.id));
+    }
 
     await tx
       .delete(evaluationCriterionResults)
@@ -213,6 +297,41 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
 
 export function hashEvaluationInput(value: unknown): string {
   return hash(value);
+}
+
+/**
+ * Phase 2 exit gate (§24): reuse persisted parse snapshots when the resume
+ * has not changed, so rubric/job changes re-run match/score only.
+ *
+ * Returns validated candidate facts, or null when no reusable snapshot
+ * exists (first evaluation, new resume, unreadable snapshot). Skill profiles
+ * are always rebuilt by callers: they embed current answers/profile skills,
+ * which may change while the resume stays identical.
+ */
+export async function findReusableCandidateFacts(input: {
+  workspaceId: string;
+  applicationId: string;
+  resumeText: string | null;
+}): Promise<CandidateFactDocument | null> {
+  if (!input.resumeText) return null;
+  const [row] = await db
+    .select({ snapshot: aiEvaluations.candidateFactsSnapshot })
+    .from(aiEvaluations)
+    .where(
+      and(
+        eq(aiEvaluations.workspaceId, input.workspaceId),
+        eq(aiEvaluations.applicationId, input.applicationId),
+      ),
+    )
+    .limit(1);
+  const snapshot = row?.snapshot as CandidateFactDocument | null;
+  if (!snapshot || snapshot.schemaVersion !== 2 || typeof snapshot.rawText !== "string") {
+    return null;
+  }
+  if (fingerprintSnapshot(snapshot.rawText) !== fingerprintSnapshot(input.resumeText)) {
+    return null;
+  }
+  return snapshot;
 }
 
 export async function getPublishedRulesRubric(workspaceId: string, jobId: string): Promise<RulesRubric | null> {
@@ -243,6 +362,10 @@ export async function getPublishedRulesRubric(workspaceId: string, jobId: string
       weight: criterion.weight,
       aliases: Array.isArray(criterion.aliases) ? (criterion.aliases as string[]) : [],
       minimumValue: criterion.minimumValue ?? undefined,
+      // Gate semantics must survive the published-rubric round trip (§2.3, §3.4).
+      isKnockout: criterion.isKnockout,
+      excluded: criterion.excluded,
+      sourceProvenance: asTextProvenance(criterion.sourceProvenance),
     })),
   };
 }
