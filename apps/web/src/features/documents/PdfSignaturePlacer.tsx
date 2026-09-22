@@ -14,6 +14,8 @@ import { usePdfPageRenderer } from "@/features/documents/usePdfPageRenderer";
 export type AuthorFieldPlacement = SignaturePlacement & {
   type?: "signature" | "text";
   label?: string | null;
+  /** Zero-based recipient slot used by multi-signer native envelopes. */
+  recipientIndex?: number;
 };
 
 type Props = {

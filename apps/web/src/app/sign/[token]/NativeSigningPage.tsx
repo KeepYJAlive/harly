@@ -19,6 +19,8 @@ export function NativeSigningPage({ token }: { token: string }) {
   const [meta, setMeta] = useState<{
     documentName: string;
     recipientName: string;
+    routingOrder: number;
+    signerCount: number;
     securityMode: string;
     requiresOtp: boolean;
   } | null>(null);
@@ -171,7 +173,7 @@ export function NativeSigningPage({ token }: { token: string }) {
           Review and sign
         </h1>
         <p className="mx-auto mt-1 max-w-2xl truncate text-sm text-muted-foreground">
-          {meta.documentName} · for {meta.recipientName}
+          {meta.documentName} · signer {meta.routingOrder} of {meta.signerCount} · for {meta.recipientName}
         </p>
       </header>
 

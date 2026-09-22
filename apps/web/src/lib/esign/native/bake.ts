@@ -19,6 +19,14 @@ const MIN_TEXT_FONT_SIZE = 6;
 
 const UNICODE_FONT_PATH = path.join(__dirname, "fonts", "NotoSans-Variable.ttf");
 
+/** Shared by native signing and workflow-generated PDFs so the standalone
+ * server resolves the bundled font from one known module-relative location. */
+export async function embedNativeUnicodeFont(pdf: PDFDocument) {
+  pdf.registerFontkit(fontkit);
+  const fontBytes = await fs.readFile(UNICODE_FONT_PATH);
+  return pdf.embedFont(fontBytes, { subset: true });
+}
+
 export type FieldPlacement =
   | { type: "signature"; page: number; x: number; y: number; w: number; h: number }
   | { type: "text"; page: number; x: number; y: number; w: number; h: number; value: string };
@@ -126,9 +134,7 @@ export async function bakeFieldsIntoPdf(input: {
   const hasTextField = input.fields.some((f) => f.type === "text");
   let unicodeFont: Awaited<ReturnType<typeof pdf.embedFont>> | null = null;
   if (hasTextField) {
-    pdf.registerFontkit(fontkit);
-    const fontBytes = await fs.readFile(UNICODE_FONT_PATH);
-    unicodeFont = await pdf.embedFont(fontBytes, { subset: true });
+    unicodeFont = await embedNativeUnicodeFont(pdf);
   }
 
   for (const field of input.fields) {

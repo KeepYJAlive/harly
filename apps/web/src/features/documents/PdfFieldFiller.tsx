@@ -16,6 +16,7 @@ export type FillableField = {
   label: string | null;
   required: boolean;
   order: number;
+  recipientIndex?: number;
 };
 
 type Props = {

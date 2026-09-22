@@ -25,10 +25,6 @@ import {
   isNativeOfferAcceptanceAvailable,
   isSignableNativeFieldsSnapshot,
 } from "@/lib/esign/native/fields";
-import {
-  publishPersistedDomainEvents,
-} from "@/server/events/emit";
-import { emitWebhookEvent } from "@/server/webhooks/emit";
 import { createLogger } from "@/lib/logger";
 import { storage } from "@/lib/storage";
 import {
@@ -206,7 +202,7 @@ export async function signOfferNatively(input: unknown): Promise<PortalNativeSig
       savedSignatureId: parsed.data.savedSignatureId,
       signatureVectorBase64: parsed.data.signatureVectorBase64,
     });
-    const result = await finalizeNativeSignature({
+    await finalizeNativeSignature({
       workspaceId: session.workspaceId,
       documentId: association.documentId,
       actorId: null,
@@ -220,23 +216,6 @@ export async function signOfferNatively(input: unknown): Promise<PortalNativeSig
       existingRecipientId: envelope.recipientId,
       offerId: offer.id,
     });
-    if (result.applicationHiredEvent) {
-      await publishPersistedDomainEvents([result.applicationHiredEvent]);
-      await emitWebhookEvent(
-        session.workspaceId,
-        "application.hired",
-        {
-          application: { id: offer.applicationId, jobId: offer.jobId },
-          candidate: { id: offer.candidateId },
-          offer: { id: offer.id, title: offer.title },
-        },
-        {
-          actorId: offer.createdById,
-          skipDomainEvent: true,
-          eventId: result.applicationHiredEvent.eventId,
-        },
-      );
-    }
   } catch (error) {
     log.error({ error, offerId: offer.id }, "native offer signature failed");
     return { ok: false, error: error instanceof Error ? error.message : "Could not sign the offer." };

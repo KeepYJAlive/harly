@@ -169,13 +169,19 @@ export async function getNativeSignatureSettings() {
 export async function sendDocumentForNativeSignature(input: unknown) {
   let context: Awaited<ReturnType<typeof requirePermission>>;
   try { context = await requirePermission("documents:manage"); } catch { return { ok: false, error: "You do not have permission to send documents for signing." }; }
-  const parsed = z.object({ documentId: z.uuid(), recipientEmail: z.email(), recipientName: z.string().trim().min(1).max(200), subject: z.string().trim().max(255).optional(), message: z.string().trim().max(4000).nullable().optional() }).safeParse(input);
+  const parsed = z.object({ documentId: z.uuid(), recipientEmail: z.email().optional(), recipientName: z.string().trim().min(1).max(200).optional(), recipients: z.array(recipientSchema).min(1).max(10).optional(), subject: z.string().trim().max(255).optional(), message: z.string().trim().max(4000).nullable().optional() }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid recipient details." };
   const access = await getDocumentAccessForUser({ documentId: parsed.data.documentId, workspaceId: context.organization.id, userId: context.user.id, roleKey: context.roleKey });
   if (!access || access.level !== "manage") return { ok: false, error: "You cannot send this document for signing." };
   if (access.document.status !== "active") return { ok: false, error: "Archived documents cannot be sent for signing." };
   if (access.document.signatureStatus !== "unsigned") return { ok: false, error: "This document already has a signature workflow." };
-  return createNativeSigningLink({ workspaceId: context.organization.id, documentId: parsed.data.documentId, actorId: context.user.id, recipientEmail: parsed.data.recipientEmail, recipientName: parsed.data.recipientName, subject: parsed.data.subject, message: parsed.data.message });
+  const recipients = parsed.data.recipients?.length
+    ? parsed.data.recipients
+    : parsed.data.recipientEmail && parsed.data.recipientName
+      ? [{ email: parsed.data.recipientEmail, name: parsed.data.recipientName }]
+      : [];
+  if (recipients.length === 0) return { ok: false, error: "Add at least one signing recipient." };
+  return createNativeSigningLink({ workspaceId: context.organization.id, documentId: parsed.data.documentId, actorId: context.user.id, recipients, subject: parsed.data.subject, message: parsed.data.message });
 }
 
 const draftFieldSchema = z.object({
@@ -188,6 +194,12 @@ const draftFieldSchema = z.object({
   label: z.string().trim().max(60).nullable().optional(),
   required: z.boolean().default(true),
   order: z.number().int().min(0).default(0),
+  recipientIndex: z.number().int().min(0).max(9).default(0),
+});
+
+const recipientSchema = z.object({
+  email: z.email(),
+  name: z.string().trim().min(1).max(200),
 });
 
 /**
@@ -208,12 +220,26 @@ export async function saveDocumentSignatureFieldsAndSend(input: unknown) {
   const parsed = z.object({
     documentId: z.uuid(),
     fields: z.array(draftFieldSchema).min(1).max(40),
-    recipientEmail: z.email(),
-    recipientName: z.string().trim().min(1).max(200),
+    recipientEmail: z.email().optional(),
+    recipientName: z.string().trim().min(1).max(200).optional(),
+    recipients: z.array(recipientSchema).min(1).max(10).optional(),
     subject: z.string().trim().max(255).optional(),
     message: z.string().trim().max(4000).nullable().optional(),
   }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid recipient or field details." };
+  const recipients = parsed.data.recipients?.length
+    ? parsed.data.recipients
+    : parsed.data.recipientEmail && parsed.data.recipientName
+      ? [{ email: parsed.data.recipientEmail, name: parsed.data.recipientName }]
+      : [];
+  if (recipients.length === 0) return { ok: false, error: "Add at least one signing recipient." };
+  const recipientIndexes = new Set(parsed.data.fields.map((field) => field.recipientIndex));
+  for (let index = 0; index < recipients.length; index += 1) {
+    if (!parsed.data.fields.some((field) => field.recipientIndex === index && field.type === "signature" && field.required)) {
+      return { ok: false, error: `Recipient ${index + 1} needs at least one required signature field.` };
+    }
+  }
+  if ([...recipientIndexes].some((index) => index >= recipients.length)) return { ok: false, error: "Every field must be assigned to an existing recipient." };
 
   const access = await getDocumentAccessForUser({ documentId: parsed.data.documentId, workspaceId: context.organization.id, userId: context.user.id, roleKey: context.roleKey });
   if (!access || access.level !== "manage") return { ok: false, error: "You cannot send this document for signing." };
@@ -254,7 +280,7 @@ export async function saveDocumentSignatureFieldsAndSend(input: unknown) {
         )
         .returning();
 
-      const snapshot = inserted.map((f) => ({
+      const snapshot = inserted.map((f, index) => ({
         id: f.id,
         type: f.type,
         page: f.page,
@@ -265,6 +291,7 @@ export async function saveDocumentSignatureFieldsAndSend(input: unknown) {
         label: f.label,
         required: f.required,
         order: f.order,
+        recipientIndex: parsed.data.fields[index]?.recipientIndex ?? 0,
       }));
 
       await tx
@@ -277,5 +304,5 @@ export async function saveDocumentSignatureFieldsAndSend(input: unknown) {
     return { ok: false, error: error instanceof Error ? error.message : "Could not save the field placement." };
   }
 
-  return createNativeSigningLink({ workspaceId: context.organization.id, documentId: parsed.data.documentId, actorId: context.user.id, recipientEmail: parsed.data.recipientEmail, recipientName: parsed.data.recipientName, subject: parsed.data.subject, message: parsed.data.message });
+  return createNativeSigningLink({ workspaceId: context.organization.id, documentId: parsed.data.documentId, actorId: context.user.id, recipients, subject: parsed.data.subject, message: parsed.data.message });
 }
