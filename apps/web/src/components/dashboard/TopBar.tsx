@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/ThemeProvider";
 
-import { HarlyAILogoMark } from "@/components/ui/icons/HarlyAILogoMark";
+import Image from "next/image";
 
 import { CommandMenu } from "@/components/dashboard/CommandMenu";
 import { MobileNav } from "@/components/dashboard/IconRail";
@@ -226,11 +226,20 @@ function AiSignalButton() {
           {open ? (
             <X className="size-[17px]" strokeWidth={2} />
           ) : (
-            <HarlyAILogoMark className="size-[22px]" />
+            <Image
+              src="/harly-ai-animado.svg"
+              alt="Harly AI"
+              width={22}
+              height={22}
+              className="size-[22px] shrink-0"
+              unoptimized
+            />
           )}
         </button>
       </TooltipTrigger>
-      <TooltipContent>{open ? "Close Harly AI" : "Ask Harly AI"}</TooltipContent>
+      <TooltipContent>
+        {open ? "Close Harly AI" : "Ask Harly AI"}
+      </TooltipContent>
     </Tooltip>
   );
 }
