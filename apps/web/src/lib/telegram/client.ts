@@ -17,15 +17,17 @@ async function telegramFetch<T>(
   botToken: string,
   method: string,
   body?: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
+  const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   try {
     const res = await fetch(`${TELEGRAM_API}/bot${botToken}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
+      signal: requestSignal,
     });
     const json = (await res.json().catch(() => null)) as
       | TelegramResponse<T>
@@ -53,11 +55,12 @@ export async function sendTelegramMessage(opts: {
   botToken: string;
   chatId: string;
   text: string;
+  signal?: AbortSignal;
 }): Promise<void> {
   await telegramFetch(opts.botToken, "sendMessage", {
     chat_id: opts.chatId,
     text: opts.text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-  });
+  }, opts.signal);
 }
