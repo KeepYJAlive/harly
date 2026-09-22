@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getWorkspaceAiConfig: vi.fn(),
   enforceRateLimit: vi.fn(),
   loadResumeText: vi.fn(),
+  loadResumeDocument: vi.fn(),
   logAiCandidateDecision: vi.fn(),
   scoreCandidateWithAI: vi.fn(),
   persistCandidateEvaluation: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock("@/server/api/ratelimit", () => ({
 
 vi.mock("@/lib/resume/load-resume-text", () => ({
   loadResumeText: mocks.loadResumeText,
+  loadResumeDocument: mocks.loadResumeDocument,
 }));
 
 vi.mock("@/lib/ai/governance", () => ({
@@ -66,6 +68,7 @@ vi.mock("@/lib/ai/surfaces/score-candidate", () => ({
 
 vi.mock("@/lib/evaluation/rules", () => ({
   evaluateCandidateWithRules: vi.fn(),
+  evaluateCandidateWithRulesAsync: vi.fn(),
   RULES_EVALUATION_VERSION: "rules-v1",
 }));
 
@@ -124,6 +127,7 @@ describe("AI evaluation application authorization", () => {
     });
     mocks.enforceRateLimit.mockResolvedValue(undefined);
     mocks.insert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) });
+    mocks.loadResumeDocument.mockResolvedValue({ text: "resume text", fileName: "cv.pdf", document: null });
   });
 
   it("rejects individual scoring before reading the application when its job is outside scope", async () => {
@@ -189,7 +193,6 @@ describe("AI evaluation application authorization", () => {
       provider: "openai",
       modelId: "gpt-4o",
     });
-    mocks.loadResumeText.mockResolvedValue({ text: "resume text" });
     mocks.scoreCandidateWithAI.mockResolvedValue({
       score: 82,
       recommendation: "yes",

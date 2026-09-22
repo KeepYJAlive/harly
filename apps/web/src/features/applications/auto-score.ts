@@ -1,32 +1,30 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import {
   activityEvents,
   applicationAnswers,
   applicationQuestions,
   applications,
-  candidateFiles,
   candidates,
   db,
   jobs,
   workspaceSettings,
 } from "@harly/db";
 
-import { storage } from "@/lib/storage";
-import { extractResumeText } from "@/lib/resume/extract-text";
-import { resumeKeyFromUrl } from "@/lib/resume/storage-key";
-import { maxResumeFileSize } from "@/lib/storage-validation";
+import { loadResumeDocument } from "@/lib/resume/load-resume-text";
 import { getWorkspaceAiConfig } from "@/lib/ai/config";
 import { logAiCandidateDecision } from "@/lib/ai/governance";
 import { scoreCandidateWithAI } from "@/lib/ai/surfaces/score-candidate";
 import {
-  evaluateCandidateWithRules,
+  evaluateCandidateWithRulesAsync,
   RULES_EVALUATION_VERSION,
 } from "@/lib/evaluation/rules";
+import type { EvaluationMode } from "@/lib/evaluation/mode";
 import {
   enqueueCandidateEvaluationJob,
+  findReusableCandidateFacts,
   getPublishedRulesRubric,
   markEvaluationJobCompleted,
   markEvaluationJobFailed,
@@ -77,7 +75,9 @@ export async function scheduleAutoScore(
         jobExperienceLevel: jobs.experienceLevel,
         jobEducation: jobs.education,
         jobKeywords: jobs.keywords,
+        evaluationMode: jobs.evaluationMode,
         appliedAt: applications.appliedAt,
+        applicationCreatedAt: applications.createdAt,
       })
       .from(applications)
       .innerJoin(
@@ -114,34 +114,15 @@ export async function scheduleAutoScore(
       await markEvaluationJobRunning(queueJob.id, `inline:${workspaceId}`);
     }
 
-    // Load resume text.
-    const [file] = await db
-      .select({ fileName: candidateFiles.fileName, fileUrl: candidateFiles.fileUrl })
-      .from(candidateFiles)
-      .where(
-        and(
-          eq(candidateFiles.workspaceId, workspaceId),
-          eq(candidateFiles.candidateId, row.candidateId),
-        ),
-      )
-      .orderBy(desc(candidateFiles.createdAt))
-      .limit(1);
-
-    let resumeText: string | null = null;
-    if (file) {
-      const key = resumeKeyFromUrl(file.fileUrl);
-      if (key) {
-        try {
-          const buffer = await storage.read(key);
-          if (buffer.byteLength > 0 && buffer.byteLength <= maxResumeFileSize) {
-            const { text } = await extractResumeText({ buffer, fileName: file.fileName });
-            resumeText = text.trim() || null;
-          }
-        } catch {
-          // Resume unavailable , score from profile only.
-        }
-      }
-    }
+    // Load resume text + layout document (Phase 4 §6). Unreadable sources
+    // resolve to text: null -> profile-only evaluation with human review.
+    const resume = await loadResumeDocument({ workspaceId, candidateId: row.candidateId });
+    const resumeText = resume.text;
+    const referenceDateValue = row.appliedAt ?? row.applicationCreatedAt;
+    const parsedReferenceDate = referenceDateValue ? new Date(referenceDateValue) : null;
+    const pinnedReferenceDate = parsedReferenceDate && !Number.isNaN(parsedReferenceDate.getTime())
+      ? parsedReferenceDate.toISOString()
+      : "1970-01-01T00:00:00.000Z";
 
     // Load question answers.
     const answerRows = await db
@@ -165,6 +146,10 @@ export async function scheduleAutoScore(
       )
       .orderBy(applicationQuestions.order);
 
+    const evaluationMode: EvaluationMode =
+      row.evaluationMode === "relaxed" || row.evaluationMode === "strict"
+        ? row.evaluationMode
+        : "balanced";
     const scoreInput = {
       job: {
         title: row.jobTitle,
@@ -174,6 +159,7 @@ export async function scheduleAutoScore(
         experienceLevel: row.jobExperienceLevel,
         education: row.jobEducation,
         keywords: Array.isArray(row.jobKeywords) ? (row.jobKeywords as string[]) : [],
+        evaluationMode,
       },
       candidate: {
         fullName: `${row.firstName} ${row.lastName}`,
@@ -184,18 +170,40 @@ export async function scheduleAutoScore(
         skills: Array.isArray(row.skills) ? (row.skills as string[]) : [],
         experienceYears: row.experienceYears,
       },
-      referenceDate: row.appliedAt ? new Date(row.appliedAt).toISOString() : undefined,
+      // Pin current-role math to an immutable application event. A missing
+      // appliedAt must not silently fall through to wall-clock time.
+      referenceDate: pinnedReferenceDate,
+      sourceDocument: resume.document ?? undefined,
     };
-    const source = aiConfig ? "ai" : "rules";
-    const publishedRubric = aiConfig
-      ? null
-      : await getPublishedRulesRubric(workspaceId, row.jobId);
-    const rulesEvaluation = aiConfig
-      ? null
-      : evaluateCandidateWithRules({ ...scoreInput, rubric: publishedRubric ?? undefined });
-    const result = aiConfig
-      ? await scoreCandidateWithAI(aiConfig, scoreInput)
-      : rulesEvaluation!.result;
+    // Rules-first + AI overlay with rules fallback (see ai-actions.ts).
+    // Never fail the entire auto-score solely because the AI provider failed.
+    const publishedRubric = await getPublishedRulesRubric(workspaceId, row.jobId);
+    const reusableFacts = await findReusableCandidateFacts({
+      workspaceId,
+      applicationId,
+      resumeText,
+    });
+    const rulesEvaluation = await evaluateCandidateWithRulesAsync({
+      ...scoreInput,
+      rubric: publishedRubric ?? undefined,
+      candidateFacts: reusableFacts ?? undefined,
+    });
+
+    let source: "ai" | "rules" = "rules";
+    let result = rulesEvaluation.result;
+    if (aiConfig) {
+      try {
+        result = await scoreCandidateWithAI(aiConfig, scoreInput);
+        source = "ai";
+      } catch (aiError) {
+        console.warn(
+          "Auto-score AI unavailable; falling back to deterministic rules",
+          aiError,
+        );
+        source = "rules";
+        result = rulesEvaluation.result;
+      }
+    }
 
     const persisted = await persistCandidateEvaluation({
       workspaceId,
@@ -203,17 +211,22 @@ export async function scheduleAutoScore(
       applicationId: row.applicationId,
       jobId: row.jobId,
       source,
-      provider: aiConfig?.provider ?? "harly",
-      modelId: aiConfig?.modelId ?? RULES_EVALUATION_VERSION,
-      engine: aiConfig ? "provider-ai" : "harly-rules",
-      engineVersion: aiConfig?.modelId ?? RULES_EVALUATION_VERSION,
-      rubricVersion: rulesEvaluation?.rubric.version ?? "ai-generated",
-      rubricSnapshot: rulesEvaluation?.rubric ?? null,
+      provider: source === "ai" && aiConfig ? aiConfig.provider : "harly",
+      modelId: source === "ai" && aiConfig ? aiConfig.modelId : RULES_EVALUATION_VERSION,
+      engine: source === "ai" ? "provider-ai" : "harly-rules",
+      engineVersion: source === "ai" && aiConfig ? aiConfig.modelId : RULES_EVALUATION_VERSION,
+      rubricVersion: rulesEvaluation.rubric.version,
+      rubricSnapshot: rulesEvaluation.rubric,
       result,
-      criterionResults: rulesEvaluation?.criterionResults,
-      evidenceCoverage: rulesEvaluation?.evidenceCoverage,
-      confidence: rulesEvaluation?.confidence,
-      requiresHumanReview: rulesEvaluation?.requiresHumanReview ?? true,
+      criterionResults: rulesEvaluation.criterionResults,
+      candidateFactsSnapshot: rulesEvaluation.candidateFacts,
+      skillProfilesSnapshot: rulesEvaluation.skillProfiles,
+      evaluationMetadataSnapshot: rulesEvaluation.metadata,
+      criterionDetailsSnapshot: rulesEvaluation.criterionAssessments,
+      impactHighlightsSnapshot: rulesEvaluation.impactHighlights,
+      evidenceCoverage: rulesEvaluation.evidenceCoverage,
+      confidence: rulesEvaluation.confidence,
+      requiresHumanReview: rulesEvaluation.requiresHumanReview || source === "ai",
       usedResume: resumeText !== null,
       generatedById: null,
       inputFingerprintSource: scoreInput,
@@ -235,30 +248,28 @@ export async function scheduleAutoScore(
       },
     });
 
-    if (!aiConfig) {
-      await markEvaluationJobCompleted(queueJob.id);
-      return;
+    if (source === "ai" && aiConfig) {
+      await logAiCandidateDecision({
+        workspaceId,
+        candidateId: row.candidateId,
+        applicationId: row.applicationId,
+        jobId: row.jobId,
+        provider: aiConfig.provider,
+        modelId: aiConfig.modelId,
+        inputFingerprintSource: scoreInput,
+        outputFingerprintSource: result,
+        inputSummary: {
+          usedResume: resumeText !== null,
+          answerCount: answerRows.length,
+          skillsCount: Array.isArray(row.skills) ? row.skills.length : 0,
+        },
+        outputSummary: {
+          score: result.score,
+          recommendation: result.recommendation,
+          criteriaCount: result.criteria.length,
+        },
+      });
     }
-    await logAiCandidateDecision({
-      workspaceId,
-      candidateId: row.candidateId,
-      applicationId: row.applicationId,
-      jobId: row.jobId,
-      provider: aiConfig.provider,
-      modelId: aiConfig.modelId,
-      inputFingerprintSource: scoreInput,
-      outputFingerprintSource: result,
-      inputSummary: {
-        usedResume: resumeText !== null,
-        answerCount: answerRows.length,
-        skillsCount: Array.isArray(row.skills) ? row.skills.length : 0,
-      },
-      outputSummary: {
-        score: result.score,
-        recommendation: result.recommendation,
-        criteriaCount: result.criteria.length,
-      },
-    });
     await markEvaluationJobCompleted(queueJob.id);
   } catch (error) {
     if (evaluationJobId) {
