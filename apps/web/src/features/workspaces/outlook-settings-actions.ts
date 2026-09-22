@@ -115,7 +115,7 @@ export async function saveOutlookCredentialsAction(input: {
 
 /** List calendars the authenticated Outlook account can write to. */
 export async function listOutlookCalendarsAction(): Promise<
-  { assertNotDemo(); ok: true; calendars: OutlookCalendarItem[] } | { ok: false; error: string }
+  { ok: true; calendars: OutlookCalendarItem[] } | { ok: false; error: string }
 > {
   assertNotDemo();
   const context = await requirePermission("integrations:manage");

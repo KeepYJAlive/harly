@@ -127,7 +127,7 @@ export async function saveSlackCredentialsAction(input: {
 
 /** List channels the bot can post to. */
 export async function listSlackChannelsAction(): Promise<
-  { assertNotDemo(); ok: true; channels: SlackChannel[] } | { ok: false; error: string }
+  { ok: true; channels: SlackChannel[] } | { ok: false; error: string }
 > {
   assertNotDemo();
   const context = await requirePermission("integrations:manage");
