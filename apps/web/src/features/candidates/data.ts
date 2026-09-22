@@ -310,7 +310,8 @@ function criterionDetailsByLabel(value: unknown): Map<string, Pick<AiEvaluationC
         evidenceStrength,
         lastEvidenceDate,
         matchMethod: method ?? undefined,
-        ...(score !== undefined ? { score } : {}),
+        // Required field: missing/unknown raw → null (unverified), never undefined.
+        score: score === undefined ? null : score,
         evidence: evidenceText,
       });
     }
