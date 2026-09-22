@@ -7,7 +7,6 @@ import {
   asc,
   desc,
   eq,
-  gte,
   gt,
   inArray,
   isNull,
