@@ -1,7 +1,25 @@
-import { notFound } from "next/navigation";
+import { AutomationsManager } from "@/features/automations/AutomationsManager";
+import {
+  listPendingWorkflowApprovals,
+  listWorkflows,
+  serializeWorkflow,
+} from "@/features/automations/data";
+import { requirePagePermission } from "@/features/workspaces/permissions-server";
 
 export const dynamic = "force-dynamic";
 
-export default function AutomationsPage() {
-  notFound();
+export default async function AutomationsPage() {
+  const workspace = await requirePagePermission("automations:manage");
+  const workflows = await listWorkflows(workspace.organization.id);
+  const approvals = await listPendingWorkflowApprovals({
+    workspaceId: workspace.organization.id,
+    actorId: workspace.user.id,
+  });
+
+  return (
+    <AutomationsManager
+      initialWorkflows={workflows.map(serializeWorkflow)}
+      initialApprovals={approvals}
+    />
+  );
 }
