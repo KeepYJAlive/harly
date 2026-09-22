@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db, workspaceSettings } from "@harly/db";
 
 import { requirePermission } from "@/features/workspaces/permissions-server";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { encryptSecret, isEncryptionConfigured } from "@/lib/crypto";
 import { createLogger } from "@/lib/logger";
 import {
@@ -76,6 +77,7 @@ export async function saveOutlookCredentialsAction(input: {
   clientId: string;
   clientSecret: string;
 }): Promise<OutlookActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   if (!isEncryptionConfigured()) {
@@ -113,8 +115,9 @@ export async function saveOutlookCredentialsAction(input: {
 
 /** List calendars the authenticated Outlook account can write to. */
 export async function listOutlookCalendarsAction(): Promise<
-  { ok: true; calendars: OutlookCalendarItem[] } | { ok: false; error: string }
+  { assertNotDemo(); ok: true; calendars: OutlookCalendarItem[] } | { ok: false; error: string }
 > {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
   const config = await getWorkspaceOutlookConfig(context.organization.id);
   if (!config) return { ok: false, error: "Outlook not connected." };
@@ -143,6 +146,7 @@ export async function saveOutlookSettingsAction(input: {
   events: string[];
   enabled: boolean;
 }): Promise<OutlookActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   const cleanEvents = input.events.filter(isWebhookEvent);
@@ -163,6 +167,7 @@ export async function saveOutlookSettingsAction(input: {
 
 /** Disconnect Outlook: clear all outlook columns. */
 export async function disconnectOutlookAction(): Promise<OutlookActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   await db
@@ -188,6 +193,7 @@ export async function disconnectOutlookAction(): Promise<OutlookActionResult> {
 
 /** Send a test email via Outlook. */
 export async function testOutlookAction(): Promise<OutlookActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
   const config = await getWorkspaceOutlookConfig(context.organization.id);
   if (!config) return { ok: false, error: "Outlook not connected." };
