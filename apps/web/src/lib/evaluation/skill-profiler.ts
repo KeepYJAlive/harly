@@ -307,8 +307,16 @@ export function extractSkillEvidenceOccurrences(
     resolved.method === "deterministic_exact" ? "exact" : resolved.method;
 
   // 1. Declared skills (Skills section) — LinkedIn-style explicit skills.
+  // Exact labels resolve via resolveSkillConcept so short canonical names like
+  // "Go" / "R" are kept when the candidate deliberately listed them. Free-text
+  // scanners still use matchSkillConceptsInText (short-token guard intact).
   for (const skill of facts.declaredSkills) {
-    for (const resolved of matchSkillConceptsInText(skill.name, options?.recruiterAliases)) {
+    const exact = resolveSkillConcept(skill.name, options?.recruiterAliases);
+    const resolvedList = exact.conceptId
+      ? [exact]
+      : matchSkillConceptsInText(skill.name, options?.recruiterAliases);
+    for (const resolved of resolvedList) {
+      if (!resolved.conceptId) continue;
       occurrences.push({
         rawTerm: skill.name,
         conceptId: resolved.conceptId,
