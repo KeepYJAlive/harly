@@ -13,15 +13,31 @@ import {
   deleteSavedSignature,
   listSavedSignatures,
   saveSignature,
+  saveVectorSignature,
+  type SavedSignatureEntry,
 } from "./saved-signature-actions";
-
-type SavedSignature = { id: string; createdAt: Date; dataUrl: string };
+import {
+  getVectorFromDraw,
+  getVectorFromImage,
+  getVectorFromType,
+  isVectorSignaturesEnabled,
+  vectorToPngDataUrl,
+  type VectorSignatureData,
+} from "./signature-vector";
+import { SavedVectorThumb, VectorSignaturePreview } from "./VectorSignaturePreview";
 
 type Props = {
   value?: string;
   onChange: (pngDataUrl: string) => void;
   /** Show the "Saved" tab, backed by the caller's workspace signing settings. */
   allowSaved?: boolean;
+  /** Fase 1 spike: receives the vector outline when the flag is on. PNG flow untouched. */
+  onVectorChange?: (vector: VectorSignatureData | null) => void;
+  /**
+   * Fase 2: workspace flag (`workspaceSettings.vectorSignaturesEnabled`).
+   * Falls back to the Fase 1 env flag when omitted (portal flows).
+   */
+  vectorEnabled?: boolean;
 };
 
 const TABS = [
@@ -30,20 +46,31 @@ const TABS = [
   { key: "upload", label: "Upload" },
 ] as const;
 
-export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
+export function SignaturePad({ value, onChange, allowSaved = false, onVectorChange, vectorEnabled: vectorEnabledProp }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const drawingRef = useRef(false);
   const internalValueRef = useRef<string | undefined>(undefined);
   const captureStrokeRef = useRef(false);
   const lastSpaceRef = useRef(0);
+  // Fase 1 spike: raw pointer strokes in canvas pixels for vector extraction.
+  // Only populated when the flag is on; PNG flow never reads this.
+  // Fase 2: workspace setting wins when provided, env flag is the fallback.
+  const vectorEnabled = vectorEnabledProp ?? isVectorSignaturesEnabled();
+  const strokesRef = useRef<number[][]>([]);
+  const [vector, setVector] = useState<VectorSignatureData | null>(null);
+
+  function emitVector(next: VectorSignatureData | null) {
+    setVector(next);
+    onVectorChange?.(next);
+  }
   const [mode, setMode] = useState<"draw" | "type" | "upload" | "saved">(
     "draw",
   );
   const [typed, setTyped] = useState("");
   const [captureMode, setCaptureMode] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<SavedSignature[]>([]);
+  const [saved, setSaved] = useState<SavedSignatureEntry[]>([]);
   const [savedLoading, setSavedLoading] = useState(allowSaved);
   const [selectedSavedId, setSelectedSavedId] = useState<string | null>(null);
   const [savingCurrent, setSavingCurrent] = useState(false);
@@ -53,7 +80,7 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     let cancelled = false;
     void listSavedSignatures()
       .then((rows) => {
-        if (!cancelled) setSaved(rows as SavedSignature[]);
+        if (!cancelled) setSaved(rows);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -107,6 +134,7 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     context.fill();
     context.beginPath();
     context.moveTo(p.x, p.y);
+    if (vectorEnabled) strokesRef.current.push([p.x, p.y]);
     canvasRef.current!.setPointerCapture(event.pointerId);
   }
 
@@ -121,9 +149,13 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
         context.beginPath();
         context.moveTo(p.x, p.y);
         captureStrokeRef.current = true;
+        // Capture mode draws without pointer-down, so no stroke was opened
+        // in start() — open one here. Normal mode already opened it.
+        if (vectorEnabled) strokesRef.current.push([]);
       }
       context.lineTo(p.x, p.y);
       context.stroke();
+      if (vectorEnabled) strokesRef.current[strokesRef.current.length - 1]?.push(p.x, p.y);
     }
   }
 
@@ -140,6 +172,21 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     drawingRef.current = false;
     captureStrokeRef.current = false;
     if (shouldCommit) commitCanvas();
+    // Fase 1 spike: vector outline alongside the PNG. Failure never blocks signing.
+    if (vectorEnabled && shouldCommit) {
+      const canvas = canvasRef.current;
+      const curves = strokesRef.current
+        .filter((pts) => pts.length >= 2)
+        .map((pts) => ({ points: pts }));
+      if (canvas && curves.length > 0) {
+        void getVectorFromDraw(
+          curves,
+          { width: canvas.width, height: canvas.height },
+        )
+          .then(emitVector)
+          .catch(() => undefined);
+      }
+    }
   }
 
   function clear() {
@@ -148,8 +195,10 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height);
     internalValueRef.current = "";
     captureStrokeRef.current = false;
+    strokesRef.current = [];
     setTyped("");
     setSelectedSavedId(null);
+    emitVector(null);
     onChange("");
   }
 
@@ -206,6 +255,25 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     const nextValue = canvas.toDataURL("image/png");
     internalValueRef.current = nextValue;
     onChange(nextValue);
+    // Fase 1 spike: vector contours alongside the PNG. Failure is silent.
+    if (vectorEnabled && value.trim().length > 0) {
+      const style = window.getComputedStyle(
+        document.getElementById("signature-name") ?? document.body,
+      );
+      void getVectorFromType(
+        value,
+        {
+          fontFamily: style.fontFamily || "cursive",
+          fontStyle: "italic",
+          fontWeight: style.fontWeight || "400",
+        },
+        { width: canvas.width, height: canvas.height },
+      )
+        .then(emitVector)
+        .catch(() => undefined);
+    } else if (vectorEnabled) {
+      emitVector(null);
+    }
   }
 
   function uploadImage(file: File | undefined) {
@@ -246,6 +314,13 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
         setTyped("");
         setSelectedSavedId(null);
         onChange(nextValue);
+        // Fase 1 spike: ink-only contours alongside the PNG. Failure is silent.
+        if (vectorEnabled && typeof createImageBitmap === "function") {
+          void createImageBitmap(file)
+            .then((bitmap) => getVectorFromImage(bitmap))
+            .then((next) => emitVector(next))
+            .catch(() => undefined);
+        }
       };
       image.onerror = () => setUploadError("That image could not be read.");
       image.src = String(reader.result);
@@ -254,8 +329,23 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
     reader.readAsDataURL(file);
   }
 
-  function selectSaved(signature: SavedSignature) {
+  function selectSaved(signature: SavedSignatureEntry) {
     setSelectedSavedId(signature.id);
+    // Fase 2 dual-read: vector rows rasterize to the PNG the bake flow
+    // expects. Failure falls back to leaving the canvas untouched.
+    if (signature.kind === "vector") {
+      void vectorToPngDataUrl(signature.vectorData)
+        .then((png) => {
+          if (!png) {
+            toast.error("That vector signature could not be loaded.");
+            return;
+          }
+          internalValueRef.current = png;
+          onChange(png);
+        })
+        .catch(() => toast.error("That vector signature could not be loaded."));
+      return;
+    }
     internalValueRef.current = signature.dataUrl;
     onChange(signature.dataUrl);
   }
@@ -274,17 +364,26 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
   function saveCurrent() {
     if (!value) return;
     setSavingCurrent(true);
+    // Fase 2 dual-write: PNG row first (legacy flow), then the vector row
+    // when the flag is on and an outline was captured. Either may fail
+    // independently without blocking the other.
+    const vectorData = vectorEnabled ? vector?.compressed ?? null : null;
     void saveSignature({ pngBase64: value })
-      .then((result) => {
+      .then(async (result) => {
         if (!result.ok) {
           toast.error(result.error ?? "Could not save the signature.");
           return;
         }
+        if (vectorData) {
+          const vec = await saveVectorSignature({ vectorData });
+          if (!vec.ok) {
+            toast.error("PNG saved, but the vector copy failed. You can retry from the signing screen.");
+          }
+        }
         toast.success("Signature saved for reuse");
-        return listSavedSignatures().then((rows) =>
-          setSaved(rows as SavedSignature[]),
-        );
+        return listSavedSignatures().then((rows) => setSaved(rows));
       })
+      .catch(() => toast.error("Could not save the signature."))
       .finally(() => setSavingCurrent(false));
   }
 
@@ -347,11 +446,15 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
                         : "border-input hover:border-primary/40"
                     }`}
                   >
-                    <img
-                      src={signature.dataUrl}
-                      alt="Saved signature"
-                      className="max-h-full max-w-full object-contain"
-                    />
+                    {signature.kind === "vector" ? (
+                      <SavedVectorThumb vectorData={signature.vectorData} />
+                    ) : (
+                      <img
+                        src={signature.dataUrl}
+                        alt="Saved signature"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    )}
                   </button>
                   <button
                     type="button"
@@ -426,6 +529,12 @@ export function SignaturePad({ value, onChange, allowSaved = false }: Props) {
             <p className="text-xs text-destructive" role="alert">
               {uploadError}
             </p>
+          ) : null}
+          {vectorEnabled && vector ? (
+            <VectorSignaturePreview
+              d={vector.outlinePath}
+              areContours={vector.areContours}
+            />
           ) : null}
           {allowSaved && value ? (
             <Button
