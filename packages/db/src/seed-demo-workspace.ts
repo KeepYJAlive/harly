@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
@@ -389,6 +389,12 @@ export type SeedDemoOptions = {
   workspaceId: string;
   /** Absolute path to the uploads root for resume PDFs (defaults to cwd/uploads). */
   uploadsRoot?: string;
+  /**
+   * User id that owns attribution (jobs createdBy, etc.). Prefer the shared
+   * demo login user. When omitted, the member with role `owner` is used —
+   * never "oldest membership" (teammates are seeded with older createdAt).
+   */
+  ownerUserId?: string;
 };
 
 /**
@@ -410,23 +416,28 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
       throw new Error(`No organization found for workspace id ${workspaceId}.`);
     }
 
-    // Resolve the owner (falls back to any member) to attribute seeded rows.
-    const [ownerMember] = await db
-      .select({ userId: schema.member.userId })
-      .from(schema.member)
-      .where(eq(schema.member.organizationId, workspaceId))
-      .orderBy(schema.member.createdAt)
-      .limit(1);
-    if (!ownerMember) {
-      throw new Error(`Workspace ${workspaceId} has no members to attribute demo data to.`);
+    // Resolve attribution user: explicit ownerUserId → member.role === "owner".
+    // Never "oldest membership" — teammates are seeded with older createdAt.
+    let attributionUserId = options.ownerUserId ?? null;
+    if (!attributionUserId) {
+      const members = await db
+        .select({ userId: schema.member.userId, role: schema.member.role })
+        .from(schema.member)
+        .where(eq(schema.member.organizationId, workspaceId));
+      attributionUserId = members.find((m) => m.role === "owner")?.userId ?? null;
+    }
+    if (!attributionUserId) {
+      throw new Error(
+        `Workspace ${workspaceId} has no owner member to attribute demo data to. Pass ownerUserId.`,
+      );
     }
     const [user] = await db
       .select()
       .from(schema.user)
-      .where(eq(schema.user.id, ownerMember.userId))
+      .where(eq(schema.user.id, attributionUserId))
       .limit(1);
     if (!user) {
-      throw new Error(`Owner user ${ownerMember.userId} not found for workspace ${workspaceId}.`);
+      throw new Error(`Owner user ${attributionUserId} not found for workspace ${workspaceId}.`);
     }
     const ownerEmail = user.email;
 
@@ -508,9 +519,69 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
           outlookEnabled: false,
           outlookAccountEmail: null,
           zoomEnabled: false,
+          zoomClientId: null,
+          zoomClientSecretCiphertext: null,
+          zoomClientSecretIv: null,
+          zoomClientSecretTag: null,
+          zoomAccountId: null,
+          zoomAccountEmail: null,
+          zoomTokenCiphertext: null,
+          zoomTokenIv: null,
+          zoomTokenTag: null,
+          zoomRefreshTokenCiphertext: null,
+          zoomRefreshTokenIv: null,
+          zoomRefreshTokenTag: null,
+          zoomEvents: [],
           slackEnabled: false,
+          slackClientId: null,
+          slackClientSecretCiphertext: null,
+          slackClientSecretIv: null,
+          slackClientSecretTag: null,
+          slackTeamId: null,
+          slackTeamName: null,
+          slackAppId: null,
+          slackBotUserId: null,
+          slackEnterpriseId: null,
+          slackScopes: [],
+          slackInstallerUserId: null,
+          slackInstalledAt: null,
+          slackLastValidatedAt: null,
+          slackRevokedAt: null,
+          slackChannelId: null,
+          slackChannelName: null,
+          slackBotTokenCiphertext: null,
+          slackBotTokenIv: null,
+          slackBotTokenTag: null,
+          slackEvents: [],
           telegramEnabled: false,
           turnstileEnabled: false,
+          turnstileSecretCiphertext: null,
+          turnstileSecretIv: null,
+          turnstileSecretTag: null,
+          captchaEnabled: false,
+          captchaProvider: null,
+          recaptchaSiteKey: null,
+          recaptchaSecretCiphertext: null,
+          recaptchaSecretIv: null,
+          recaptchaSecretTag: null,
+          hcaptchaSiteKey: null,
+          hcaptchaSecretCiphertext: null,
+          hcaptchaSecretIv: null,
+          hcaptchaSecretTag: null,
+          chatEnabled: false,
+          chatProvider: null,
+          chatWebhookCiphertext: null,
+          chatWebhookIv: null,
+          chatWebhookTag: null,
+          chatEvents: [],
+          jitsiEnabled: false,
+          jitsiBaseUrl: null,
+          docusealEnabled: false,
+          docusealUrl: null,
+          docusealApiTokenCiphertext: null,
+          docusealApiTokenIv: null,
+          docusealApiTokenTag: null,
+          docusealWebhookSecret: null,
           legalEntityName: "Syntrix Inc.",
           legalEntityEmail: "legal@syntrix.com",
           legalEntityWebsite: "https://syntrix.com",
@@ -546,7 +617,8 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
           organizationId: workspaceId,
           userId: t.id,
           role: "member",
-          createdAt: daysAgo(60),
+          // Keep newer than a typical setup owner so createdAt never wins attribution.
+          createdAt: daysAgo(7),
         })
         .onConflictDoNothing();
     }
@@ -575,8 +647,41 @@ export async function seedDemoWorkspace(options: SeedDemoOptions): Promise<SeedD
       for (const { table_name } of scopedTables) {
         await tx`DELETE FROM ${tx(table_name)} WHERE workspace_id = ${workspaceId}`;
       }
+      // Org-scoped leftovers (no workspace_id column) that must not survive reset.
+      await tx`DELETE FROM invitation WHERE organization_id = ${workspaceId}`;
+      await tx`DELETE FROM member_sender_identity WHERE organization_id = ${workspaceId}`;
+      // Shared-account sessions: every visitor gets a fresh enter after reset.
+      await tx`DELETE FROM session WHERE user_id = ${user.id}`;
+      // Also drop sessions for seeded teammates (no auth, but keep identity clean).
+      await tx`DELETE FROM session WHERE user_id LIKE 'seed-teammate-%'`;
     });
-    console.log(`Wiped ${scopedTables.length} workspace-scoped tables.`);
+    console.log(`Wiped ${scopedTables.length} workspace-scoped tables + sessions/invites.`);
+
+    // Purge on-disk uploads for this workspace (DB rows are gone; blobs must go too).
+    const workspaceUploadDir = path.join(webUploadsRoot, "workspaces", workspaceId);
+    await rm(workspaceUploadDir, { recursive: true, force: true });
+    await mkdir(path.join(webUploadsRoot, "workspaces", workspaceId, "resumes"), {
+      recursive: true,
+    });
+
+    // Reset demo owner public profile fields that Layer-2 now blocks mid-session,
+    // and clear username history so a prior visitor's handle cannot linger.
+    await db
+      .update(schema.user)
+      .set({
+        name: OWNER_NAME,
+        image: `${DEMO_CDN}/demo/team/alex.jpg`,
+        username: null,
+        jobTitle: null,
+        phone: null,
+        location: null,
+        bio: null,
+        linkedinUrl: null,
+        githubUrl: null,
+        websiteUrl: null,
+      })
+      .where(eq(schema.user.id, user.id));
+    await db.delete(schema.usernameHistory).where(eq(schema.usernameHistory.userId, user.id));
 
     // ── Jobs + stages ──
     const jobStageMap = new Map<number, Map<StageName, string>>();
