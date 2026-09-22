@@ -851,7 +851,9 @@ export async function decideOffer(input: {
     }
   }
 
-  let persistedEvent: Awaited<ReturnType<typeof persistDomainEvent>> | null = null;
+  const hiredEvent: { current: Awaited<ReturnType<typeof persistDomainEvent>> | null } = {
+    current: null,
+  };
   await db.transaction(async (tx) => {
     const [updatedOffer] = await tx
       .update(offers)
@@ -966,7 +968,7 @@ export async function decideOffer(input: {
       metadata: { title: offer.title },
     });
     if (decision !== "accepted") return;
-    persistedEvent = await persistDomainEvent(tx, {
+    hiredEvent.current = await persistDomainEvent(tx, {
       name: "application.hired",
       workspaceId,
       actorId: context.user.id,
@@ -980,13 +982,14 @@ export async function decideOffer(input: {
     });
   });
 
-  if (persistedEvent) {
-    await publishPersistedDomainEvents([persistedEvent]);
+  if (hiredEvent.current) {
+    await publishPersistedDomainEvents([hiredEvent.current]);
     await emitWebhookEvent(workspaceId, "application.hired", {
       application: { id: offer.applicationId, jobId: offer.jobId },
       candidate: { id: offer.candidateId },
       offer: { id: offer.id, title: offer.title },
-    }, { actorId: context.user.id, skipDomainEvent: true });
+      eventId: hiredEvent.current.eventId,
+    }, { actorId: context.user.id, skipDomainEvent: true, eventId: hiredEvent.current.eventId });
   }
 
   const decisionRecipient = await getOfferRecipient(

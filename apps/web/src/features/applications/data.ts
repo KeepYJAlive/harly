@@ -632,7 +632,8 @@ export async function createPublicApplication(
         name: event.candidateName,
       },
       job: { id: event.jobId, title: event.jobTitle },
-    }, { skipDomainEvent: true });
+      eventId: createdDomainEvent.current?.eventId,
+    }, { skipDomainEvent: true, eventId: createdDomainEvent.current?.eventId });
   }
 
   return result;

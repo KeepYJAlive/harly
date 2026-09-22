@@ -228,7 +228,8 @@ export async function createJobForApi(input: {
     await publishPersistedDomainEvents([event]);
     await emitWebhookEvent(workspaceId, "job.published", {
       job: serializeJob(job),
-    }, { actorId: actorUserId, skipDomainEvent: true });
+      eventId: event.eventId,
+    }, { actorId: actorUserId, skipDomainEvent: true, eventId: event.eventId });
   }
   return job;
 }
@@ -301,7 +302,8 @@ export async function updateJobForApi(input: {
     await publishPersistedDomainEvents([event]);
     await emitWebhookEvent(input.workspaceId, "job.published", {
       job: serializeJob(updated),
-    }, { skipDomainEvent: true });
+      eventId: event.eventId,
+    }, { skipDomainEvent: true, eventId: event.eventId });
   }
   return updated;
 }

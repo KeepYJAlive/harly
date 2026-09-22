@@ -15,10 +15,11 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { candidateDeletionJobs, db } from "@harly/db";
+import { candidateDeletionJobs, candidates, db } from "@harly/db";
 
 const MAX_ATTEMPTS = 8;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+type DeletionDatabase = Pick<typeof db, "select" | "update" | "insert">;
 
 export type CandidateDeletionJobInput = {
   workspaceId: string;
@@ -26,17 +27,23 @@ export type CandidateDeletionJobInput = {
   requestedBy: string;
   requestId?: string;
   requestType?: "candidate_delete" | "dsar_erasure" | "reconciliation";
-  /** Reset a completed `candidate:${id}` job so Trash → Delete permanently can run. */
-  requeueCompleted?: boolean;
+  database?: typeof db;
 };
 
 export async function enqueueCandidateDeletionJob(
   input: CandidateDeletionJobInput,
 ) {
+  return enqueueCandidateDeletionJobWithDatabase(input, input.database ?? db);
+}
+
+async function enqueueCandidateDeletionJobWithDatabase(
+  input: CandidateDeletionJobInput,
+  database: DeletionDatabase,
+) {
   const dedupeKey = input.requestId
     ? `request:${input.requestId}`
     : `candidate:${input.candidateId}`;
-  const [deduplicatedJob] = await db
+  const [deduplicatedJob] = await database
     .select()
     .from(candidateDeletionJobs)
     .where(
@@ -47,11 +54,8 @@ export async function enqueueCandidateDeletionJob(
     )
     .limit(1);
   if (deduplicatedJob) {
-    const shouldRequeue =
-      ["blocked", "dead_letter"].includes(deduplicatedJob.status) ||
-      (input.requeueCompleted && deduplicatedJob.status === "completed");
-    if (shouldRequeue) {
-      const [requeued] = await db
+    if (["blocked", "dead_letter"].includes(deduplicatedJob.status)) {
+      const [requeued] = await database
         .update(candidateDeletionJobs)
         .set({
           status: "pending",
@@ -61,9 +65,6 @@ export async function enqueueCandidateDeletionJob(
           nextRetryAt: new Date(),
           lockedAt: null,
           lockedBy: null,
-          completedAt: null,
-          stats: null,
-          durationMs: null,
           updatedAt: new Date(),
         })
         .where(eq(candidateDeletionJobs.id, deduplicatedJob.id))
@@ -73,7 +74,7 @@ export async function enqueueCandidateDeletionJob(
     return deduplicatedJob;
   }
 
-  const [activeCandidateJob] = await db
+  const [activeCandidateJob] = await database
     .select()
     .from(candidateDeletionJobs)
     .where(
@@ -93,7 +94,7 @@ export async function enqueueCandidateDeletionJob(
     .limit(1);
   if (activeCandidateJob) {
     if (["blocked", "dead_letter"].includes(activeCandidateJob.status)) {
-      const [requeued] = await db
+      const [requeued] = await database
         .update(candidateDeletionJobs)
         .set({
           status: "pending",
@@ -112,7 +113,7 @@ export async function enqueueCandidateDeletionJob(
     return activeCandidateJob;
   }
 
-  const [job] = await db
+  const [job] = await database
     .insert(candidateDeletionJobs)
     .values({
       workspaceId: input.workspaceId,
@@ -135,7 +136,7 @@ export async function enqueueCandidateDeletionJob(
 
   if (job) return job;
 
-  const [existing] = await db
+  const [existing] = await database
     .select()
     .from(candidateDeletionJobs)
     .where(
@@ -146,6 +147,59 @@ export async function enqueueCandidateDeletionJob(
     )
     .limit(1);
   return existing ?? null;
+}
+
+/**
+ * Queue a complete candidate erasure from a server-side workflow action.
+ *
+ * The candidate is moved to trash before the durable deletion job is created,
+ * so normal reads stop exposing the record immediately. The deletion worker
+ * then permanently erases related database/storage/provider references and
+ * handles legal holds or retries. The operation is workspace-scoped and
+ * idempotent by candidate, which makes workflow retries safe.
+ */
+export async function queueCandidateErasureForWorkflow(input: {
+  workspaceId: string;
+  candidateId: string;
+  requestedBy: string;
+  database?: typeof db;
+}) {
+  const database = input.database ?? db;
+  return database.transaction(async (transaction) => {
+    const [candidate] = await transaction
+      .select({ id: candidates.id })
+      .from(candidates)
+      .where(
+        and(
+          eq(candidates.id, input.candidateId),
+          eq(candidates.workspaceId, input.workspaceId),
+        ),
+      )
+      .limit(1);
+    if (!candidate) return null;
+
+    // Hiding the candidate and creating the durable purge job are one atomic
+    // boundary. A failed queue insert must not leave a record invisible with
+    // no path to permanent erasure; a retry remains idempotent by candidate.
+    await transaction
+      .update(candidates)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(candidates.id, input.candidateId),
+          eq(candidates.workspaceId, input.workspaceId),
+          isNull(candidates.deletedAt),
+        ),
+      );
+
+    return enqueueCandidateDeletionJobWithDatabase(
+      {
+        ...input,
+        requestType: "candidate_delete",
+      },
+      transaction,
+    );
+  });
 }
 
 export async function markCandidateDeletionCompleted(

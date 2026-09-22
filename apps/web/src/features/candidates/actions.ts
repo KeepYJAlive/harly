@@ -685,8 +685,8 @@ export async function createCandidate(input: {
     await emitWebhookEvent(
       workspace.id,
       "candidate.created",
-      { candidate: serializeCandidate(candidate) },
-      { skipDomainEvent: true, actorId: user.id },
+      { candidate: serializeCandidate(candidate), eventId: candidateEvent.eventId },
+      { skipDomainEvent: true, actorId: user.id, eventId: candidateEvent.eventId },
     );
     await logAuditEvent({
       workspaceId: workspace.id,
@@ -704,8 +704,8 @@ export async function createCandidate(input: {
       await emitWebhookEvent(
         workspace.id,
         "candidate.referred",
-        { referral: serializeCandidateReferral(referralResult.referral) },
-        { skipDomainEvent: true, actorId: user.id },
+        { referral: serializeCandidateReferral(referralResult.referral), eventId: referralResult.event.eventId },
+        { skipDomainEvent: true, actorId: user.id, eventId: referralResult.event.eventId },
       );
       await logAuditEvent({
         workspaceId: workspace.id,

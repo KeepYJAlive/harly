@@ -50,6 +50,7 @@ type PersistEvaluationInput = {
   usedResume: boolean;
   generatedById: string | null;
   inputFingerprintSource: unknown;
+  database?: typeof db;
 };
 
 /** SHA-256 over locale-independent stableJson (shared with snapshot.ts). */
@@ -86,17 +87,28 @@ function toCriterionRows(
   results: RuleCriterionResult[] | undefined,
   fallback: CandidateScore["criteria"],
 ): Array<typeof evaluationCriterionResults.$inferInsert> {
-  const normalizedResults = results ?? fallback.map((criterion, index) => ({
-    key: `criterion:${index + 1}`,
-    label: criterion.label,
-    status: criterion.evidence ? (criterion.score >= 60 ? "met" : "not_met") : "unknown",
-    score: criterion.evidence ? criterion.score : null,
-    weight: 0,
-    evidence: criterion.evidence,
-    evidenceSource: criterion.evidence ? "evaluation" : null,
-    confidence: criterion.evidence ? 50 : 0,
-    missingReason: criterion.evidence ? null : "No evidence returned by the evaluation engine.",
-  } satisfies RuleCriterionResult));
+  const normalizedResults =
+    results ??
+    fallback.map(
+      (criterion, index) =>
+        ({
+          key: `criterion:${index + 1}`,
+          label: criterion.label,
+          status: criterion.evidence
+            ? criterion.score >= 60
+              ? "met"
+              : "not_met"
+            : "unknown",
+          score: criterion.evidence ? criterion.score : null,
+          weight: 0,
+          evidence: criterion.evidence,
+          evidenceSource: criterion.evidence ? "evaluation" : null,
+          confidence: criterion.evidence ? 50 : 0,
+          missingReason: criterion.evidence
+            ? null
+            : "No evidence returned by the evaluation engine.",
+        }) satisfies RuleCriterionResult,
+    );
   return normalizedResults.map((criterion) => ({
     evaluationId,
     criterionKey: criterion.key,
@@ -167,6 +179,7 @@ async function ensureRubric(
     return raced?.id ?? null;
   }
 
+  if (input.rubricSnapshot.criteria.length > 0) {
   await tx.insert(evaluationCriteria).values(
     input.rubricSnapshot.criteria.map((criterion) => ({
       rubricId: rubric.id,
@@ -184,11 +197,14 @@ async function ensureRubric(
       sourceProvenance: criterion.sourceProvenance ?? null,
     })),
   );
+  }
   return rubric.id;
 }
 
 /** Persist the complete, reproducible evaluation atomically with its evidence. */
-export async function persistCandidateEvaluation(input: PersistEvaluationInput) {
+export async function persistCandidateEvaluation(
+  input: PersistEvaluationInput,
+) {
   const inputHash = hash(input.inputFingerprintSource);
   const outputHash = hash(input.result);
   const values = {
@@ -225,8 +241,9 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
     generatedById: input.generatedById,
   } satisfies typeof aiEvaluations.$inferInsert;
 
-  return db.transaction(async (tx) => {
-    const rubricId = input.rubricId ?? await ensureRubric(tx, input);
+  const database = input.database ?? db;
+  return database.transaction(async (tx) => {
+    const rubricId = input.rubricId ?? (await ensureRubric(tx, input));
     values.rubricId = rubricId;
 
     // Preserve the exact previous evaluation before replacing the compatibility
@@ -286,7 +303,11 @@ export async function persistCandidateEvaluation(input: PersistEvaluationInput) 
       .delete(evaluationCriterionResults)
       .where(eq(evaluationCriterionResults.evaluationId, evaluation.id));
 
-    const criterionRows = toCriterionRows(evaluation.id, input.criterionResults, input.result.criteria);
+    const criterionRows = toCriterionRows(
+      evaluation.id,
+      input.criterionResults,
+      input.result.criteria,
+    );
     if (criterionRows.length > 0) {
       await tx.insert(evaluationCriterionResults).values(criterionRows);
     }
@@ -334,8 +355,12 @@ export async function findReusableCandidateFacts(input: {
   return snapshot;
 }
 
-export async function getPublishedRulesRubric(workspaceId: string, jobId: string): Promise<RulesRubric | null> {
-  const [rubric] = await db
+export async function getPublishedRulesRubric(
+  workspaceId: string,
+  jobId: string,
+  database: typeof db = db,
+): Promise<RulesRubric | null> {
+  const [rubric] = await database
     .select({ id: evaluationRubrics.id, version: evaluationRubrics.version })
     .from(evaluationRubrics)
     .where(
@@ -348,7 +373,7 @@ export async function getPublishedRulesRubric(workspaceId: string, jobId: string
     .orderBy(desc(evaluationRubrics.version))
     .limit(1);
   if (!rubric) return null;
-  const criteria = await db
+  const criteria = await database
     .select()
     .from(evaluationCriteria)
     .where(eq(evaluationCriteria.rubricId, rubric.id));
@@ -358,9 +383,12 @@ export async function getPublishedRulesRubric(workspaceId: string, jobId: string
       key: criterion.key,
       label: criterion.label,
       type: criterion.type as RulesRubric["criteria"][number]["type"],
-      importance: criterion.importance as RulesRubric["criteria"][number]["importance"],
+      importance:
+        criterion.importance as RulesRubric["criteria"][number]["importance"],
       weight: criterion.weight,
-      aliases: Array.isArray(criterion.aliases) ? (criterion.aliases as string[]) : [],
+      aliases: Array.isArray(criterion.aliases)
+        ? (criterion.aliases as string[])
+        : [],
       minimumValue: criterion.minimumValue ?? undefined,
       // Gate semantics must survive the published-rubric round trip (§2.3, §3.4).
       isKnockout: criterion.isKnockout,
@@ -462,16 +490,27 @@ export async function claimDueEvaluationJobs(input: {
   lockTtlMs?: number;
 }) {
   const now = new Date();
-  const reclaimBefore = new Date(now.getTime() - (input.lockTtlMs ?? 10 * 60_000));
+  const reclaimBefore = new Date(
+    now.getTime() - (input.lockTtlMs ?? 10 * 60_000),
+  );
   return db.transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(evaluationJobs)
       .where(
         and(
-          or(eq(evaluationJobs.status, "pending"), eq(evaluationJobs.status, "failed")),
-          or(isNull(evaluationJobs.nextRetryAt), lte(evaluationJobs.nextRetryAt, now)),
-          or(isNull(evaluationJobs.lockedAt), lte(evaluationJobs.lockedAt, reclaimBefore)),
+          or(
+            eq(evaluationJobs.status, "pending"),
+            eq(evaluationJobs.status, "failed"),
+          ),
+          or(
+            isNull(evaluationJobs.nextRetryAt),
+            lte(evaluationJobs.nextRetryAt, now),
+          ),
+          or(
+            isNull(evaluationJobs.lockedAt),
+            lte(evaluationJobs.lockedAt, reclaimBefore),
+          ),
         ),
       )
       .limit(input.limit ?? 25)
@@ -487,7 +526,12 @@ export async function claimDueEvaluationJobs(input: {
         startedAt: now,
         updatedAt: now,
       })
-      .where(inArray(evaluationJobs.id, rows.map((row) => row.id)));
+      .where(
+        inArray(
+          evaluationJobs.id,
+          rows.map((row) => row.id),
+        ),
+      );
     return rows;
   });
 }

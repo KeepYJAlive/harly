@@ -638,17 +638,19 @@ export async function importCandidatesAction(input: {
   revalidatePath("/dashboard/pipeline");
   await publishPersistedDomainEvents(persistedEvents);
 
-  for (const applicationId of importedApplicationIds) {
+  importedApplicationIds.forEach((applicationId, index) => {
+    const persisted = persistedEvents[index];
     void emitWebhookEvent(
       workspaceId,
       "application.created",
       {
         application: { id: applicationId },
         source: "csv_import",
+        eventId: persisted?.eventId,
       },
-      { actorId: context.user.id, skipDomainEvent: true },
+      { actorId: context.user.id, skipDomainEvent: true, eventId: persisted?.eventId },
     );
-  }
+  });
 
   return { success: true, imported, alreadyInPipeline, errors };
 }

@@ -165,8 +165,10 @@ export async function listOffersForApi(input: {
 export async function getOfferForApi(input: {
   workspaceId: string;
   offerId: string;
+  database?: typeof db;
 }): Promise<Offer & { updatedAtVersion: string }> {
-  const [offer] = await db
+  const database = input.database ?? db;
+  const [offer] = await database
     .select({
       ...getTableColumns(offers),
       updatedAtVersion: sql<string>`${offers.updatedAt}::text`,
@@ -177,7 +179,7 @@ export async function getOfferForApi(input: {
         eq(offers.workspaceId, input.workspaceId),
         eq(offers.id, input.offerId),
         exists(
-          db
+          database
             .select({ id: candidates.id })
             .from(candidates)
             .where(
@@ -189,7 +191,7 @@ export async function getOfferForApi(input: {
             ),
         ),
         exists(
-          db
+          database
             .select({ id: jobs.id })
             .from(jobs)
             .where(
@@ -201,7 +203,7 @@ export async function getOfferForApi(input: {
             ),
         ),
         exists(
-          db
+          database
             .select({ id: applications.id })
             .from(applications)
             .where(
@@ -225,10 +227,24 @@ export async function createOfferForApi(input: {
   actorUserId: string;
   applicationId: string;
   values: OfferApiInput;
+  workflowEffectId?: string;
+  database?: typeof db;
 }): Promise<Offer> {
   assertOfferTermsOrThrow(input.values);
+  const database = input.database ?? db;
 
-  const created = await db.transaction(async (tx) => {
+  const created = await database.transaction(async (tx) => {
+    if (input.workflowEffectId) {
+      const [existing] = await tx
+        .select()
+        .from(offers)
+        .where(and(
+          eq(offers.workspaceId, input.workspaceId),
+          eq(offers.workflowEffectId, input.workflowEffectId),
+        ))
+        .limit(1);
+      if (existing) return existing;
+    }
     const [application] = await tx
       .select({
         id: applications.id,
@@ -242,7 +258,7 @@ export async function createOfferForApi(input: {
           eq(applications.workspaceId, input.workspaceId),
           eq(applications.id, input.applicationId),
           exists(
-            db
+            database
               .select({ id: candidates.id })
               .from(candidates)
               .where(
@@ -254,7 +270,7 @@ export async function createOfferForApi(input: {
               ),
           ),
           exists(
-            db
+            database
               .select({ id: jobs.id })
               .from(jobs)
               .where(
@@ -302,6 +318,7 @@ export async function createOfferForApi(input: {
         status: "draft",
         ...input.values,
         createdById: input.actorUserId,
+        workflowEffectId: input.workflowEffectId ?? null,
       })
       .returning();
 
@@ -378,8 +395,11 @@ export async function sendOfferForApi(input: {
   workspaceId: string;
   actorUserId: string;
   offerId: string;
+  workflowEffectId?: string;
+  database?: typeof db;
 }): Promise<Offer> {
-  const offer = await getOfferForApi(input);
+  const database = input.database ?? db;
+  const offer = await getOfferForApi({ ...input, database });
   if (offer.status !== "draft") {
     throw ApiError.conflict("Only draft offers can be sent.");
   }
@@ -389,7 +409,7 @@ export async function sendOfferForApi(input: {
     );
   }
 
-  const [application] = await db
+  const [application] = await database
     .select({ status: applications.status })
     .from(applications)
     .where(
@@ -403,7 +423,7 @@ export async function sendOfferForApi(input: {
     throw ApiError.conflict("Only active applications can receive an offer.");
   }
 
-  const [candidate] = await db
+  const [candidate] = await database
     .select({ email: candidates.email })
     .from(candidates)
     .where(
@@ -458,10 +478,13 @@ export async function sendOfferForApi(input: {
       actorId: input.actorUserId,
       terms: serializeOfferTermsSnapshot(snapshotOfferTerms(offer)),
     },
+    input.workflowEffectId,
+    input.actorUserId,
+    database,
   );
 
-  await processEmailOutbox({ ids: [outboxId] });
-  const [delivery] = await db
+  await processEmailOutbox({ ids: [outboxId], database });
+  const [delivery] = await database
     .select({ status: emailOutbox.status })
     .from(emailOutbox)
     .where(eq(emailOutbox.id, outboxId))
@@ -471,7 +494,7 @@ export async function sendOfferForApi(input: {
       "Offer delivery failed. It has been queued for retry.",
     );
   }
-  return getOfferForApi(input);
+  return getOfferForApi({ ...input, database });
 }
 
 export async function decideOfferForApi(input: {
@@ -627,7 +650,8 @@ export async function decideOfferForApi(input: {
       application: { id: offer.applicationId, jobId: offer.jobId },
       candidate: { id: offer.candidateId },
       offer: { id: offer.id, title: offer.title },
-    }, { actorId: input.actorUserId, skipDomainEvent: true });
+      eventId: decided.event.eventId,
+    }, { actorId: input.actorUserId, skipDomainEvent: true, eventId: decided.event.eventId });
   }
   return decided.decided;
 }

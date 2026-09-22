@@ -17,8 +17,10 @@ import {
   user as authUsers,
 } from "@harly/db";
 
+import { ApiError } from "@harly/api";
 import {
   getWorkspaceContext,
+  getWorkspaceContextOrNull,
   type WorkspaceContext,
 } from "@/features/workspaces/context";
 import {
@@ -75,6 +77,69 @@ export async function getRolePermissions(
   }
 
   return [];
+}
+
+/**
+ * Resolve the permission set for an actor (user) within a workspace.
+ * Uses active session role if matching, otherwise queries member role from db.
+ */
+export async function getActorPermissions(
+  workspaceId: string,
+  actorId: string,
+): Promise<Permission[]> {
+  const sessionContext = await getWorkspaceContextOrNull();
+  if (
+    sessionContext &&
+    sessionContext.organization.id === workspaceId &&
+    sessionContext.user.id === actorId
+  ) {
+    const roleKey = sessionContext.roleKey ?? sessionContext.role ?? "admin";
+    return getRolePermissions(workspaceId, roleKey);
+  }
+
+  const [row] = await db
+    .select({ role: authMembers.role })
+    .from(authMembers)
+    .where(
+      and(
+        eq(authMembers.organizationId, workspaceId),
+        eq(authMembers.userId, actorId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    return [];
+  }
+
+  return getRolePermissions(workspaceId, row.role);
+}
+
+/**
+ * Throw unless the specified actor holds `permission` in the workspace.
+ */
+export async function requireActorPermission(
+  workspaceId: string,
+  actorId: string,
+  permission: Permission,
+): Promise<Permission[]> {
+  const permissions = await getActorPermissions(workspaceId, actorId);
+  if (!permissions.includes(permission)) {
+    throw ApiError.forbidden("You do not have permission to perform this action.");
+  }
+  return permissions;
+}
+
+/**
+ * Check if the specified actor holds `permission` in the workspace.
+ */
+export async function hasActorPermission(
+  workspaceId: string,
+  actorId: string,
+  permission: Permission,
+): Promise<boolean> {
+  const permissions = await getActorPermissions(workspaceId, actorId);
+  return permissions.includes(permission);
 }
 
 export type RolePolicy = {
