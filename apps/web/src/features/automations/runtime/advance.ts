@@ -16,7 +16,7 @@ export type NodeOutcome =
 export type NodeErrorDetails = {
   message?: string;
   fieldPath?: string;
-  category?: "validation" | "authorization" | "not_found" | "configuration" | "provider" | "network" | "unknown";
+  category?: "validation" | "authorization" | "not_found" | "configuration" | "provider" | "network" | "policy" | "unknown";
   retryAdvice?: "never" | "after_backoff" | "reconcile" | "fix_configuration";
 };
 
