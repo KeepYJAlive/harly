@@ -91,7 +91,7 @@ async function publishIssues(
   name: string,
   graph: WorkflowGraphV2,
   workspaceId: string,
-  database: typeof db = db,
+  database: DbTx | typeof db = db,
 ) {
   const { getAutomationTool } = await import("../registry");
   const issues = validateGraphForPublish({ name, graph }, getAutomationTool);
