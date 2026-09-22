@@ -73,6 +73,9 @@ const envSchema = z
       .transform((value) => value === "true"),
     // The shared login account visitors are signed in as (one-click, no typing).
     DEMO_LOGIN_EMAIL: optionalEmail,
+    // Optional pin for the demo workspace id. When set, cron/CLI refuse to
+    // wipe any other organization id (defense-in-depth on a dedicated VPS).
+    DEMO_WORKSPACE_ID: optionalString,
     // Turnstile keys used for the demo entry gate. The site key is public
     // (NEXT_PUBLIC_*) and rendered client-side; the secret is verified
     // server-side. Independent of any per-workspace captcha config.
@@ -202,6 +205,11 @@ export function demoLoginEmail(source: Record<string, string | undefined> = proc
   return (source.DEMO_LOGIN_EMAIL?.trim() || "demo@harly.dev").toLowerCase();
 }
 
+/** Optional pinned demo workspace (organization) id. Empty when unset. */
+export function demoWorkspaceId(source: Record<string, string | undefined> = process.env): string | null {
+  const value = source.DEMO_WORKSPACE_ID?.trim();
+  return value ? value : null;
+}
 
 export async function validateRuntimeFilesystem(config: HarlyConfig): Promise<void> {
   if (config.STORAGE_PROVIDER !== "local") return;

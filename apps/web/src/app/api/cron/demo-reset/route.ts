@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq, sql as dsql } from "drizzle-orm";
 
-import { demoLoginEmail, isDemoMode } from "@harly/config";
+import { demoLoginEmail, demoWorkspaceId, isDemoMode } from "@harly/config";
 import { db, sql, member, user as userTable, seedDemoWorkspace } from "@harly/db";
 
 import { authorizeCron } from "@/server/cron-auth";
@@ -58,10 +58,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Demo workspace not found." }, { status: 503 });
     }
 
+    const pinned = demoWorkspaceId();
+    if (pinned && pinned !== membership.organizationId) {
+      log.error(
+        { email, pinned, actual: membership.organizationId },
+        "demo-reset: workspace id does not match DEMO_WORKSPACE_ID",
+      );
+      await run.finish("failed", { reason: "workspace_pin_mismatch" });
+      return NextResponse.json({ error: "Demo workspace pin mismatch." }, { status: 503 });
+    }
+
     const result = await seedDemoWorkspace({
       db,
       sql,
       workspaceId: membership.organizationId,
+      ownerUserId: owner.id,
     });
 
     const durationMs = Date.now() - startedAt;

@@ -40,10 +40,18 @@ async function main() {
       throw new Error(`${SEED_EMAIL} has no workspace. Complete /setup first.`);
     }
 
+    const pinned = process.env.DEMO_WORKSPACE_ID?.trim() || null;
+    if (pinned && pinned !== membership.organizationId) {
+      throw new Error(
+        `SEED_EMAIL workspace ${membership.organizationId} does not match DEMO_WORKSPACE_ID=${pinned}`,
+      );
+    }
+
     await seedDemoWorkspace({
       db,
       sql,
       workspaceId: membership.organizationId,
+      ownerUserId: user.id,
       // CLI runs from packages/db; the web app serves uploads from apps/web.
       uploadsRoot: path.resolve(process.cwd(), "../../apps/web/uploads"),
     });
