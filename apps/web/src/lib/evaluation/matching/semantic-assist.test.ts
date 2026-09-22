@@ -308,10 +308,11 @@ Frontend Developer — Staticly (2023-Present)
       semanticAssist: { provider: honest },
     });
     // Taxonomy lists Next.js as related to React (not equivalent). Strict policy:
-    // related evidence → partially_met, never met / never silent equivalence.
+    // related evidence → not_demonstrated (never met / never silent partially_met).
     const react = res.criterionResults.find((c) => c.label === "React");
-    expect(react?.extendedStatus).toBe("partially_met");
+    expect(react?.extendedStatus).toBe("not_demonstrated");
     expect(react?.status).not.toBe("met");
+    expect(react?.status).not.toBe("partially_met");
     expect(react?.score).not.toBe(100);
   });
 

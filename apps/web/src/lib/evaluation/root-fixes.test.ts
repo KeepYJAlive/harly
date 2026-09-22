@@ -196,7 +196,7 @@ describe("Taxonomy — related ≠ equivalent", () => {
     );
   });
 
-  it("marks related taxonomy evidence as partially_met, never automatic met", () => {
+  it("marks related taxonomy evidence as not_demonstrated, never automatic met", () => {
     const criteria = buildStructuredCriteria({
       job: {
         title: "Frontend Engineer",
@@ -223,8 +223,9 @@ AngularJS
     );
     const results = matchCriteriaAgainstFacts(criteria, facts);
     const angular = results.find((r) => r.label === "Angular");
-    expect(angular?.status).toBe("partially_met");
+    expect(angular?.status).toBe("not_demonstrated");
     expect(angular?.status).not.toBe("met");
+    expect(angular?.status).not.toBe("partially_met");
     expect(isRelatedButNotEquivalent("Angular", "AngularJS")).toBe(true);
   });
 });

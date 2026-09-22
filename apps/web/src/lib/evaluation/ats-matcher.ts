@@ -913,7 +913,8 @@ export function matchCriteriaAgainstFacts(
     }
 
     // Related-but-not-equivalent taxonomy hit (§8.4 / C3):
-    // broader/narrower/related concepts MUST NOT produce automatic `met`.
+    // broader/narrower/related concepts MUST NOT produce automatic `met` or
+    // silent `partially_met` — related evidence is not demonstration.
     const relatedLabels = relatedSkillLabels(criterion.canonicalName ?? criterion.label);
     if (relatedLabels.length > 0) {
       const relatedTokens = relatedLabels
@@ -932,20 +933,14 @@ export function matchCriteriaAgainstFacts(
                 criterionId: criterion.id,
                 label: criterion.label,
                 type: criterion.type,
-                status: "partially_met",
-                rawScore: 45,
+                // Related ≠ equivalent (§8.4): never silent partial credit.
+                status: "not_demonstrated",
+                rawScore: null,
                 weight: criterion.weight,
                 importance: criterion.importance,
                 isKnockout: criterion.isKnockout,
                 knockoutFailed: criterion.isKnockout,
-                evidence: {
-                  verbatimSnippet: `${role.company} (${role.title}): "${ach.text}" — related to "${criterion.canonicalName ?? criterion.label}" but not equivalent; review recommended.`,
-                  strength: "inferred_assist",
-                  method: "deterministic_stem",
-                  confidence: 55,
-                  provenance: ach.provenance,
-                  canonicalSkillName: criterion.canonicalName,
-                },
+                evidence: null,
                 missingReason: `Found related skill evidence ("${token}") but not an equivalent match for ${criterion.label}.`,
               };
             }
@@ -962,20 +957,14 @@ export function matchCriteriaAgainstFacts(
               criterionId: criterion.id,
               label: criterion.label,
               type: criterion.type,
-              status: "partially_met",
-              rawScore: 40,
+              // Related ≠ equivalent (§8.4): never silent partial credit.
+              status: "not_demonstrated",
+              rawScore: null,
               weight: criterion.weight,
               importance: criterion.importance,
               isKnockout: criterion.isKnockout,
               knockoutFailed: criterion.isKnockout,
-              evidence: {
-                verbatimSnippet: `Declared related skill "${skill.name}" — related to "${criterion.canonicalName ?? criterion.label}" but not equivalent; review recommended.`,
-                strength: "declared",
-                method: "deterministic_stem",
-                confidence: 50,
-                provenance: skill.provenance,
-                canonicalSkillName: criterion.canonicalName,
-              },
+              evidence: null,
               missingReason: `Found related skill "${skill.name}" but not an equivalent match for ${criterion.label}.`,
             };
           }
