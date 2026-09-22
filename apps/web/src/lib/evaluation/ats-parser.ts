@@ -6,13 +6,24 @@
  * along with provenance tracking for every extracted fact.
  */
 
+import type {
+  DocumentExtractionMethod,
+  ParsedResumeDocument,
+} from "./parsing/document";
+
+/** Version of the deterministic resume fact parser (Audit doc §5.1). Bump on parsing-behavior changes. */
+export const RESUME_PARSER_VERSION = "parser-v2";
 export interface TextProvenance {
-  sourceType: "resume" | "application_qa" | "candidate_profile";
+  sourceType: "resume" | "job_description" | "application_qa" | "candidate_profile";
   section?: "experience" | "education" | "skills" | "summary" | "certifications" | "languages" | "header" | "other";
   rawText: string;
   charStart?: number;
   charEnd?: number;
   lineIndex?: number;
+  /** Phase 4 (§6.1): layout-block identity for evidence highlighting (§22.5). */
+  blockId?: string;
+  /** Phase 4 (§6.1): 1-based source page for evidence highlighting. */
+  pageNumber?: number;
 }
 
 export interface ParsedWorkPosition {
@@ -37,7 +48,7 @@ export interface ParsedEducationEntry {
   id: string;
   degreeName: string;
   normalizedLevel: "secondary" | "vocational" | "bachelor" | "master" | "doctorate" | "unknown";
-  levelRank: number; // 1 to 5
+  levelRank: number; // 0 = unknown, 1–5 recognized levels
   fieldOfStudy?: string;
   institution?: string;
   graduationYear?: number;
@@ -95,7 +106,12 @@ export function resolveDateContext(
 }
 
 export interface CandidateFactDocument {
+  schemaVersion: 2;
   referenceDate: string;
+  /** Phase 4 (§6.1): which extraction path produced the parsed text. */
+  extractionMethod: DocumentExtractionMethod;
+  /** Phase 4 (§6.4): document-extraction confidence — never match confidence. */
+  extractionConfidence: number;
   contact: {
     fullName?: string;
     headline?: string;
@@ -116,6 +132,8 @@ export interface CandidateFactDocument {
     unparsedSections: string[];
     lowConfidenceBlocks: string[];
   };
+  /** Provider diagnostics are persisted with the facts for replay/review. */
+  documentDiagnostics: string[];
   rawText: string;
 }
 
@@ -172,7 +190,8 @@ const DEGREE_LEVEL_HIERARCHY: Array<{
   {
     level: "vocational",
     rank: 2,
-    pattern: /\b(associate'?s?\s+degree|t[eé]cnico(?:\s+superior|\s+profesional)?|technician|formaci[oó]n\s+profesional|fp|diploma)\b/i,
+    // "diploma" must not hijack "High School Diploma" (secondary, rank 1).
+    pattern: /\b(associate'?s?\s+degree|t[eé]cnico(?:\s+superior|\s+profesional)?|technician|formaci[oó]n\s+profesional|fp|(?<!high\s+school\s+)diploma)\b/i,
   },
   {
     level: "secondary",
@@ -361,16 +380,76 @@ export function unionWorkIntervals(
 }
 
 /**
+ * One addressable source line. The plain-text path synthesizes these from raw
+ * lines; the document path derives them from ordered layout blocks so every
+ * fact carries block/page provenance (§6.1, §22.5).
+ */
+export interface SourceLine {
+  cleaned: string;
+  raw: string;
+  lineIndex: number;
+  blockId?: string;
+  pageNumber?: number;
+}
+
+/**
  * Parses raw resume plain text into structured candidate facts.
+ * Plain text is the `text_layer` extraction path (§6.1).
  */
 export function parseResumeFacts(
   text: string,
   referenceDate?: EvaluationDateContext | string | Date | number,
 ): CandidateFactDocument {
-  const dateCtx = resolveDateContext(referenceDate);
-  const rawLines = text.split(/\r?\n/);
-  const cleanedLines = rawLines.map(cleanLine);
+  const sourceLines = text
+    .split(/\r?\n/)
+    .map((raw, lineIndex) => ({ cleaned: cleanLine(raw), raw, lineIndex }));
+  return parseSourceLines(sourceLines, text, resolveDateContext(referenceDate), {
+    extractionMethod: "text_layer",
+    extractionConfidence: 1,
+    diagnostics: [],
+  });
+}
 
+/**
+ * Parses a layout-aware document into structured candidate facts.
+ * Blocks are consumed in `order` (reading order, §6.2); every fact keeps its
+ * source block/page for evidence highlighting. Behavior on single-column
+ * text-layer documents is identical to `parseResumeFacts`.
+ */
+export function parseDocumentFacts(
+  doc: ParsedResumeDocument,
+  referenceDate?: EvaluationDateContext | string | Date | number,
+): CandidateFactDocument {
+  const ordered = [...doc.blocks].sort((a, b) => a.order - b.order);
+  const sourceLines: SourceLine[] = [];
+  for (const block of ordered) {
+    for (const raw of block.text.split(/\r?\n/)) {
+      sourceLines.push({
+        cleaned: cleanLine(raw),
+        raw,
+        lineIndex: sourceLines.length,
+        blockId: block.id,
+        pageNumber: block.page,
+      });
+    }
+  }
+  return parseSourceLines(sourceLines, doc.plainText, resolveDateContext(referenceDate), {
+    extractionMethod: doc.extractionMethod,
+    extractionConfidence: doc.extractionConfidence,
+    diagnostics: doc.diagnostics,
+  });
+}
+
+function parseSourceLines(
+  sourceLines: SourceLine[],
+  fullText: string,
+  dateCtx: EvaluationDateContext,
+  extraction: {
+    extractionMethod: DocumentExtractionMethod;
+    extractionConfidence: number;
+    diagnostics: string[];
+  },
+): CandidateFactDocument {
   let currentSection: keyof typeof SECTION_PATTERNS | "header" = "header";
 
   let headerName: string | undefined;
@@ -385,8 +464,9 @@ export function parseResumeFacts(
   const certifications: CandidateFactDocument["certifications"] = [];
   const languages: CandidateFactDocument["languages"] = [];
 
-  for (let i = 0; i < cleanedLines.length; i++) {
-    const line = cleanedLines[i]!;
+  for (let i = 0; i < sourceLines.length; i++) {
+    const sourceLine = sourceLines[i]!;
+    const line = sourceLine.cleaned;
     if (!line) continue;
 
     const detected = detectSection(line);
@@ -404,6 +484,8 @@ export function parseResumeFacts(
       section: currentSection === "header" ? "header" : currentSection,
       rawText: line,
       lineIndex: i,
+      ...(sourceLine.blockId ? { blockId: sourceLine.blockId } : {}),
+      ...(sourceLine.pageNumber ? { pageNumber: sourceLine.pageNumber } : {}),
     };
 
     if (currentSection === "header") {
@@ -418,7 +500,7 @@ export function parseResumeFacts(
     }
 
     if (currentSection === "experience") {
-      const isBullet = isBulletLine(rawLines[i] ?? line);
+      const isBullet = isBulletLine(sourceLine.raw ?? line);
       const parsedHeader = !isBullet ? parseRoleHeader(line, dateCtx) : null;
 
       if (parsedHeader) {
@@ -451,8 +533,10 @@ export function parseResumeFacts(
     if (currentSection === "education") {
       const cleanedEntry = cleanBullet(line);
       if (cleanedEntry.length > 5) {
-        let level: ParsedEducationEntry["normalizedLevel"] = "bachelor";
-        let levelRank = 3;
+        // Default unknown/0 until an explicit degree pattern matches (C1).
+        // Never invent bachelor just because an education line exists.
+        let level: ParsedEducationEntry["normalizedLevel"] = "unknown";
+        let levelRank = 0;
 
         for (const def of DEGREE_LEVEL_HIERARCHY) {
           if (def.pattern.test(cleanedEntry)) {
@@ -536,9 +620,13 @@ export function parseResumeFacts(
     }
   }
 
+  if (extraction.extractionMethod === "profile_only" || extraction.extractionConfidence < 0.5) {
+    workTimelineConfidence = "low";
+  }
+
   // Fallback explicit tenure text if 0
   if (totalWorkDurationMonths === 0) {
-    const explicitMatch = text.match(
+    const explicitMatch = fullText.match(
       /(\d{1,2})\+?\s*(?:years|yrs|year|años|año)\s*(?:of\s+)?(?:experience|experiencia)\b/i,
     );
     if (explicitMatch) {
@@ -552,7 +640,10 @@ export function parseResumeFacts(
     : null;
 
   return {
+    schemaVersion: 2,
     referenceDate: dateCtx.referenceDateStr,
+    extractionMethod: extraction.extractionMethod,
+    extractionConfidence: extraction.extractionConfidence,
     contact: {
       fullName: headerName,
       headline,
@@ -572,6 +663,7 @@ export function parseResumeFacts(
       unparsedSections: [],
       lowConfidenceBlocks: [],
     },
-    rawText: text,
+    documentDiagnostics: extraction.diagnostics,
+    rawText: fullText,
   };
 }

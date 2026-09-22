@@ -1,6 +1,8 @@
 import type { CriterionImportance, CriterionOrigin, CriterionType } from "./types";
-import type { RulesInput, RulesRubric } from "./rules";
+import type { TextProvenance } from "./ats-parser";
+import type { RulesInput } from "./rules";
 import { resolveSkillConcept } from "./taxonomy/skill-concepts";
+import { normalizeJobTitle } from "./taxonomy/occupation-concepts";
 
 export interface StructuredCriterion {
   id: string;
@@ -10,8 +12,11 @@ export interface StructuredCriterion {
   type: CriterionType;
   importance: CriterionImportance;
   isKnockout: boolean;
+  /** Taleo-style governed exclusion (§3.4). When true, forces knockout semantics. */
+  excluded?: boolean;
   weight: number;
   origin: CriterionOrigin;
+  sourceProvenance?: TextProvenance;
   minimumMonths?: number;
   minimumEducationLevelRank?: number;
   targetTokens: string[];
@@ -80,19 +85,41 @@ export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[
   if (input.rubric && input.rubric.criteria.length > 0) {
     return input.rubric.criteria.map((c) => {
       const resolved = resolveSkillConcept(c.label, c.aliases ?? []);
+      const canonicalName = c.canonicalName ?? resolved.canonicalName;
+      const conceptId = c.conceptId ?? resolved.conceptId;
+      const targetTokens = c.targetTokens ?? resolved.searchTokens;
+      // §3.4 / §2.3: an excluded constraint forces knockout semantics and is
+      // always treated as required. Knockout can only come from explicit config.
+      const excluded = Boolean(c.excluded);
       return {
         id: c.key,
         label: c.label,
-        canonicalName: resolved.canonicalName,
-        conceptId: resolved.conceptId,
+        canonicalName,
+        conceptId,
         type: c.type,
-        importance: c.importance,
-        isKnockout: Boolean(c.isKnockout),
+        importance: excluded ? "required" : c.importance,
+        isKnockout: excluded || Boolean(c.isKnockout),
+        excluded,
         weight: c.weight,
-        origin: "recruiter_rubric",
-        minimumMonths: c.minimumValue ? c.minimumValue * 12 : undefined,
-        minimumEducationLevelRank: c.type === "education" ? 3 : undefined,
-        targetTokens: resolved.searchTokens,
+        origin: c.origin ?? "recruiter_rubric",
+        sourceProvenance: c.sourceProvenance,
+        // Education uses minimumValue / explicit rank as degree rank (1–5).
+        // Experience uses minimumValue as years → months. Never hardcode bachelor.
+        minimumMonths:
+          c.type === "education"
+            ? undefined
+            : c.minimumValue
+              ? c.minimumValue * 12
+              : undefined,
+        minimumEducationLevelRank:
+          c.type === "education"
+            ? (typeof c.minimumEducationLevelRank === "number"
+                ? c.minimumEducationLevelRank
+                : typeof c.minimumValue === "number"
+                  ? c.minimumValue
+                  : undefined)
+            : undefined,
+        targetTokens,
         recruiterAliases: c.aliases ?? [],
       };
     });
@@ -125,6 +152,7 @@ export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[
       isKnockout: false,
       weight: 50,
       origin: "structured_job_field",
+      excluded: false,
       minimumMonths,
       targetTokens: resolved.searchTokens,
       recruiterAliases: [],
@@ -136,16 +164,51 @@ export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[
     criteria.push({
       id: "crit:exp-duration",
       label: "Experience",
+      canonicalName: "Experience",
       type: "experience_duration",
       importance: "required",
       isKnockout: false, // Explicit correction: structured job field creates required, NOT knockout
       weight: 25,
       origin: "structured_job_field",
+      excluded: false,
       minimumMonths: expMonths,
       targetTokens: ["experience"],
       recruiterAliases: [],
     });
   }
+
+  // Phase 3: target-title / occupation relevance (Audit doc §11, §24 Phase 3).
+  // The structured job title becomes a preferred, non-gating domain_title
+  // criterion — a relevance signal, never a quality judgment (§11.2, §16.4).
+  // Unresolvable titles emit no criterion: absence of signal is not a penalty
+  // and keeps coverage semantics clean (every emitted criterion is evaluable).
+  const jobTitle = input.job.title?.trim() ?? "";
+  if (jobTitle.length > 0) {
+    const normalizedTarget = normalizeJobTitle(jobTitle);
+    if (normalizedTarget.occupationId) {
+      criteria.push({
+        id: "crit:domain-title",
+        label: jobTitle,
+        canonicalName: normalizedTarget.canonicalName,
+        conceptId: undefined,
+        type: "domain_title",
+        importance: "preferred",
+        isKnockout: false,
+        weight: 20,
+        origin: "structured_job_field",
+        excluded: false,
+        targetTokens: [],
+        recruiterAliases: [],
+      });
+    }
+  }
+
+  // Free-text job-description requirements are intentionally not added to the
+  // authoritative evaluation here. `extractRequirementCandidates` and the
+  // governed job-intent workflow expose them as suggestions; only a published
+  // recruiter rubric may turn one into a scored criterion (§9, §24 Phase 2).
+  // This prevents a sentence such as "Kubernetes required" from silently
+  // changing coverage, score, or knockout behavior.
 
   if (input.job.education) {
     const rank = parseEducationRank(input.job.education);
@@ -157,7 +220,9 @@ export function buildStructuredCriteria(input: RulesInput): StructuredCriterion[
       isKnockout: false,
       weight: 15,
       origin: "structured_job_field",
-      minimumEducationLevelRank: rank ?? 3,
+      excluded: false,
+      // Only set a rank when the job education string parses; never invent bachelor.
+      minimumEducationLevelRank: rank ?? undefined,
       targetTokens: [input.job.education],
       recruiterAliases: [],
     });
