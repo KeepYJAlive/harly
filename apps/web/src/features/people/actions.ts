@@ -5,6 +5,7 @@ import { and, eq, ilike, or } from "drizzle-orm";
 
 import { db, schema } from "@harly/db";
 
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import {
   updateProfileSchema,
@@ -48,6 +49,7 @@ export async function getOwnProfileAction(): Promise<PersonProfile | null> {
 }
 
 export async function updateOwnProfileAction(data: UpdateProfileInput) {
+  assertNotDemo();
   const context = await getWorkspaceContext();
   const parsed = updateProfileSchema.parse(data);
 
@@ -113,6 +115,7 @@ export async function checkUsernameAvailableAction(username: string) {
 }
 
 export async function changeUsernameAction(newUsername: string) {
+  assertNotDemo();
   const context = await getWorkspaceContext();
   const parsed = usernameSchema.parse(newUsername);
 

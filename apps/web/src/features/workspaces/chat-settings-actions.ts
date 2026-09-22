@@ -15,6 +15,7 @@ import {
 } from "@/lib/notify/config";
 import { sendChatMessage } from "@/server/notify/dispatch";
 import { isWebhookEvent } from "@/server/webhooks/events";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 export type ChatSettingsActionResult = { ok: boolean; error?: string };
 
@@ -62,6 +63,7 @@ export async function saveChatSettingsAction(input: {
   webhookUrl?: string;
   events: string[];
 }): Promise<ChatSettingsActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   if (!isEncryptionConfigured()) {
@@ -137,6 +139,7 @@ export async function sendTestChatAction(input: {
   provider: ChatProviderId;
   webhookUrl?: string;
 }): Promise<ChatSettingsActionResult> {
+  assertNotDemo();
   const context = await requirePermission("integrations:manage");
 
   let webhookUrl = input.webhookUrl?.trim();

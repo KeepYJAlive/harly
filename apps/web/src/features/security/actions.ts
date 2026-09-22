@@ -280,6 +280,7 @@ export async function toggleOAuthProviderAction(
   enabled: boolean,
 ): Promise<OAuthActionResult> {
   try {
+    assertNotDemo();
     const { organization, roleKey, user } =
       await requirePermission("security:manage");
     if (roleKey !== "owner") {
@@ -320,6 +321,7 @@ export async function deleteOAuthProviderAction(
   providerId: string,
 ): Promise<OAuthActionResult> {
   try {
+    assertNotDemo();
     const { organization, roleKey, user } =
       await requirePermission("security:manage");
     if (roleKey !== "owner") {
@@ -427,6 +429,7 @@ export async function completeForcedPasswordChangeAction(input: {
   password: string;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
+    assertNotDemo();
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session?.user) return { ok: false, error: "Not signed in." };
 
