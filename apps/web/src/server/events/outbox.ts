@@ -13,20 +13,30 @@ import { publishRealtimeEvent } from "./realtime";
 
 /** Keep the durable domain log bounded. Realtime delivery is ephemeral and
  * does not depend on these rows, so retention can be conservative and simple. */
-export async function pruneDomainEventOutbox(
-  retentionDays = 7,
-): Promise<number> {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1_000);
-  const deleted = await db
+export async function pruneDomainEventOutbox(input: {
+  retentionDays?: number;
+  database?: typeof db;
+  /** Optional fixture scope for isolated retention verification. */
+  workspaceId?: string;
+} = {}): Promise<number> {
+  const database = input.database ?? db;
+  const cutoff = new Date(Date.now() - (input.retentionDays ?? 7) * 24 * 60 * 60 * 1_000);
+  const deleted = await database
     .delete(domainEventOutbox)
     .where(
       and(
         lt(domainEventOutbox.createdAt, cutoff),
+        // Realtime publication and workflow dispatch are independent durable
+        // consumers. Retain an event until it is published and, for workflow
+        // triggers, its run/wait dispatch checkpoint is committed.
         isNotNull(domainEventOutbox.publishedAt),
         or(
-          isNotNull(domainEventOutbox.automationsDispatchedAt),
           notInArray(domainEventOutbox.eventName, [...WORKFLOW_EVENTS]),
+          isNotNull(domainEventOutbox.automationsDispatchedAt),
         ),
+        input.workspaceId
+          ? eq(domainEventOutbox.workspaceId, input.workspaceId)
+          : undefined,
       ),
     )
     .returning({ id: domainEventOutbox.id });
