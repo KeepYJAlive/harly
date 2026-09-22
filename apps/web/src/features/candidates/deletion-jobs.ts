@@ -27,6 +27,8 @@ export type CandidateDeletionJobInput = {
   requestedBy: string;
   requestId?: string;
   requestType?: "candidate_delete" | "dsar_erasure" | "reconciliation";
+  /** Reset a completed `candidate:${id}` job so Trash → Delete permanently can run. */
+  requeueCompleted?: boolean;
   database?: typeof db;
 };
 
@@ -54,7 +56,10 @@ async function enqueueCandidateDeletionJobWithDatabase(
     )
     .limit(1);
   if (deduplicatedJob) {
-    if (["blocked", "dead_letter"].includes(deduplicatedJob.status)) {
+    const shouldRequeue =
+      ["blocked", "dead_letter"].includes(deduplicatedJob.status) ||
+      (input.requeueCompleted && deduplicatedJob.status === "completed");
+    if (shouldRequeue) {
       const [requeued] = await database
         .update(candidateDeletionJobs)
         .set({
@@ -65,6 +70,9 @@ async function enqueueCandidateDeletionJobWithDatabase(
           nextRetryAt: new Date(),
           lockedAt: null,
           lockedBy: null,
+          completedAt: null,
+          stats: null,
+          durationMs: null,
           updatedAt: new Date(),
         })
         .where(eq(candidateDeletionJobs.id, deduplicatedJob.id))
