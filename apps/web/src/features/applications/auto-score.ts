@@ -158,7 +158,8 @@ export async function scheduleAutoScore(
         experienceLevel: row.jobExperienceLevel,
         education: row.jobEducation,
         keywords: Array.isArray(row.jobKeywords) ? (row.jobKeywords as string[]) : [],
-        evaluationMode,      },
+        evaluationMode,
+      },
       candidate: {
         fullName: `${row.firstName} ${row.lastName}`,
         headline: row.headline,
@@ -285,8 +286,8 @@ export async function scheduleAutoScore(
 
 /**
  * Execute candidate scoring within an automation workflow action.
- * Evaluates the application against its job using configured workspace AI
- * or falls back to standard rubric rules, persisting the evaluation and activity event.
+ * Evaluates the application against its job using deterministic rules first,
+ * with optional AI overlay and rules fallback, persisting the evaluation and activity event.
  */
 export async function evaluateApplicationForWorkflow(input: {
   workspaceId: string;
@@ -331,6 +332,9 @@ export async function evaluateApplicationForWorkflow(input: {
         jobExperienceLevel: jobs.experienceLevel,
         jobEducation: jobs.education,
         jobKeywords: jobs.keywords,
+        evaluationMode: jobs.evaluationMode,
+        appliedAt: applications.appliedAt,
+        applicationCreatedAt: applications.createdAt,
       })
       .from(applications)
       .innerJoin(
@@ -358,42 +362,21 @@ export async function evaluateApplicationForWorkflow(input: {
 
     const aiConfig = await getWorkspaceAiConfig(workspaceId);
 
-    // Load resume text
-    const [file] = await database
-      .select({
-        fileName: candidateFiles.fileName,
-        fileUrl: candidateFiles.fileUrl,
-      })
-      .from(candidateFiles)
-      .where(
-        and(
-          eq(candidateFiles.workspaceId, workspaceId),
-          eq(candidateFiles.candidateId, row.candidateId),
-        ),
-      )
-      .orderBy(desc(candidateFiles.createdAt))
-      .limit(1);
+    // Same resume path as scheduleAutoScore — never re-inline storage/parser symbols.
+    const resume = await loadResumeDocument({
+      workspaceId,
+      candidateId: row.candidateId,
+    });
+    const resumeText = resume.text;
+    const referenceDateValue = row.appliedAt ?? row.applicationCreatedAt;
+    const parsedReferenceDate = referenceDateValue
+      ? new Date(referenceDateValue)
+      : null;
+    const pinnedReferenceDate =
+      parsedReferenceDate && !Number.isNaN(parsedReferenceDate.getTime())
+        ? parsedReferenceDate.toISOString()
+        : "1970-01-01T00:00:00.000Z";
 
-    let resumeText: string | null = null;
-    if (file) {
-      const key = resumeKeyFromUrl(file.fileUrl);
-      if (key) {
-        try {
-          const buffer = await storage.read(key);
-          if (buffer.byteLength > 0 && buffer.byteLength <= maxResumeFileSize) {
-            const { text } = await extractResumeText({
-              buffer,
-              fileName: file.fileName,
-            });
-            resumeText = text.trim() || null;
-          }
-        } catch {
-          // Resume unavailable , score from profile only.
-        }
-      }
-    }
-
-    // Load question answers
     const answerRows = await database
       .select({
         question: applicationQuestions.label,
@@ -415,6 +398,11 @@ export async function evaluateApplicationForWorkflow(input: {
       )
       .orderBy(applicationQuestions.order);
 
+    const evaluationMode: EvaluationMode =
+      row.evaluationMode === "relaxed" || row.evaluationMode === "strict"
+        ? row.evaluationMode
+        : "balanced";
+
     const scoreInput = {
       job: {
         title: row.jobTitle,
@@ -426,6 +414,7 @@ export async function evaluateApplicationForWorkflow(input: {
         keywords: Array.isArray(row.jobKeywords)
           ? (row.jobKeywords as string[])
           : [],
+        evaluationMode,
       },
       candidate: {
         fullName: `${row.firstName} ${row.lastName}`,
@@ -436,21 +425,42 @@ export async function evaluateApplicationForWorkflow(input: {
         skills: Array.isArray(row.skills) ? (row.skills as string[]) : [],
         experienceYears: row.experienceYears,
       },
+      referenceDate: pinnedReferenceDate,
+      sourceDocument: resume.document ?? undefined,
     };
 
-    const source = aiConfig ? "ai" : "rules";
-    const publishedRubric = aiConfig
-      ? null
-      : await getPublishedRulesRubric(workspaceId, row.jobId, database);
-    const rulesEvaluation = aiConfig
-      ? null
-      : evaluateCandidateWithRules({
-          ...scoreInput,
-          rubric: publishedRubric ?? undefined,
-        });
-    const result = aiConfig
-      ? await scoreCandidateWithAI(aiConfig, scoreInput)
-      : rulesEvaluation!.result;
+    // Rules-first + AI overlay with rules fallback (parity with scheduleAutoScore).
+    const publishedRubric = await getPublishedRulesRubric(
+      workspaceId,
+      row.jobId,
+      database,
+    );
+    const reusableFacts = await findReusableCandidateFacts({
+      workspaceId,
+      applicationId: input.applicationId,
+      resumeText,
+    });
+    const rulesEvaluation = await evaluateCandidateWithRulesAsync({
+      ...scoreInput,
+      rubric: publishedRubric ?? undefined,
+      candidateFacts: reusableFacts ?? undefined,
+    });
+
+    let source: "ai" | "rules" = "rules";
+    let result = rulesEvaluation.result;
+    if (aiConfig) {
+      try {
+        result = await scoreCandidateWithAI(aiConfig, scoreInput);
+        source = "ai";
+      } catch (aiError) {
+        console.warn(
+          "Workflow auto-score AI unavailable; falling back to deterministic rules",
+          aiError,
+        );
+        source = "rules";
+        result = rulesEvaluation.result;
+      }
+    }
 
     const persisted = await persistCandidateEvaluation({
       workspaceId,
@@ -458,17 +468,25 @@ export async function evaluateApplicationForWorkflow(input: {
       applicationId: row.applicationId,
       jobId: row.jobId,
       source,
-      provider: aiConfig?.provider ?? "harly",
-      modelId: aiConfig?.modelId ?? RULES_EVALUATION_VERSION,
-      engine: aiConfig ? "provider-ai" : "harly-rules",
-      engineVersion: aiConfig?.modelId ?? RULES_EVALUATION_VERSION,
-      rubricVersion: rulesEvaluation?.rubric.version ?? "ai-generated",
-      rubricSnapshot: rulesEvaluation?.rubric ?? null,
+      provider: source === "ai" && aiConfig ? aiConfig.provider : "harly",
+      modelId:
+        source === "ai" && aiConfig ? aiConfig.modelId : RULES_EVALUATION_VERSION,
+      engine: source === "ai" ? "provider-ai" : "harly-rules",
+      engineVersion:
+        source === "ai" && aiConfig ? aiConfig.modelId : RULES_EVALUATION_VERSION,
+      rubricVersion: rulesEvaluation.rubric.version,
+      rubricSnapshot: rulesEvaluation.rubric,
       result,
-      criterionResults: rulesEvaluation?.criterionResults,
-      evidenceCoverage: rulesEvaluation?.evidenceCoverage,
-      confidence: rulesEvaluation?.confidence,
-      requiresHumanReview: rulesEvaluation?.requiresHumanReview ?? true,
+      criterionResults: rulesEvaluation.criterionResults,
+      candidateFactsSnapshot: rulesEvaluation.candidateFacts,
+      skillProfilesSnapshot: rulesEvaluation.skillProfiles,
+      evaluationMetadataSnapshot: rulesEvaluation.metadata,
+      criterionDetailsSnapshot: rulesEvaluation.criterionAssessments,
+      impactHighlightsSnapshot: rulesEvaluation.impactHighlights,
+      evidenceCoverage: rulesEvaluation.evidenceCoverage,
+      confidence: rulesEvaluation.confidence,
+      requiresHumanReview:
+        rulesEvaluation.requiresHumanReview || source === "ai",
       usedResume: resumeText !== null,
       generatedById: input.actorUserId ?? null,
       inputFingerprintSource: scoreInput,
@@ -527,7 +545,7 @@ export async function evaluateApplicationForWorkflow(input: {
       ),
     );
 
-    if (aiConfig) {
+    if (source === "ai" && aiConfig) {
       await logAiCandidateDecision({
         workspaceId,
         candidateId: row.candidateId,
