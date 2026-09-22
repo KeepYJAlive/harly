@@ -73,12 +73,6 @@ const envSchema = z
       .transform((value) => value === "true"),
     // The shared login account visitors are signed in as (one-click, no typing).
     DEMO_LOGIN_EMAIL: optionalEmail,
-    // Password string shown on /enter for informational purposes only. The
-    // server signs the session without it, so this never authenticates — it
-    // just needs to match whatever password the demo owner was created with at
-    // /setup so a curious visitor can also log in the normal way. Single source
-    // of the shown text; defaults to "demo1234".
-    DEMO_PASSWORD_DISPLAY: optionalString,
     // Turnstile keys used for the demo entry gate. The site key is public
     // (NEXT_PUBLIC_*) and rendered client-side; the secret is verified
     // server-side. Independent of any per-workspace captcha config.
@@ -208,14 +202,6 @@ export function demoLoginEmail(source: Record<string, string | undefined> = proc
   return (source.DEMO_LOGIN_EMAIL?.trim() || "demo@harly.dev").toLowerCase();
 }
 
-/**
- * The password string shown (informationally) on /enter. Never used to
- * authenticate — the server signs the shared session directly. Single source
- * of truth for the displayed value; defaults to "demo1234".
- */
-export function demoPasswordDisplay(source: Record<string, string | undefined> = process.env): string {
-  return source.DEMO_PASSWORD_DISPLAY?.trim() || "demo1234";
-}
 
 export async function validateRuntimeFilesystem(config: HarlyConfig): Promise<void> {
   if (config.STORAGE_PROVIDER !== "local") return;

@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { demoLoginEmail, demoPasswordDisplay, isDemoMode } from "@harly/config";
+import { demoLoginEmail, isDemoMode } from "@harly/config";
 
 import { DemoEnterForm } from "./_components/demo-enter-form";
 
@@ -24,10 +24,6 @@ export default async function EnterPage({
   }
 
   const email = demoLoginEmail();
-  // Informational only — the visitor never types this; the server signs the
-  // shared session after the Turnstile check. Sourced from config so it stays
-  // in sync with the password the demo owner was created with at /setup.
-  const passwordDisplay = demoPasswordDisplay();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
   const { error } = await searchParams;
   const captchaFailed = error === "captcha";
@@ -66,18 +62,13 @@ export default async function EnterPage({
 
           <div className="mt-8 rounded-xl border border-border bg-muted/40 p-4">
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Demo account
+              Shared demo workspace
             </p>
-            <dl className="space-y-1.5 font-mono text-[13px] text-foreground">
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">email</dt>
-                <dd>{email}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">password</dt>
-                <dd>{passwordDisplay}</dd>
-              </div>
-            </dl>
+            <p className="text-sm text-muted-foreground">
+              After the check below, you&apos;ll be signed in as{" "}
+              <span className="font-mono text-[13px] text-foreground">{email}</span>
+              {" "}— no password. Entry only works through this page.
+            </p>
           </div>
 
           {captchaFailed ? (
