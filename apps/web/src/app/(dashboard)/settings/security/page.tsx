@@ -1,3 +1,4 @@
+import { isDemoMode } from "@harly/config";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { requirePagePermission } from "@/features/workspaces/permissions-server";
 import { getWorkspaceAuditLogs, getWorkspaceSecuritySettings } from "@/features/security/data";
@@ -8,6 +9,7 @@ import { AuditLogsCard } from "@/features/security/AuditLogsCard";
 import { Force2FACard } from "@/features/security/Force2FACard";
 import { ScimProvisioningCard } from "@/features/security/ScimProvisioningCard";
 import { listScimTokensAction } from "@/features/security/scim-actions";
+import { DemoLockedNotice } from "@/features/demo/DemoLockedNotice";
 import { AdvancedSecurityCard } from "@/features/security/AdvancedSecurityCard";
 
 export const dynamic = "force-dynamic";
@@ -27,17 +29,24 @@ export default async function SecuritySettingsPage() {
     ]);
 
   const isOwner = roleKey === "owner";
+  const demoLocked = isDemoMode();
+  const canMutate = isOwner && !demoLocked;
 
   return (
     <div className="space-y-6">
-      <Force2FACard enabled={securitySettings.require2fa} isOwner={isOwner} />
-      <AdvancedSecurityCard settings={securitySettings} isOwner={isOwner} />
+      {demoLocked ? (
+        <DemoLockedNotice>
+          Security and identity settings are locked in the demo.
+        </DemoLockedNotice>
+      ) : null}
+      <Force2FACard enabled={securitySettings.require2fa} isOwner={canMutate} />
+      <AdvancedSecurityCard settings={securitySettings} isOwner={canMutate} />
       <SsoCard
         providerConfigs={providerStatus}
         existingConfigs={existingConfigs}
         ssoProviders={ssoProviders}
       />
-      <ScimProvisioningCard tokens={scimTokens} workspaceId={organization.id} isOwner={roleKey === "owner"} />
+      <ScimProvisioningCard tokens={scimTokens} workspaceId={organization.id} isOwner={canMutate} />
       <AuditLogsCard
         logs={auditLogRows}
         canExport={roleKey === "owner" || roleKey === "admin"}
