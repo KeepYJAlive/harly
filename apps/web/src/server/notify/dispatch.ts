@@ -8,6 +8,8 @@ import { getWorkspaceSlackConfig } from "@/lib/slack/config";
 import { getWorkspaceTelegramConfig } from "@/lib/telegram/config";
 import { sendTelegramMessage } from "@/lib/telegram/client";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
+import { isDemoMode } from "@harly/config";
+
 import { WEBHOOK_EVENT_LABELS, type WebhookEvent } from "@/server/webhooks/events";
 
 /**
@@ -310,6 +312,8 @@ export async function notifyChatEvent(
   event: WebhookEvent,
   data: Record<string, unknown>,
 ): Promise<void> {
+  // Demo lockdown: never POST to visitor-configured Slack/Discord webhooks.
+  if (isDemoMode()) return;
   try {
     const config = await getWorkspaceChatConfig(workspaceId);
     if (!config || !config.events.includes(event)) return;
@@ -358,6 +362,7 @@ export async function notifyTelegramEvent(
   event: WebhookEvent,
   data: Record<string, unknown>,
 ): Promise<void> {
+  if (isDemoMode()) return;
   try {
     const config = await getWorkspaceTelegramConfig(workspaceId);
     if (!config || !config.events.includes(event)) return;
