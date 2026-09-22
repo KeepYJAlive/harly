@@ -10,6 +10,7 @@ const schema = z.object({
   nativeSignEnabled: z.boolean(),
   remoteSignEnabled: z.boolean(),
   savedSignaturesEnabled: z.boolean(),
+  vectorSignaturesEnabled: z.boolean(),
   signatureOtpEnabled: z.boolean(),
   signatureTimelineEnabled: z.boolean(),
   signatureSecurityMode: z.enum(["link_only", "email_otp", "sso"]),
