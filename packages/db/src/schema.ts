@@ -933,6 +933,12 @@ export const workspaceSettings = pgTable("workspace_settings", {
   savedSignaturesEnabled: boolean("saved_signatures_enabled")
     .default(false)
     .notNull(),
+  // Vector signature capture (Firefox/pdf.js-style outlines). Off by default;
+  // Fase 1 ships capture behind NEXT_PUBLIC_VECTOR_SIGNS, Fase 2 gates saved
+  // vector signatures per workspace with this flag. PNG rows keep working.
+  vectorSignaturesEnabled: boolean("vector_signatures_enabled")
+    .default(false)
+    .notNull(),
   signatureOtpEnabled: boolean("signature_otp_enabled")
     .default(false)
     .notNull(),
@@ -2609,6 +2615,13 @@ export type SignatureArtifact = typeof signatureArtifacts.$inferSelect;
 
 // Private, reusable signature images. ownerId intentionally has no foreign key:
 // dashboard users and portal candidates are different identity tables.
+//
+// `kind` distinguishes the two representations: "png" rows are the legacy
+// raster capture (storage holds PNG bytes); "vector" rows hold a pdf.js-style
+// compressed outline as a base64 deflate payload (storage holds that ASCII
+// payload, mimeType text/plain). Readers must branch on `kind` — never assume
+// storage bytes are a PNG. Delete path is identical for both (drop the row +
+// delete the storage file).
 export const savedSignatures = pgTable(
   "saved_signatures",
   {
@@ -2618,6 +2631,7 @@ export const savedSignatures = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     ownerType: text("owner_type").notNull(),
     ownerId: text("owner_id").notNull(),
+    kind: text("kind").default("png").notNull(),
     storageKey: text("storage_key").notNull(),
     mimeType: text("mime_type").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
@@ -2980,6 +2994,12 @@ export const evaluationCriteria = pgTable(
     type: text("type").notNull(),
     importance: text("importance").default("preferred").notNull(),
     weight: integer("weight").notNull(),
+    // Phase 2 governance (§2.3, §3.4): gate semantics belong to the published
+    // rubric rows, not just the JSON snapshot — a knockout/exclusion must
+    // survive the normalized read path.
+    isKnockout: boolean("is_knockout").default(false).notNull(),
+    excluded: boolean("excluded").default(false).notNull(),
+    sourceProvenance: jsonb("source_provenance"),
     aliases: jsonb("aliases")
       .default(sql`'[]'::jsonb`)
       .notNull(),
@@ -3029,6 +3049,17 @@ export const aiEvaluations = pgTable(
       .notNull(),
     evaluationStatus: text("evaluation_status").default("completed").notNull(),
     rubricSnapshot: jsonb("rubric_snapshot"),
+    // Versioned deterministic-evaluation inputs retained for replay and audit.
+    candidateFactsSnapshot: jsonb("candidate_facts_snapshot"),
+    skillProfilesSnapshot: jsonb("skill_profiles_snapshot"),
+    // Full-fidelity evaluation trace (Audit doc §17.3, short-term): version
+    // metadata + per-criterion details, so any historical score stays
+    // replayable and auditable without re-running the engine.
+    evaluationMetadataSnapshot: jsonb("evaluation_metadata_snapshot"),
+    criterionDetailsSnapshot: jsonb("criterion_details_snapshot"),
+    // Phase 5 (§13): top quantified achievements for recruiter comprehension.
+    // Display-only enrichment — never an input to scoring.
+    impactHighlightsSnapshot: jsonb("impact_highlights_snapshot"),
     // Evaluation engine: "ai" for provider-backed scoring, "rules" for the
     // deterministic, explainable Harly Algorithm.
     source: text("source").default("ai").notNull(),
@@ -3064,6 +3095,42 @@ export const aiEvaluations = pgTable(
     index("ai_evaluations_candidate_idx").on(table.candidateId),
     index("ai_evaluations_workspace_idx").on(table.workspaceId),
     index("ai_evaluations_job_idx").on(table.jobId),
+  ],
+);
+
+/**
+ * Immutable prior versions of the current application evaluation.
+ * `ai_evaluations` remains the compatibility/current-row read model, while
+ * this append-only table prevents a regenerated score or a new resume from
+ * erasing the evidence that produced the previous result.
+ */
+export const aiEvaluationRevisions = pgTable(
+  "ai_evaluation_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    evaluationId: uuid("evaluation_id")
+      .notNull()
+      .references(() => aiEvaluations.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    applicationId: uuid("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("ai_evaluation_revisions_evaluation_revision_idx").on(
+      table.evaluationId,
+      table.revision,
+    ),
+    index("ai_evaluation_revisions_workspace_application_idx").on(
+      table.workspaceId,
+      table.applicationId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -3638,6 +3705,8 @@ export type EvaluationCriterion = typeof evaluationCriteria.$inferSelect;
 export type NewEvaluationCriterion = typeof evaluationCriteria.$inferInsert;
 export type AiEvaluation = typeof aiEvaluations.$inferSelect;
 export type NewAiEvaluation = typeof aiEvaluations.$inferInsert;
+export type AiEvaluationRevision = typeof aiEvaluationRevisions.$inferSelect;
+export type NewAiEvaluationRevision = typeof aiEvaluationRevisions.$inferInsert;
 export type EvaluationCriterionResult =
   typeof evaluationCriterionResults.$inferSelect;
 export type NewEvaluationCriterionResult =
