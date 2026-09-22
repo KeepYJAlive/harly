@@ -25,6 +25,11 @@ vi.mock("@/features/demo/DemoEntryButton", () => ({
 
 import HomePage from "./page";
 
+type CareerPageProps = {
+  boardRoot: string;
+  jobs: Array<{ slug: string }>;
+};
+
 function childElements(node: ReactNode): ReactElement[] {
   if (node == null || typeof node === "boolean") return [];
   if (Array.isArray(node)) return node.flatMap(childElements);
@@ -32,6 +37,16 @@ function childElements(node: ReactNode): ReactElement[] {
     return [node as ReactElement];
   }
   return [];
+}
+
+function isCareerPageElement(
+  child: ReactElement,
+): child is ReactElement<CareerPageProps> {
+  return (
+    child.props != null &&
+    typeof child.props === "object" &&
+    "boardRoot" in child.props
+  );
 }
 
 describe("public home page", () => {
@@ -58,23 +73,18 @@ describe("public home page", () => {
       config: { template: "minimal" },
     });
 
-    const page = await HomePage();
+    const page = (await HomePage()) as ReactElement<{ children?: ReactNode }>;
 
     expect(redirect).not.toHaveBeenCalled();
     expect(getCareerPageData).toHaveBeenCalledWith("acme");
 
     // Home wraps PublicCareerPage + DemoEntryButton in a fragment; boardRoot
     // lives on the career page child, not the fragment itself.
-    const careerPage = childElements(page.props.children).find(
-      (child) =>
-        child.props != null &&
-        typeof child.props === "object" &&
-        "boardRoot" in child.props,
-    );
+    const careerPage = childElements(page.props.children).find(isCareerPageElement);
 
     expect(careerPage).toBeDefined();
-    expect(careerPage?.props.boardRoot).toBe("");
-    expect(careerPage?.props.jobs).toEqual([
+    expect(careerPage!.props.boardRoot).toBe("");
+    expect(careerPage!.props.jobs).toEqual([
       expect.objectContaining({ slug: "software-engineer" }),
     ]);
   });
