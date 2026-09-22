@@ -19,6 +19,10 @@ import { createNativeSigningLink } from "@/lib/esign/native/remote";
 import { finalizeNativeSignature } from "@/lib/esign/native/finalize";
 import { createLogger } from "@/lib/logger";
 import { storage } from "@/lib/storage";
+import {
+  MAX_VECTOR_COMPRESSED_CHARS,
+  validateVectorSaveInput,
+} from "./signature-vector";
 
 const log = createLogger("native-sign-actions");
 const placementSchema = z.object({
@@ -34,6 +38,8 @@ const inputSchema = z.object({
   placements: z.array(placementSchema).min(1).max(20),
   signaturePngBase64: z.string().max(700_000).optional(),
   savedSignatureId: z.uuid().optional(),
+  /** Fase 3: compressed vector outline; verified + rendered Hi-DPI in finalize. */
+  signatureVectorBase64: z.string().max(MAX_VECTOR_COMPRESSED_CHARS).optional(),
 });
 
 export type NativeSignResult =
@@ -62,8 +68,15 @@ async function getSignatureBytes(input: {
   userId: string;
   signaturePngBase64?: string;
   savedSignatureId?: string;
+  /** Fase 3: when a verified vector is supplied, PNG bytes are optional. */
+  signatureVectorBase64?: string;
 }) {
   if (input.signaturePngBase64) return decodePng(input.signaturePngBase64);
+  if (input.signatureVectorBase64) {
+    const checked = validateVectorSaveInput({ vectorData: input.signatureVectorBase64 });
+    if (!checked.ok) throw new Error(checked.error);
+    return undefined;
+  }
   if (!input.savedSignatureId) throw new Error("Choose or draw a signature.");
   const [saved] = await db
     .select({ storageKey: savedSignatures.storageKey })
@@ -120,6 +133,7 @@ export async function signDocumentNatively(input: unknown): Promise<NativeSignRe
       userId: context.user.id,
       signaturePngBase64: parsed.data.signaturePngBase64,
       savedSignatureId: parsed.data.savedSignatureId,
+      signatureVectorBase64: parsed.data.signatureVectorBase64,
     });
     const result = await finalizeNativeSignature({
       workspaceId: context.organization.id,
@@ -128,6 +142,7 @@ export async function signDocumentNatively(input: unknown): Promise<NativeSignRe
       signerName: context.user.name,
       signerEmail: context.user.email ?? "",
       signaturePngBytes: signatureBytes,
+      signatureVector: parsed.data.signatureVectorBase64,
       placements: parsed.data.placements as SignaturePlacement[],
       verification: "self_sign",
     });
