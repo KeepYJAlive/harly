@@ -52,6 +52,11 @@ async function claimRun(runId: string, workerId: string): Promise<boolean> {
     .where(
       and(
         eq(workflowRuns.id, runId),
+        // This module is the historical linear runner. Keep the engine
+        // boundary in the claim itself so a direct invocation can never
+        // consume a v2 graph run before the dispatcher has a chance to route
+        // it to the fenced graph worker.
+        eq(workflowRuns.engineVersion, 1),
         eq(workflowRuns.status, "running"),
         lte(workflowRuns.nextAttemptAt, now),
         or(
@@ -118,7 +123,7 @@ function parseDefinitionJson(def: WorkflowDefinition | Record<string, unknown>):
  * Mirrors requirePermission but for an explicit actor (no HTTP session).
  * Returns { ok, reason } so the engine can record a clear error (trade-off T1).
  */
-async function actorHasPermission(
+export async function actorHasPermission(
   workspaceId: string,
   actorUserId: string,
   permission: string,
@@ -156,17 +161,25 @@ function extractTriggerIds(payload: Record<string, unknown>): {
 } {
   const app = payload.application as Record<string, unknown> | undefined;
   const candidate = payload.candidate as Record<string, unknown> | undefined;
+  const interview = payload.interview as Record<string, unknown> | undefined;
+  const job = payload.job as Record<string, unknown> | undefined;
+
   const applicationId =
     (typeof app?.id === "string" && app.id) ||
+    (typeof interview?.applicationId === "string" && interview.applicationId) ||
     (typeof payload.applicationId === "string" && payload.applicationId) ||
     null;
   const candidateId =
     (typeof candidate?.id === "string" && candidate.id) ||
+    (typeof app?.candidateId === "string" && app.candidateId) ||
+    (typeof interview?.candidateId === "string" && interview.candidateId) ||
     (typeof payload.candidateId === "string" && payload.candidateId) ||
     null;
   const jobId =
     (typeof payload.jobId === "string" && payload.jobId) ||
     (typeof app?.jobId === "string" && app.jobId) ||
+    (typeof interview?.jobId === "string" && interview.jobId) ||
+    (typeof job?.id === "string" && job.id) ||
     null;
   return { applicationId, candidateId, jobId };
 }
@@ -299,7 +312,16 @@ async function executeAction(
         startedAt,
         finishedAt: new Date(),
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: [workflowRunSteps.runId, workflowRunSteps.stepIndex],
+        set: {
+          status,
+          result: sanitizeLogValue(result) as Record<string, unknown>,
+          retryable: result.retryable ?? false,
+          errorCode: result.errorCode ?? null,
+          finishedAt: new Date(),
+        },
+      });
     await db
       .update(workflowActionEffects)
       .set({
@@ -586,7 +608,7 @@ async function finishRun(
       .where(eq(workflowDefinitions.id, run.workflowId))
       .limit(1);
     const failures = (definitionState?.consecutiveFailureCount ?? 0) + 1;
-    const shouldPause = failures >= 5;
+    const shouldPause = failures >= (definitionState?.circuitBreakerThreshold ?? 5);
     const shouldOpenCircuit = failures >= (definitionState?.circuitBreakerThreshold ?? 5);
     const circuitOpenUntil = shouldOpenCircuit
       ? new Date(Date.now() + (definitionState?.circuitBreakerCooldownSeconds ?? 300) * 1000)

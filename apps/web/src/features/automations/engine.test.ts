@@ -60,16 +60,21 @@ function insertImpl(rows: Record<string, unknown> | Record<string, unknown>[]) {
   return {
     returning: () => Promise.resolve([{ id: "step-1" }]),
     onConflictDoNothing: () => ({ returning: () => Promise.resolve([{ id: "step-1" }]) }),
+    onConflictDoUpdate: () => ({ returning: () => Promise.resolve([{ id: "step-1" }]) }),
   };
 }
 
 vi.mock("@harly/db", () => ({
   db: {
     select: vi.fn(selectImpl),
-    update: vi.fn(() => ({
+    update: vi.fn((table: unknown) => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
-          returning: () => Promise.resolve([{ id: "run-1", status: "updated" }]),
+          returning: () => Promise.resolve(
+            table === RUNS && dbState.runs[0]?.engineVersion === 2
+              ? []
+              : [{ id: "run-1", status: "updated" }],
+          ),
         })),
       })),
     })),
@@ -142,6 +147,7 @@ const baseRun = {
   workflowId: "wf-1",
   triggerEvent: "application.created",
   triggerPayload: { application: { id: "app-1" }, candidateId: "cand-1", jobId: "job-1" },
+  engineVersion: 1,
   status: "running",
   startedAt: new Date(),
 };
@@ -314,5 +320,13 @@ describe("workflow engine — end-to-end", () => {
   it("throws when the run row does not exist", async () => {
     dbState.runs = [];
     await expect(runWorkflow("nonexistent")).rejects.toThrow("not found");
+  });
+
+  it("never lets the historical runner claim a v2 graph run", async () => {
+    dbState.runs = [{ ...baseRun, engineVersion: 2 }];
+    setDefinition({ actions: [{ type: "set_status", config: { status: "rejected" } }] });
+
+    await expect(runWorkflow("run-1")).rejects.toThrow("already leased or not due");
+    expect(dbState.steps).toHaveLength(0);
   });
 });
