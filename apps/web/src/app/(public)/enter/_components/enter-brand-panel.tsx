@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion, type Variants } from "motion/react";
-import { LayoutGridIcon, WorkflowIcon, SparklesIcon } from "lucide-react";
+import { LayoutGridIcon, WorkflowIcon, BriefcaseIcon } from "lucide-react";
 
 import { GithubIcon } from "@/components/ui/icons/GithubIcon";
 
@@ -22,9 +22,9 @@ const POINTS = [
     body: "Build one from scratch or edit an existing workflow to see what happens.",
   },
   {
-    icon: SparklesIcon,
-    title: "Talk to Harly AI",
-    body: "It has access to the demo workspace, so you can ask it questions or have it help with everyday tasks.",
+    icon: BriefcaseIcon,
+    title: "Walk the careers page",
+    body: "Open the public job board as a candidate would, then apply to a role end to end.",
   },
 ];
 
