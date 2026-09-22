@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement, ReactNode } from "react";
 
 const { redirect, getPublicWorkspaceSlug, getCareerPageData, isPortalEnabled } = vi.hoisted(
   () => ({
@@ -18,8 +19,20 @@ vi.mock("@/lib/portal-auth", () => ({ isPortalEnabled }));
 vi.mock("@/features/career-page/PublicCareerPage", () => ({
   PublicCareerPage: () => null,
 }));
+vi.mock("@/features/demo/DemoEntryButton", () => ({
+  DemoEntryButton: () => null,
+}));
 
 import HomePage from "./page";
+
+function childElements(node: ReactNode): ReactElement[] {
+  if (node == null || typeof node === "boolean") return [];
+  if (Array.isArray(node)) return node.flatMap(childElements);
+  if (typeof node === "object" && "props" in node) {
+    return [node as ReactElement];
+  }
+  return [];
+}
 
 describe("public home page", () => {
   beforeEach(() => {
@@ -49,8 +62,19 @@ describe("public home page", () => {
 
     expect(redirect).not.toHaveBeenCalled();
     expect(getCareerPageData).toHaveBeenCalledWith("acme");
-    expect(page.props.boardRoot).toBe("");
-    expect(page.props.jobs).toEqual([
+
+    // Home wraps PublicCareerPage + DemoEntryButton in a fragment; boardRoot
+    // lives on the career page child, not the fragment itself.
+    const careerPage = childElements(page.props.children).find(
+      (child) =>
+        child.props != null &&
+        typeof child.props === "object" &&
+        "boardRoot" in child.props,
+    );
+
+    expect(careerPage).toBeDefined();
+    expect(careerPage?.props.boardRoot).toBe("");
+    expect(careerPage?.props.jobs).toEqual([
       expect.objectContaining({ slug: "software-engineer" }),
     ]);
   });
