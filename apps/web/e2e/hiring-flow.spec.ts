@@ -245,6 +245,12 @@ test.describe("candidate-to-hire native signing flow", () => {
     await candidatePage.goto("/portal/login", {
       waitUntil: "domcontentloaded",
     });
+    const acceptCandidateCookies = candidatePage.getByRole("button", {
+      name: "Accept all",
+      exact: true,
+    });
+    await expect(acceptCandidateCookies).toBeVisible();
+    await acceptCandidateCookies.click();
     await candidatePage
       .locator('input[name="email"]')
       .fill(FIXTURE.candidateEmail);

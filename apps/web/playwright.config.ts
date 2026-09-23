@@ -64,6 +64,14 @@ export default defineConfig({
       // process/database.
       AI_ENCRYPTION_KEY: E2E_AI_ENCRYPTION_KEY,
       EMAIL_FROM: "harly-e2e@harly-e2e.test",
+      // A workspace with CAPTCHA disabled must remain CAPTCHA-free in E2E,
+      // even when the developer host has platform-wide provider keys set.
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "",
+      TURNSTILE_SECRET_KEY: "",
+      NEXT_PUBLIC_RECAPTCHA_SITE_KEY: "",
+      RECAPTCHA_SECRET_KEY: "",
+      NEXT_PUBLIC_HCAPTCHA_SITE_KEY: "",
+      HCAPTCHA_SECRET_KEY: "",
     },
   },
 });

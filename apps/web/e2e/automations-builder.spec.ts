@@ -412,6 +412,13 @@ test.describe("automations builder", () => {
     await expect(page.getByRole("button", { name: /Saved at/ })).toBeVisible({
       timeout: 30_000,
     });
+    // Creating/selecting an endpoint updates the workflow trigger filter.
+    // Persist that draft change before navigating away to verify the endpoint
+    // schema survives a reload.
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page.getByRole("button", { name: /Saved/ })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const savedSchemaEditor = page
       .getByLabel("Payload schema (JSON Schema Draft 7)")
