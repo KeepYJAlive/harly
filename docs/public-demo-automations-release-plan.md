@@ -1,7 +1,8 @@
 # Release 0.2.0 — Automations: demo público seguro y preparación de release
 
-**Estado:** plan de implementación y verificación.  
-**Ámbito:** worktree `release/0.2.0`.  
+**Estado:** plan de implementación y verificación.
+
+**Ámbito:** worktree `release/0.2.0`.
 **Decisión de producto:** el demo público es una visita guiada de sólo lectura con simulaciones curadas; **no** es un tenant ejecutable de Automations.
 
 ## 1. Resultado que debe existir antes del release
@@ -127,7 +128,8 @@ Al aprobar, el servicio verifica que el aprobador no sea el solicitante/autora d
 4. Confirmar qué operaciones de demo actuales están basadas en DB y cuáles son sólo UI.
 5. Registrar un baseline de pruebas y las limitaciones de entorno (por ejemplo, E2E que necesite Docker/Colima).
 
-**Salida:** tabla de superficies con archivo/símbolo, capability, comportamiento demo y prueba asociada.  
+**Salida:** tabla de superficies con archivo/símbolo, capability, comportamiento demo y prueba asociada.
+
 **Gate:** no comenzar Fase 2 sin que todas las entradas de ejecución y mutación tengan dueño.
 
 ### Fase 1 — Frontera de seguridad demo en backend
@@ -268,4 +270,3 @@ Los comandos pueden ajustarse a scripts reales del repositorio, pero cada result
 - Permitir webhooks/HTTP arbitrarios como atajo de demo.
 - Reemplazar la política de seguridad por rate limiting sólo del frontend o proveedor.
 - Declarar listo un release sólo con pruebas unitarias si faltan las rutas de integración/E2E requeridas.
-
