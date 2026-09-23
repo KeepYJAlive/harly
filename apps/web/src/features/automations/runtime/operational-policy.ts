@@ -1,11 +1,13 @@
 import "server-only";
 
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 
 import {
   db,
   workflowDefinitions,
   workflowExternalActionBuckets,
+  workflowExternalActionRefunds,
   workflowRunBuckets,
   workflowRuns,
   workspaceAutomationPolicies,
@@ -17,8 +19,14 @@ import { recordAutomationGuardDecision } from "@/server/observability/metrics";
 /** A bounded chain may still span several workflow definitions. */
 export const MAX_LINEAGE_EXTERNAL_ACTIONS = 100;
 
+export type ExternalActionReservationReceipt = {
+  reservationId: string;
+  bucketStart: Date;
+  rootRunId: string;
+};
+
 export type ExternalActionReservation =
-  | { ok: true }
+  | { ok: true; receipt: ExternalActionReservationReceipt }
   | {
       ok: false;
       code:
@@ -220,7 +228,10 @@ export async function reserveExternalActionPolicy(input: {
       )
       .returning({ id: workflowRuns.id });
     if (!root) throw new ReservationRejected("LINEAGE_EFFECT_BUDGET_EXHAUSTED");
-    return { ok: true };
+    return {
+      ok: true,
+      receipt: { reservationId: randomUUID(), bucketStart, rootRunId },
+    };
     });
   } catch (error) {
     if (error instanceof ReservationRejected) {
@@ -234,6 +245,74 @@ export async function reserveExternalActionPolicy(input: {
     }
     throw error;
   }
+}
+
+/**
+ * Return capacity only when the workspace pause gate rejects an action before
+ * its provider callback begins. Once a callback starts, the outcome may be
+ * externally observable and its reservation must remain consumed.
+ */
+export async function releaseUnstartedExternalActionReservation(input: {
+  workspaceId: string;
+  workflowId: string;
+  receipt: ExternalActionReservationReceipt;
+  database?: typeof db;
+}): Promise<void> {
+  const database = input.database ?? db;
+  await database.transaction(async (tx) => {
+    const [refund] = await tx
+      .insert(workflowExternalActionRefunds)
+      .values({
+        reservationId: input.receipt.reservationId,
+        workspaceId: input.workspaceId,
+        workflowId: input.workflowId,
+        rootRunId: input.receipt.rootRunId,
+        bucketStart: input.receipt.bucketStart,
+      })
+      .onConflictDoNothing()
+      .returning({ reservationId: workflowExternalActionRefunds.reservationId });
+    if (!refund) return;
+    await tx
+      .update(workspaceAutomationExternalActionBuckets)
+      .set({
+        reserved: sql`${workspaceAutomationExternalActionBuckets.reserved} - 1`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(workspaceAutomationExternalActionBuckets.workspaceId, input.workspaceId),
+          eq(workspaceAutomationExternalActionBuckets.bucketStart, input.receipt.bucketStart),
+          gt(workspaceAutomationExternalActionBuckets.reserved, 0),
+        ),
+      );
+    await tx
+      .update(workflowExternalActionBuckets)
+      .set({
+        reserved: sql`${workflowExternalActionBuckets.reserved} - 1`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(workflowExternalActionBuckets.workspaceId, input.workspaceId),
+          eq(workflowExternalActionBuckets.workflowId, input.workflowId),
+          eq(workflowExternalActionBuckets.bucketStart, input.receipt.bucketStart),
+          gt(workflowExternalActionBuckets.reserved, 0),
+        ),
+      );
+    await tx
+      .update(workflowRuns)
+      .set({
+        lineageExternalActions: sql`${workflowRuns.lineageExternalActions} - 1`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(workflowRuns.workspaceId, input.workspaceId),
+          eq(workflowRuns.id, input.receipt.rootRunId),
+          gt(workflowRuns.lineageExternalActions, 0),
+        ),
+      );
+  });
 }
 
 /** Update the live circuit after a provider outcome, not at the end of a run. */

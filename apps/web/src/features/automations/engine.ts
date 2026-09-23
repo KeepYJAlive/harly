@@ -20,7 +20,9 @@ import { getRolePermissions } from "@/features/workspaces/permissions-server";
 import { roleIsAllPowerful } from "@/features/workspaces/permissions";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import {
+  releaseUnstartedExternalActionReservation,
   reserveExternalActionPolicy,
+  type ExternalActionReservationReceipt,
   withWorkspaceAutomationEffectPermit,
   workspaceAutomationsEnabled,
 } from "./runtime/operational-policy";
@@ -419,6 +421,7 @@ async function executeAction(
     }
   }
 
+  let externalReservation: ExternalActionReservationReceipt | null = null;
   if (
     actionCtx.workflowId &&
     EXTERNAL_ACTION_TYPES.includes(action.type as (typeof EXTERNAL_ACTION_TYPES)[number])
@@ -454,6 +457,7 @@ async function executeAction(
       await recordStep(result, "failed");
       return result;
     }
+    externalReservation = reservation.receipt;
   }
 
   let result: ActionResult;
@@ -464,6 +468,14 @@ async function executeAction(
       effect: () => handler.run(parsed.data, actionCtx),
     });
     if (!permit.started) {
+      if (externalReservation && actionCtx.workflowId) {
+        await releaseUnstartedExternalActionReservation({
+          workspaceId,
+          workflowId: actionCtx.workflowId,
+          receipt: externalReservation,
+          database: actionCtx.database,
+        });
+      }
       recordAutomationGuardDecision("WORKSPACE_PAUSED");
       return {
         success: false,

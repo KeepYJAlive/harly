@@ -56,6 +56,7 @@ import { actorHasPermission } from "./workflow-permissions";
 import { effectiveApprovalPolicy } from "./approval-policy";
 import { nextLocalDeadline } from "./local-time";
 import {
+  releaseUnstartedExternalActionReservation,
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
   withWorkspaceAutomationEffectPermit,
@@ -706,6 +707,12 @@ export async function runWorkflowV2(
               }),
             });
             if (!permit.started) {
+              await releaseUnstartedExternalActionReservation({
+                workspaceId: lease.workspaceId,
+                workflowId: context.run.workflowId,
+                receipt: policy.receipt,
+                database,
+              });
               await nodeStore.releaseUnstarted(
                 lease,
                 reservation.execution.id,

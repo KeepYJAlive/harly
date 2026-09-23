@@ -2408,14 +2408,17 @@ export const scorecards = pgTable(
     ...timestamps(),
   },
   (table) => [
-    unique("scorecards_workspace_application_author_stage_uidx")
+    // Application-backed scorecards are upserted per author and stage. A
+    // candidate-only scorecard intentionally has no such uniqueness: it may
+    // outlive a deleted application and multiple candidates share a workspace.
+    uniqueIndex("scorecards_workspace_application_author_stage_uidx")
       .on(
         table.workspaceId,
         table.applicationId,
         table.authorId,
-        table.stageId,
+        sql`coalesce(${table.stageId}::text, '')`,
       )
-      .nullsNotDistinct(),
+      .where(sql`${table.applicationId} is not null`),
     index("scorecards_workspace_idx").on(table.workspaceId),
     index("scorecards_candidate_created_at_idx").on(
       table.candidateId,
@@ -5540,6 +5543,33 @@ export const workflowExternalActionBuckets = pgTable(
     ),
     index("workflow_external_action_buckets_cleanup_idx").on(table.bucketStart),
     check("workflow_external_action_buckets_reserved_check", sql`${table.reserved} >= 0`),
+  ],
+);
+
+/**
+ * Idempotency receipts for the exceptional case where a reserved action is
+ * stopped by a workspace pause before its provider callback starts.
+ */
+export const workflowExternalActionRefunds = pgTable(
+  "workflow_external_action_refunds",
+  {
+    reservationId: uuid("reservation_id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflowDefinitions.id, { onDelete: "cascade" }),
+    rootRunId: uuid("root_run_id")
+      .notNull()
+      .references(() => workflowRuns.id, { onDelete: "cascade" }),
+    bucketStart: timestamp("bucket_start", { withTimezone: true }).notNull(),
+    refundedAt: timestamp("refunded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("workflow_external_action_refunds_cleanup_idx").on(table.refundedAt),
   ],
 );
 

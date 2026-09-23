@@ -54,6 +54,7 @@ import {
 } from "./worker";
 import { findDueWorkflowRuns } from "./due-runs";
 import {
+  releaseUnstartedExternalActionReservation,
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
   reserveRunAdmissionPolicy,
@@ -332,6 +333,8 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       workflowId: policyWorkflowId,
       triggerEvent: "application.created",
       engineVersion: 1,
+      status: "succeeded",
+      finishedAt: new Date(),
     });
 
     const now = new Date("2099-01-01T12:00:20.000Z");
@@ -398,7 +401,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
         database: client!.db,
         now,
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     const thirdWorkflow = await createExternalWorkflow();
     expect(
       await reserveExternalActionPolicy({
@@ -448,6 +451,166 @@ describe.skipIf(!url)("Postgres graph leases", () => {
           eq(workflowRuns.engineVersion, 1),
         ),
       );
+  });
+
+  it("refunds a reservation rejected by the pause gate without refunding a started effect", async () => {
+    const policyWorkflowId = randomUUID();
+    const rootRunId = randomUUID();
+    const now = new Date("2099-01-01T12:10:20.000Z");
+    await client!.db
+      .insert(workspaceAutomationPolicies)
+      .values({
+        workspaceId,
+        enabled: true,
+        maxExternalActionsPerMinute: 2,
+      })
+      .onConflictDoUpdate({
+        target: workspaceAutomationPolicies.workspaceId,
+        set: { enabled: true, maxExternalActionsPerMinute: 2 },
+      });
+    await client!.db.insert(workflowDefinitions).values({
+      id: policyWorkflowId,
+      workspaceId,
+      name: "Pause gate refund test",
+      triggerEvent: "application.created",
+      trigger: { event: "application.created" },
+      conditions: [],
+      actions: [],
+      maxExternalActionsPerMinute: 2,
+    });
+    await client!.db.insert(workflowRuns).values({
+      id: rootRunId,
+      rootRunId,
+      workspaceId,
+      workflowId: policyWorkflowId,
+      triggerEvent: "application.created",
+      engineVersion: 1,
+      status: "succeeded",
+      finishedAt: new Date(),
+    });
+
+    const rejectedReservation = await reserveExternalActionPolicy({
+      workspaceId,
+      workflowId: policyWorkflowId,
+      runId: rootRunId,
+      database: client!.db,
+      now,
+    });
+    expect(rejectedReservation.ok).toBe(true);
+    if (!rejectedReservation.ok) throw new Error("Expected reservation");
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ enabled: false })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+    let rejectedEffectCalled = false;
+    expect(
+      await withWorkspaceAutomationEffectPermit({
+        workspaceId,
+        database: client!.db,
+        effect: async () => {
+          rejectedEffectCalled = true;
+        },
+      }),
+    ).toEqual({ started: false });
+    expect(rejectedEffectCalled).toBe(false);
+    await releaseUnstartedExternalActionReservation({
+      workspaceId,
+      workflowId: policyWorkflowId,
+      receipt: rejectedReservation.receipt,
+      database: client!.db,
+    });
+    await releaseUnstartedExternalActionReservation({
+      workspaceId,
+      workflowId: policyWorkflowId,
+      receipt: rejectedReservation.receipt,
+      database: client!.db,
+    });
+    const [refundedWorkspaceBucket] = await client!.db
+      .select({ reserved: workspaceAutomationExternalActionBuckets.reserved })
+      .from(workspaceAutomationExternalActionBuckets)
+      .where(
+        and(
+          eq(workspaceAutomationExternalActionBuckets.workspaceId, workspaceId),
+          eq(
+            workspaceAutomationExternalActionBuckets.bucketStart,
+            rejectedReservation.receipt.bucketStart,
+          ),
+        ),
+      );
+    const [refundedWorkflowBucket] = await client!.db
+      .select({ reserved: workflowExternalActionBuckets.reserved })
+      .from(workflowExternalActionBuckets)
+      .where(
+        and(
+          eq(workflowExternalActionBuckets.workflowId, policyWorkflowId),
+          eq(
+            workflowExternalActionBuckets.bucketStart,
+            rejectedReservation.receipt.bucketStart,
+          ),
+        ),
+      );
+    const [refundedRoot] = await client!.db
+      .select({ used: workflowRuns.lineageExternalActions })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.id, rootRunId));
+    expect(refundedWorkspaceBucket?.reserved).toBe(0);
+    expect(refundedWorkflowBucket?.reserved).toBe(0);
+    expect(refundedRoot?.used).toBe(0);
+
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ enabled: true })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+    const admittedReservation = await reserveExternalActionPolicy({
+      workspaceId,
+      workflowId: policyWorkflowId,
+      runId: rootRunId,
+      database: client!.db,
+      now,
+    });
+    expect(admittedReservation.ok).toBe(true);
+    let admittedEffectCalled = false;
+    expect(
+      await withWorkspaceAutomationEffectPermit({
+        workspaceId,
+        database: client!.db,
+        effect: async () => {
+          admittedEffectCalled = true;
+        },
+      }),
+    ).toEqual({ started: true, value: undefined });
+    expect(admittedEffectCalled).toBe(true);
+    const [admittedWorkspaceBucket] = await client!.db
+      .select({ reserved: workspaceAutomationExternalActionBuckets.reserved })
+      .from(workspaceAutomationExternalActionBuckets)
+      .where(
+        and(
+          eq(workspaceAutomationExternalActionBuckets.workspaceId, workspaceId),
+          eq(
+            workspaceAutomationExternalActionBuckets.bucketStart,
+            rejectedReservation.receipt.bucketStart,
+          ),
+        ),
+      );
+    const [admittedWorkflowBucket] = await client!.db
+      .select({ reserved: workflowExternalActionBuckets.reserved })
+      .from(workflowExternalActionBuckets)
+      .where(
+        and(
+          eq(workflowExternalActionBuckets.workflowId, policyWorkflowId),
+          eq(
+            workflowExternalActionBuckets.bucketStart,
+            rejectedReservation.receipt.bucketStart,
+          ),
+        ),
+      );
+    const [admittedRoot] = await client!.db
+      .select({ used: workflowRuns.lineageExternalActions })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.id, rootRunId));
+    expect(admittedWorkspaceBucket?.reserved).toBe(1);
+    expect(admittedWorkflowBucket?.reserved).toBe(1);
+    expect(admittedRoot?.used).toBe(1);
   });
 
   it("enforces workspace run ceilings and pause status across workflows", async () => {
