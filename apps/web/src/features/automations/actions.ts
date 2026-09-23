@@ -1024,7 +1024,7 @@ export async function dryRunWorkflowAction(input: {
   startedAt?: string;
 }): Promise<AutomationsActionResult & Partial<DryRunResult>> {
   try {
-    await requireAutomationsPermission();
+    await requireAutomationsMutationPermission();
     const result = await dryRunWorkflow(input);
     return { ok: true, ...result };
   } catch (error) {
@@ -1037,7 +1037,7 @@ export async function previewWorkflowPayloadAction(input: {
   candidateId?: string;
 }): Promise<AutomationsActionResult & { payload?: Record<string, unknown> }> {
   try {
-    await requireAutomationsPermission();
+    await requireAutomationsMutationPermission();
     return { ok: true, payload: await previewWorkflowPayload(input) };
   } catch (error) {
     return {

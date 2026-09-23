@@ -671,6 +671,7 @@ export async function createRun(input: {
   sourceEventId?: string | null;
   parentRunId?: string | null;
 }): Promise<string> {
+  assertNotDemo();
   const [run] = await db
     .insert(workflowRuns)
     .values({

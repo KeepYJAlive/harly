@@ -1138,6 +1138,7 @@ export async function resolveWorkflowApproval(
   },
   database: typeof db = db,
 ): Promise<number> {
+  assertNotDemo();
   const candidates = await database
     .select({
       runId: workflowRuns.id,
@@ -1325,6 +1326,7 @@ export async function reassignWorkflowApproval(
   },
   database: typeof db = db,
 ): Promise<ApprovalReassignmentResult> {
+  assertNotDemo();
   const actorIds = [
     ...new Set(input.actorIds.map((id) => id.trim()).filter(Boolean)),
   ];
@@ -1516,6 +1518,7 @@ export async function resolveWorkflowUncertain(
   },
   database: typeof db = db,
 ): Promise<UncertainResolutionResult> {
+  assertNotDemo();
   const note = input.note.trim();
   if (note.length < 3 || note.length > 1_000) {
     return {
