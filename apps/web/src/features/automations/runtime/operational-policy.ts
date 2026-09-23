@@ -65,6 +65,32 @@ export async function workspaceAutomationsEnabled(
 }
 
 /**
+ * Serialize effect start against a workspace pause. The shared row lock is
+ * held through the handler call, so a pause update cannot return while an
+ * admitted effect has not yet crossed this boundary.
+ */
+export async function withWorkspaceAutomationEffectPermit<T>(input: {
+  workspaceId: string;
+  database?: typeof db;
+  effect: () => Promise<T>;
+}): Promise<{ started: true; value: T } | { started: false }> {
+  const database = input.database ?? db;
+  return database.transaction(async (tx) => {
+    await tx
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId: input.workspaceId })
+      .onConflictDoNothing();
+    const [policy] = await tx
+      .select({ enabled: workspaceAutomationPolicies.enabled })
+      .from(workspaceAutomationPolicies)
+      .where(eq(workspaceAutomationPolicies.workspaceId, input.workspaceId))
+      .for("share");
+    if (!policy?.enabled) return { started: false } as const;
+    return { started: true, value: await input.effect() } as const;
+  });
+}
+
+/**
  * Reserve all operational capacity before calling an external provider. The
  * bucket update and root-run budget update are conditional writes, so two
  * workers cannot both be admitted after observing the same old count.

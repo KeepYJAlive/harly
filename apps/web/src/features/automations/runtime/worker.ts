@@ -58,6 +58,7 @@ import { nextLocalDeadline } from "./local-time";
 import {
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
+  withWorkspaceAutomationEffectPermit,
   workspaceAutomationsEnabled,
 } from "./operational-policy";
 import {
@@ -688,18 +689,33 @@ export async function runWorkflowV2(
           outcome = { status: "failed", code: policy.code, retryable: false };
         } else {
           try {
-            outcome = await adapter.execute({
+            const permit = await withWorkspaceAutomationEffectPermit({
               workspaceId: lease.workspaceId,
-              runId,
-              workflowId: context.run.workflowId,
-              actorUserId: context.version.createdById ?? "",
-              triggerEvent: context.run.triggerEvent as WorkflowEvent,
-              triggerPayload: context.run.triggerPayload as Record<string, unknown>,
-              node: decision.node,
-              input: jsonObject(reservation.execution.inputSnapshot as JsonValue),
-              effectKey: reservation.execution.effectKey,
-              signal: abort.signal,
+              database,
+              effect: () => adapter.execute({
+                workspaceId: lease.workspaceId,
+                runId,
+                workflowId: context.run.workflowId,
+                actorUserId: context.version.createdById ?? "",
+                triggerEvent: context.run.triggerEvent as WorkflowEvent,
+                triggerPayload: context.run.triggerPayload as Record<string, unknown>,
+                node: decision.node,
+                input: jsonObject(reservation.execution.inputSnapshot as JsonValue),
+                effectKey: reservation.execution.effectKey,
+                signal: abort.signal,
+              }),
             });
+            if (!permit.started) {
+              await nodeStore.releaseUnstarted(
+                lease,
+                reservation.execution.id,
+                reservation.attemptId,
+              );
+              recordAutomationGuardDecision("WORKSPACE_PAUSED");
+              await leases.deferPaused(lease);
+              return { status: "waiting", code: "WORKSPACE_PAUSED" };
+            }
+            outcome = permit.value;
           } catch {
             outcome = { status: "uncertain", code: "ACTION_ADAPTER_THROW" };
           }
@@ -722,18 +738,33 @@ export async function runWorkflowV2(
           return { status: "waiting", code: "WORKSPACE_PAUSED" };
         }
         try {
-          outcome = await adapter.execute({
-          workspaceId: lease.workspaceId,
-          runId,
-          workflowId: context.run.workflowId,
-          actorUserId: context.version.createdById ?? "",
-          triggerEvent: context.run.triggerEvent as WorkflowEvent,
-          triggerPayload: context.run.triggerPayload as Record<string, unknown>,
-          node: decision.node,
-          input: jsonObject(reservation.execution.inputSnapshot as JsonValue),
-          effectKey: reservation.execution.effectKey,
-          signal: abort.signal,
+          const permit = await withWorkspaceAutomationEffectPermit({
+            workspaceId: lease.workspaceId,
+            database,
+            effect: () => adapter.execute({
+              workspaceId: lease.workspaceId,
+              runId,
+              workflowId: context.run.workflowId,
+              actorUserId: context.version.createdById ?? "",
+              triggerEvent: context.run.triggerEvent as WorkflowEvent,
+              triggerPayload: context.run.triggerPayload as Record<string, unknown>,
+              node: decision.node,
+              input: jsonObject(reservation.execution.inputSnapshot as JsonValue),
+              effectKey: reservation.execution.effectKey,
+              signal: abort.signal,
+            }),
           });
+          if (!permit.started) {
+            await nodeStore.releaseUnstarted(
+              lease,
+              reservation.execution.id,
+              reservation.attemptId,
+            );
+            recordAutomationGuardDecision("WORKSPACE_PAUSED");
+            await leases.deferPaused(lease);
+            return { status: "waiting", code: "WORKSPACE_PAUSED" };
+          }
+          outcome = permit.value;
         } catch {
           // A custom adapter can throw after provider I/O. Treat the result as
           // ambiguous rather than retrying an effect whose outcome is unknown.

@@ -21,6 +21,7 @@ import { roleIsAllPowerful } from "@/features/workspaces/permissions";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import {
   reserveExternalActionPolicy,
+  withWorkspaceAutomationEffectPermit,
   workspaceAutomationsEnabled,
 } from "./runtime/operational-policy";
 import { recordAutomationGuardDecision } from "@/server/observability/metrics";
@@ -457,7 +458,21 @@ async function executeAction(
 
   let result: ActionResult;
   try {
-    result = await handler.run(parsed.data, actionCtx);
+    const permit = await withWorkspaceAutomationEffectPermit({
+      workspaceId,
+      database: actionCtx.database,
+      effect: () => handler.run(parsed.data, actionCtx),
+    });
+    if (!permit.started) {
+      recordAutomationGuardDecision("WORKSPACE_PAUSED");
+      return {
+        success: false,
+        error: "Workspace automations are paused.",
+        errorCode: "workspace_paused",
+        deferUntil: new Date(Date.now() + 60_000),
+      };
+    }
+    result = permit.value;
   } catch (error) {
     log.error(error, "[automations] action threw", { actionType: action.type, index });
     result = {

@@ -53,8 +53,30 @@ vi.mock("@/server/observability/metrics", () => ({
 
 import { reserveRunAdmissionPolicy } from "./operational-policy";
 
-function mockDb() {
-  const database: any = {
+type TestTransaction = {
+  insert: (table: unknown) => {
+    values: () => {
+      onConflictDoNothing: () => Promise<void>;
+      onConflictDoUpdate: () => {
+        returning: () => Promise<Array<{ id: string }>>;
+      };
+    };
+  };
+  select: () => {
+    from: () => {
+      where: () => {
+        for: () => Promise<Array<{ enabled: boolean; maxRunsPerMinute: number }>>;
+      };
+    };
+  };
+};
+
+type TestDatabase = TestTransaction & {
+  transaction: (fn: (tx: TestTransaction) => Promise<unknown>) => Promise<unknown>;
+};
+
+function mockDb(): TestDatabase {
+  const database: TestDatabase = {
     insert: (table: unknown) => ({
       values: () => ({
         onConflictDoNothing: async () => undefined,
@@ -86,7 +108,7 @@ function mockDb() {
         }),
       }),
     }),
-    transaction: async (fn: (tx: any) => Promise<unknown>) => {
+    transaction: async (fn) => {
       const snapshot = { ...state };
       try {
         return await fn(database);

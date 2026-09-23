@@ -57,6 +57,7 @@ import {
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
   reserveRunAdmissionPolicy,
+  withWorkspaceAutomationEffectPermit,
   workspaceAutomationsEnabled,
 } from "./operational-policy";
 import { expireOverdueDocuments } from "@/features/documents/expiry";
@@ -533,6 +534,75 @@ describe.skipIf(!url)("Postgres graph leases", () => {
     await client!.db
       .update(workspaceAutomationPolicies)
       .set({ maxRunsPerMinute: 300 })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+  });
+
+  it("serializes workspace pause against effect start", async () => {
+    await client!.db
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId, enabled: true })
+      .onConflictDoUpdate({
+        target: workspaceAutomationPolicies.workspaceId,
+        set: { enabled: true },
+      });
+
+    let effectStarted!: () => void;
+    let releaseEffect!: () => void;
+    const effectStartedSignal = new Promise<void>((resolve) => {
+      effectStarted = resolve;
+    });
+    const effectBarrier = new Promise<void>((resolve) => {
+      releaseEffect = resolve;
+    });
+    const effect = withWorkspaceAutomationEffectPermit({
+      workspaceId,
+      database: client!.db,
+      effect: async () => {
+        effectStarted();
+        await effectBarrier;
+        return "provider-call-finished";
+      },
+    });
+    await effectStartedSignal;
+
+    let pauseReturned = false;
+    const pause = client!.db
+      .update(workspaceAutomationPolicies)
+      .set({
+        enabled: false,
+        pausedAt: new Date(),
+        pausedById: fixtureUserId,
+        pauseReason: "Barrier test",
+      })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId))
+      .then(() => {
+        pauseReturned = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(pauseReturned).toBe(false);
+
+    releaseEffect();
+    await expect(effect).resolves.toEqual({
+      started: true,
+      value: "provider-call-finished",
+    });
+    await pause;
+    expect(pauseReturned).toBe(true);
+
+    let calledAfterPause = false;
+    await expect(
+      withWorkspaceAutomationEffectPermit({
+        workspaceId,
+        database: client!.db,
+        effect: async () => {
+          calledAfterPause = true;
+        },
+      }),
+    ).resolves.toEqual({ started: false });
+    expect(calledAfterPause).toBe(false);
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ enabled: true, pausedAt: null, pausedById: null, pauseReason: null })
       .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
   });
 
