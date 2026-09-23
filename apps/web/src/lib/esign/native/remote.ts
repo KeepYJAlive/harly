@@ -24,6 +24,10 @@ import { purgeExpiredSignatureData } from "@/lib/esign/maintenance";
 import { nextOtpAttempt } from "@/lib/esign/otp-policy";
 import { persistDomainEvent, publishPersistedDomainEvents } from "@/server/events/emit";
 import { documentAutomationContext } from "@/lib/esign/document-automation-context";
+import { storage } from "@/lib/storage";
+import { assertNativeSignablePdf } from "./bake";
+import { isSignableNativeFieldsSnapshot } from "./fields";
+import { workingDocumentKey } from "./working-pdf";
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32,128}$/);
 const DEFAULT_EXPIRATION_DAYS = 30;
@@ -111,7 +115,8 @@ export async function resolveNativeSigningToken(rawToken: string): Promise<Nativ
   if (!row || row.recipientStatus !== "sent" || row.envelopeStatus === "voided" || row.envelopeStatus === "completed" || row.documentStatus !== "active" || row.documentSignatureStatus !== "pending") return null;
   if (!row.expiresAt || row.expiresAt <= new Date()) return null;
   const signerRows = await db.select({ id: signatureRecipients.id }).from(signatureRecipients).where(and(eq(signatureRecipients.envelopeId, row.envelopeId), eq(signatureRecipients.workspaceId, row.workspaceId), eq(signatureRecipients.role, "signer")));
-  return { ...row, signerCount: signerRows.length, securityMode: row.securityMode as NativeSigningTarget["securityMode"], expiresAt: row.expiresAt };
+  const workingKey = await workingDocumentKey(db, row.workspaceId, row.envelopeId);
+  return { ...row, storageKey: workingKey ?? row.storageKey, signerCount: signerRows.length, securityMode: row.securityMode as NativeSigningTarget["securityMode"], expiresAt: row.expiresAt };
 }
 
 export async function createNativeSigningLink(input: {
@@ -176,14 +181,18 @@ export async function createNativeSigningLink(input: {
     }
   }
 
-  const [document] = await database.select({ id: documents.id, name: documents.name, mimeType: documents.mimeType, status: documents.status, signatureStatus: documents.signatureStatus, fieldsSnapshot: documents.fieldsSnapshot })
+  const [document] = await database.select({ id: documents.id, name: documents.name, storageKey: documents.storageKey, mimeType: documents.mimeType, status: documents.status, signatureStatus: documents.signatureStatus, fieldsSnapshot: documents.fieldsSnapshot })
     .from(documents).where(and(eq(documents.id, input.documentId), eq(documents.workspaceId, input.workspaceId))).limit(1);
   if (!document) return { ok: false as const, error: "Document not found." };
   if (document.status !== "active" || document.signatureStatus !== "unsigned" || document.mimeType !== "application/pdf") return { ok: false as const, error: "This document is not available for remote signing." };
-  if (recipients.length > 1) {
-    const fields = Array.isArray(document.fieldsSnapshot) ? document.fieldsSnapshot : [];
-    const hasSignatureFieldFor = (recipientIndex: number) => fields.some((field) => typeof field === "object" && field !== null && (field as { type?: string }).type === "signature" && (field as { required?: boolean }).required !== false && ((field as { recipientIndex?: number }).recipientIndex ?? 0) === recipientIndex);
-    if (recipients.some((_, index) => !hasSignatureFieldFor(index))) return { ok: false as const, error: "Place at least one required signature field for every signer before sending." };
+  const fields = Array.isArray(document.fieldsSnapshot) ? document.fieldsSnapshot : [];
+  if (!isSignableNativeFieldsSnapshot(fields)) return { ok: false as const, error: "Place at least one required signature field before sending." };
+  const hasSignatureFieldFor = (recipientIndex: number) => fields.some((field) => field.type === "signature" && field.required !== false && (field.recipientIndex ?? 0) === recipientIndex);
+  if (recipients.some((_, index) => !hasSignatureFieldFor(index))) return { ok: false as const, error: "Place at least one required signature field for every signer before sending." };
+  try {
+    await assertNativeSignablePdf(await storage.read(document.storageKey));
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "This PDF cannot be signed." };
   }
 
   const rawToken = randomBytes(32).toString("base64url");

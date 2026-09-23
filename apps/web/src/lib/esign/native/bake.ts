@@ -6,7 +6,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
-import { validateVectorSaveInput } from "@/features/documents/signature-vector";
+import {
+  rebuildVectorMark,
+  serverVectorExtractor,
+  validateVectorSaveInput,
+  vectorMarkSvg,
+} from "@/features/documents/signature-vector";
+import { fitContainOnPage } from "./fit";
 
 export const NATIVE_ENVELOPE_MAX_BYTES = 20 * 1024 * 1024;
 export const NATIVE_SIGNATURE_MAX_BYTES = 500 * 1024;
@@ -95,6 +101,22 @@ function validateAndNormalizeText(value: string): string {
  * spiking against a real rotated test PDF (see the project plan's
  * verification section) before lifting this restriction.
  */
+export async function assertNativeSignablePdf(pdfBytes: Buffer): Promise<number> {
+  if (pdfBytes.byteLength <= 0 || pdfBytes.byteLength > NATIVE_ENVELOPE_MAX_BYTES) {
+    throw new Error("The source PDF is empty or exceeds the 20 MB limit.");
+  }
+  const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+  const pageCount = pdf.getPageCount();
+  if (pageCount < 1) throw new Error("The PDF has no pages.");
+  for (let index = 0; index < pageCount; index += 1) {
+    const angle = pdf.getPage(index).getRotation().angle % 360;
+    if (angle !== 0) {
+      throw new Error("Signing rotated PDF pages isn't supported yet. Re-export the file without rotation and try again.");
+    }
+  }
+  return pageCount;
+}
+
 export async function bakeFieldsIntoPdf(input: {
   pdfBytes: Buffer;
   /** Required only if `fields` contains at least one "signature" field. */
@@ -131,6 +153,12 @@ export async function bakeFieldsIntoPdf(input: {
   }
 
   const image = needsSignature ? await pdf.embedPng(input.signaturePngBytes!) : null;
+  let markAspect = 1;
+  if (needsSignature && input.signaturePngBytes) {
+    const meta = await sharp(input.signaturePngBytes).metadata();
+    if (!meta.width || !meta.height) throw new Error("The signature image could not be read.");
+    markAspect = meta.width / meta.height;
+  }
   const hasTextField = input.fields.some((f) => f.type === "text");
   let unicodeFont: Awaited<ReturnType<typeof pdf.embedFont>> | null = null;
   if (hasTextField) {
@@ -146,7 +174,13 @@ export async function bakeFieldsIntoPdf(input: {
     const drawY = height - field.y * height - drawHeight;
 
     if (field.type === "signature") {
-      page.drawImage(image!, { x: drawX, y: drawY, width: drawWidth, height: drawHeight });
+      const fitted = fitContainOnPage(field, width, height, markAspect);
+      page.drawImage(image!, {
+        x: fitted.x,
+        y: height - fitted.y - fitted.h,
+        width: fitted.w,
+        height: fitted.h,
+      });
       continue;
     }
     // Text: single-line, auto-shrink to fit the box width, floor at
@@ -200,68 +234,28 @@ export type RenderedVectorSignature = {
  */
 export async function renderVectorSignaturePng(input: {
   vectorData: string;
-  scale?: number;
   maxDim?: number;
 }): Promise<RenderedVectorSignature> {
   const shaped = validateVectorSaveInput({ vectorData: input.vectorData });
   if (!shaped.ok) throw new Error("The vector signature is invalid.");
-  const scale = input.scale ?? VECTOR_BAKE_SCALE;
   const maxDim = input.maxDim ?? VECTOR_BAKE_MAX_DIM;
+  const mark = await rebuildVectorMark(shaped.vectorData, await serverVectorExtractor());
+  if (!mark) throw new Error("The vector signature is invalid.");
 
-  const { SignatureExtractor } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const data = (await SignatureExtractor.decompressSignature(shaped.vectorData)) as {
-    outlines: Array<{ points: number[] } | Float32Array>;
-    areContours: boolean;
-    thickness: number;
-    width: number;
-    height: number;
-  } | null;
-  if (!data || !Array.isArray(data.outlines) || data.outlines.length === 0) {
-    throw new Error("The vector signature is invalid.");
-  }
-  if (data.outlines.length > NATIVE_FIELD_MAX_COUNT * 5) {
-    throw new Error("The vector signature is invalid.");
-  }
-  const curves = data.outlines.map((o) =>
-    Array.isArray(o) || ArrayBuffer.isView(o)
-      ? { points: Array.from(o as ArrayLike<number>) }
-      : o,
-  );
-  const rebuilt = SignatureExtractor.processDrawnLines({
-    lines: { curves, thickness: data.thickness, width: data.width, height: data.height },
-    pageWidth: data.width,
-    pageHeight: data.height,
-    rotation: 0,
-    innerMargin: 0,
-    mustSmooth: false,
-    areContours: data.areContours,
-  });
-  const outlinePath = rebuilt?.outline.toSVGPath() ?? null;
-  if (!outlinePath) throw new Error("The vector signature is invalid.");
-
-  const aspect = data.width / Math.max(1, data.height);
-  let width = Math.min(Math.round(data.width * scale), maxDim);
-  let height = Math.round(width / Math.max(aspect, 1 / 8));
-  if (height > maxDim) {
-    height = maxDim;
-    width = Math.round(height * Math.min(aspect, 8));
-  }
-  width = Math.max(8, width);
-  height = Math.max(8, height);
-
-  const thickness = Number.isFinite(data.thickness) ? data.thickness : 0;
-  const strokeUnits = data.areContours ? 0 : thickness / Math.max(1, data.width);
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 1 1">` +
-    `<g transform="scale(${width} ${height})">` +
-    `<path d="${outlinePath}" fill="${data.areContours ? "#171717" : "none"}" ` +
-    `stroke="${data.areContours ? "none" : "#171717"}" stroke-width="${strokeUnits}" ` +
-    `stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
-  const pngBytes = await sharp(Buffer.from(svg)).png().toBuffer();
+  const longSide = Math.max(8, Math.min(maxDim, 1200));
+  const width = mark.aspect >= 1 ? longSide : Math.max(8, Math.round(longSide * mark.aspect));
+  const height = mark.aspect >= 1 ? Math.max(8, Math.round(longSide / mark.aspect)) : longSide;
+  const pngBytes = await sharp(Buffer.from(vectorMarkSvg(mark, width))).png().toBuffer();
   if (pngBytes.byteLength <= 0 || pngBytes.byteLength > NATIVE_SIGNATURE_MAX_BYTES) {
     throw new Error("The signature image is empty or exceeds the 500 KB limit.");
   }
-  return { pngBytes, width, height, areContours: data.areContours };
+  const meta = await sharp(pngBytes).metadata();
+  return {
+    pngBytes,
+    width: meta.width ?? width,
+    height: meta.height ?? height,
+    areContours: mark.areContours,
+  };
 }
 
 /**

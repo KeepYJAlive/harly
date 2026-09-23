@@ -2,7 +2,9 @@
 
 import { useEffect, useState, type RefObject } from "react";
 
-export type PdfPage = { number: number; width: number; height: number };
+import { configurePdfWorker } from "./pdf-worker";
+
+export type PdfPage = { number: number; width: number; height: number; rotation: number };
 
 type DestroyablePdfLoadingTask = { destroy: () => Promise<void> };
 
@@ -27,6 +29,7 @@ export function usePdfPageRenderer(
   maxPageWidth: number,
   rootRef: RefObject<HTMLDivElement | null>,
   onPageCountChange?: (count: number) => void,
+  onRotationChange?: (rotated: boolean) => void,
 ) {
   const [pages, setPages] = useState<PdfPage[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +41,7 @@ export function usePdfPageRenderer(
       try {
         const pdfjs = await import("pdfjs-dist");
         if (cancelled) return;
-        if (!pdfjs.GlobalWorkerOptions.workerSrc)
-          pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-            "pdfjs-dist/build/pdf.worker.min.mjs",
-            import.meta.url,
-          ).toString();
+        configurePdfWorker(pdfjs);
         const loadingTask = pdfjs.getDocument({ url: fileUrl });
         disposeTask = createPdfTaskDisposer(loadingTask);
         const pdf = await loadingTask.promise;
@@ -51,11 +50,13 @@ export function usePdfPageRenderer(
           if (cancelled) return;
           const page = await pdf.getPage(number);
           const viewport = page.getViewport({ scale: 1 });
-          next.push({ number, width: viewport.width, height: viewport.height });
+          const rotation = ((page.rotate ?? 0) % 360 + 360) % 360;
+          next.push({ number, width: viewport.width, height: viewport.height, rotation });
         }
         if (!cancelled) {
           setPages(next);
           onPageCountChange?.(next.length);
+          onRotationChange?.(next.some((page) => page.rotation !== 0));
         }
       } catch {
         if (!cancelled) setError("Could not load the PDF.");
@@ -67,7 +68,7 @@ export function usePdfPageRenderer(
       cancelled = true;
       void disposeTask?.().catch(() => undefined);
     };
-  }, [fileUrl, onPageCountChange]);
+  }, [fileUrl, onPageCountChange, onRotationChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,11 +78,7 @@ export function usePdfPageRenderer(
         if (pages.length === 0 || !rootRef.current) return;
         const pdfjs = await import("pdfjs-dist");
         if (cancelled) return;
-        if (!pdfjs.GlobalWorkerOptions.workerSrc)
-          pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-            "pdfjs-dist/build/pdf.worker.min.mjs",
-            import.meta.url,
-          ).toString();
+        configurePdfWorker(pdfjs);
         const loadingTask = pdfjs.getDocument({ url: fileUrl });
         disposeTask = createPdfTaskDisposer(loadingTask);
         const pdf = await loadingTask.promise;

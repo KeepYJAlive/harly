@@ -313,7 +313,7 @@ describe.skipIf(!databaseUrl)("native multi-signer document continuation", () =>
       .from(documents)
       .where(eq(documents.id, documentId));
     expect(partiallySignedDocument?.signatureStatus).toBe("pending");
-    expect(await storage.read(partiallySignedDocument!.storageKey)).toBeInstanceOf(Buffer);
+    expect(partiallySignedDocument?.storageKey).toBe(initialStorageKey);
     const [signatureEvent] = await client!.db
       .select({ automationParentRunId: domainEventOutbox.automationParentRunId })
       .from(domainEventOutbox)

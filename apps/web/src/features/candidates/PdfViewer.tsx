@@ -70,14 +70,8 @@ export function PdfViewer({
       try {
         const pdfjs = await import("pdfjs-dist");
         if (!workerConfigured) {
-          try {
-            pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-              "pdfjs-dist/build/pdf.worker.min.mjs",
-              import.meta.url,
-            ).toString();
-          } catch {
-            pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-          }
+          const { configurePdfWorker } = await import("@/features/documents/pdf-worker");
+          configurePdfWorker(pdfjs);
           workerConfigured = true;
         }
 

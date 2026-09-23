@@ -9,7 +9,7 @@ import { SignatureExtractor as RealExtractor } from "pdfjs-dist/legacy/build/pdf
 import {
   getVectorFromDraw,
   getVectorFromType,
-  isVectorSignaturesEnabled,
+  rebuildVectorMark,
   rebuildVectorPreview,
   serverVectorExtractor,
   verifyVectorPayload,
@@ -149,8 +149,11 @@ describe("rebuildVectorPreview (saved dual-read)", () => {
     );
     expect(rebuilt).not.toBeNull();
     expect(rebuilt!.outlinePath.length).toBeGreaterThan(0);
-    expect(rebuilt!.outlinePath).toBe(vector!.outlinePath);
+    expect(rebuilt!.viewBox.split(/\s+/)).toHaveLength(4);
+    expect(rebuilt!.aspect).toBeGreaterThan(0);
     expect(rebuilt!.areContours).toBe(false);
+    const again = await rebuildVectorMark(vector!.compressed!, RealExtractor as unknown as VectorExtractor);
+    expect(again?.outlinePath).toBe(rebuilt!.outlinePath);
 
     await expect(
       rebuildVectorPreview("!!!not-base64!!!", RealExtractor as unknown as VectorExtractor),
@@ -178,14 +181,4 @@ describe("verifyVectorPayload (server path)", () => {
   });
 });
 
-describe("vector spike flag", () => {
-  it("is off unless NEXT_PUBLIC_VECTOR_SIGNS=1", () => {
-    const prev = process.env.NEXT_PUBLIC_VECTOR_SIGNS;
-    delete process.env.NEXT_PUBLIC_VECTOR_SIGNS;
-    expect(isVectorSignaturesEnabled()).toBe(false);
-    process.env.NEXT_PUBLIC_VECTOR_SIGNS = "1";
-    expect(isVectorSignaturesEnabled()).toBe(true);
-    if (prev === undefined) delete process.env.NEXT_PUBLIC_VECTOR_SIGNS;
-    else process.env.NEXT_PUBLIC_VECTOR_SIGNS = prev;
-  });
-});
+

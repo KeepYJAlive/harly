@@ -189,8 +189,8 @@ describe("renderVectorSignaturePng", () => {
     const rendered = await renderVectorSignaturePng({ vectorData: await vectorPayload() });
     expect(rendered.pngBytes.byteLength).toBeGreaterThan(0);
     expect(rendered.pngBytes.byteLength).toBeLessThanOrEqual(500 * 1024);
-    // Hi-DPI: wider than the 700px capture space at scale 3 (capped at 1600).
-    expect(rendered.width).toBeGreaterThan(700);
+    expect(rendered.width).toBeGreaterThan(8);
+    expect(rendered.height).toBeGreaterThan(8);
     expect(rendered.areContours).toBe(false);
   });
 

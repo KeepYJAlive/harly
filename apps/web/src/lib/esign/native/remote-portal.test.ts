@@ -22,8 +22,15 @@ vi.mock("@harly/db", () => ({
   signatureEnvelopes: {},
   signatureEvents: {},
   signatureRecipients: {},
+  signatureArtifacts: {},
   offers: {},
   workspaceSettings: {},
+}));
+vi.mock("@/lib/storage", () => ({
+  storage: { read: vi.fn(async () => Buffer.from("%PDF")) },
+}));
+vi.mock("./bake", () => ({
+  assertNativeSignablePdf: vi.fn(async () => 1),
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn(),
@@ -193,7 +200,7 @@ describe("createNativeSigningLink database boundary", () => {
     mocks.select
       .mockReturnValueOnce(query([{ enabled: true, expirationDays: 30, securityMode: "link_only" }]))
       .mockReturnValueOnce(query([]))
-      .mockReturnValueOnce(query([{ id: "document-1", name: "Offer.pdf", mimeType: "application/pdf", status: "active", signatureStatus: "unsigned", fieldsSnapshot: [] }]));
+      .mockReturnValueOnce(query([{ id: "document-1", name: "Offer.pdf", storageKey: "documents/offer.pdf", mimeType: "application/pdf", status: "active", signatureStatus: "unsigned", fieldsSnapshot: [{ id: "field-1", type: "signature", page: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.05, required: true, recipientIndex: 0 }] }]));
 
     let insertCall = 0;
     const tx = {

@@ -12,7 +12,6 @@ import {
   documentAssociations,
   documents,
   offers,
-  savedSignatures,
 } from "@harly/db";
 
 import { PORTAL_SESSION_COOKIE, resolvePortalSession } from "@/lib/portal-auth";
@@ -26,7 +25,6 @@ import {
   isSignableNativeFieldsSnapshot,
 } from "@/lib/esign/native/fields";
 import { createLogger } from "@/lib/logger";
-import { storage } from "@/lib/storage";
 import {
   MAX_VECTOR_COMPRESSED_CHARS,
   validateVectorSaveInput,
@@ -36,58 +34,11 @@ const log = createLogger("portal-native-sign");
 
 const inputSchema = z.object({
   offerId: z.uuid(),
-  signaturePngBase64: z.string().max(700_000).optional(),
-  savedSignatureId: z.uuid().optional(),
-  /** Fase 3: compressed vector outline; verified + rendered Hi-DPI in finalize. */
-  signatureVectorBase64: z.string().max(MAX_VECTOR_COMPRESSED_CHARS).optional(),
-  /** Per-text-field values, keyed by the field's id in documents.fieldsSnapshot. */
+  signatureVectorBase64: z.string().min(1).max(MAX_VECTOR_COMPRESSED_CHARS),
   textValues: z.record(z.string(), z.string().max(200)).optional(),
 });
 
 export type PortalNativeSignResult = { ok: true } | { ok: false; error: string };
-
-function decodePng(value: string) {
-  const raw = value.startsWith("data:") ? value.slice(value.indexOf(",") + 1) : value;
-  const bytes = Buffer.from(raw, "base64");
-  const pngHeader = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  if (bytes.length < pngHeader.length || !bytes.subarray(0, 8).equals(pngHeader)) {
-    throw new Error("Signature must be a valid PNG image.");
-  }
-  return bytes;
-}
-
-async function getSignatureBytes(input: {
-  workspaceId: string;
-  candidateId: string;
-  signaturePngBase64?: string;
-  savedSignatureId?: string;
-  /** Fase 3: when a verified vector is supplied, PNG bytes are optional. */
-  signatureVectorBase64?: string;
-}) {
-  if (input.signaturePngBase64) return decodePng(input.signaturePngBase64);
-  if (input.signatureVectorBase64) {
-    const checked = validateVectorSaveInput({ vectorData: input.signatureVectorBase64 });
-    if (!checked.ok) throw new Error(checked.error);
-    return undefined;
-  }
-  if (!input.savedSignatureId) throw new Error("Choose or draw a signature.");
-  const [saved] = await db
-    .select({ storageKey: savedSignatures.storageKey })
-    .from(savedSignatures)
-    .where(
-      and(
-        eq(savedSignatures.id, input.savedSignatureId),
-        eq(savedSignatures.workspaceId, input.workspaceId),
-        eq(savedSignatures.ownerType, "portal_candidate"),
-        eq(savedSignatures.ownerId, input.candidateId),
-        isNull(savedSignatures.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!saved) throw new Error("Saved signature not found.");
-  const bytes = await storage.read(saved.storageKey);
-  return decodePng(bytes.toString("base64"));
-}
 
 async function getCandidatePortalSession() {
   const token = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
@@ -195,21 +146,15 @@ export async function signOfferNatively(input: unknown): Promise<PortalNativeSig
       documentId: association.documentId,
       fieldsSnapshot: association.fieldsSnapshot,
     });
-    const signatureBytes = await getSignatureBytes({
-      workspaceId: session.workspaceId,
-      candidateId: session.candidateId,
-      signaturePngBase64: parsed.data.signaturePngBase64,
-      savedSignatureId: parsed.data.savedSignatureId,
-      signatureVectorBase64: parsed.data.signatureVectorBase64,
-    });
+    const checked = validateVectorSaveInput({ vectorData: parsed.data.signatureVectorBase64 });
+    if (!checked.ok) return { ok: false, error: checked.error };
     await finalizeNativeSignature({
       workspaceId: session.workspaceId,
       documentId: association.documentId,
       actorId: null,
       signerName,
       signerEmail: candidate.email ?? "",
-      signaturePngBytes: signatureBytes,
-      signatureVector: parsed.data.signatureVectorBase64,
+      signatureVector: checked.vectorData,
       textValues: parsed.data.textValues,
       verification: "self_sign",
       existingEnvelopeId: envelope.envelopeId,

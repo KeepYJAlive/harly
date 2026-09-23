@@ -11,20 +11,10 @@ import { MAX_VECTOR_COMPRESSED_CHARS } from "@/features/documents/signature-vect
 export const runtime = "nodejs";
 
 const schema = z.object({
-  signaturePngBase64: z.string().max(700_000).optional(),
-  /** Fase 3: compressed vector outline; verified + rendered Hi-DPI in finalize. */
-  signatureVectorBase64: z.string().max(MAX_VECTOR_COMPRESSED_CHARS).optional(),
+  signatureVectorBase64: z.string().min(1).max(MAX_VECTOR_COMPRESSED_CHARS),
   textValues: z.record(z.string(), z.string().max(200)).optional(),
   consentAt: z.string().datetime(),
 });
-
-function decodePng(value: string) {
-  const raw = value.startsWith("data:") ? value.slice(value.indexOf(",") + 1) : value;
-  const bytes = Buffer.from(raw, "base64");
-  const header = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  if (bytes.length <= 0 || bytes.length > 500 * 1024 || !bytes.subarray(0, 8).equals(header)) throw new Error("Invalid signature image.");
-  return bytes;
-}
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -34,11 +24,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (target.securityMode === "email_otp" && !(await isNativeSignatureCookieVerified(request.cookies.get(nativeSignCookieName)?.value, target.recipientId))) return NextResponse.json({ error: "Verify the email code before signing." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid signature submission." }, { status: 400 });
-  if (!parsed.data.signaturePngBase64 && !parsed.data.signatureVectorBase64) {
-    return NextResponse.json({ error: "Invalid signature submission." }, { status: 400 });
-  }
   try {
-    const result = await finalizeNativeSignature({ workspaceId: target.workspaceId, documentId: target.documentId, actorId: null, signerName: target.name, signerEmail: target.email, signaturePngBytes: parsed.data.signaturePngBase64 ? decodePng(parsed.data.signaturePngBase64) : undefined, signatureVector: parsed.data.signatureVectorBase64, textValues: parsed.data.textValues, verification: target.securityMode === "email_otp" ? "email_otp" : "link_only", consentAt: new Date(parsed.data.consentAt), ipAddress: clientIp(request), userAgent: request.headers.get("user-agent"), existingEnvelopeId: target.envelopeId, existingRecipientId: target.recipientId });
+    const result = await finalizeNativeSignature({ workspaceId: target.workspaceId, documentId: target.documentId, actorId: null, signerName: target.name, signerEmail: target.email, signatureVector: parsed.data.signatureVectorBase64, textValues: parsed.data.textValues, verification: target.securityMode === "email_otp" ? "email_otp" : "link_only", consentAt: new Date(parsed.data.consentAt), ipAddress: clientIp(request), userAgent: request.headers.get("user-agent"), existingEnvelopeId: target.envelopeId, existingRecipientId: target.recipientId });
     const cookie = request.cookies.get(nativeSignCookieName)?.value;
     const challengeId = cookie?.split(".")[1];
     if (challengeId) await db.update(nativeSignatureOtpChallenges).set({ consumedAt: new Date() }).where(and(eq(nativeSignatureOtpChallenges.id, challengeId), eq(nativeSignatureOtpChallenges.recipientId, target.recipientId)));

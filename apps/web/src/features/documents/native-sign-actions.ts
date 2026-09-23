@@ -36,10 +36,10 @@ const placementSchema = z.object({
 const inputSchema = z.object({
   documentId: z.uuid(),
   placements: z.array(placementSchema).min(1).max(20),
-  signaturePngBase64: z.string().max(700_000).optional(),
   savedSignatureId: z.uuid().optional(),
-  /** Fase 3: compressed vector outline; verified + rendered Hi-DPI in finalize. */
   signatureVectorBase64: z.string().max(MAX_VECTOR_COMPRESSED_CHARS).optional(),
+}).refine((value) => Boolean(value.signatureVectorBase64 || value.savedSignatureId), {
+  message: "Draw or choose a signature.",
 });
 
 export type NativeSignResult =
@@ -63,23 +63,20 @@ function decodePng(value: string) {
   return bytes;
 }
 
-async function getSignatureBytes(input: {
+async function resolveSignature(input: {
   workspaceId: string;
   userId: string;
-  signaturePngBase64?: string;
   savedSignatureId?: string;
-  /** Fase 3: when a verified vector is supplied, PNG bytes are optional. */
   signatureVectorBase64?: string;
-}) {
-  if (input.signaturePngBase64) return decodePng(input.signaturePngBase64);
+}): Promise<{ png?: Buffer; vector?: string }> {
   if (input.signatureVectorBase64) {
     const checked = validateVectorSaveInput({ vectorData: input.signatureVectorBase64 });
     if (!checked.ok) throw new Error(checked.error);
-    return undefined;
+    return { vector: checked.vectorData };
   }
   if (!input.savedSignatureId) throw new Error("Choose or draw a signature.");
   const [saved] = await db
-    .select({ storageKey: savedSignatures.storageKey })
+    .select({ storageKey: savedSignatures.storageKey, kind: savedSignatures.kind })
     .from(savedSignatures)
     .where(
       and(
@@ -93,7 +90,12 @@ async function getSignatureBytes(input: {
     .limit(1);
   if (!saved) throw new Error("Saved signature not found.");
   const bytes = await storage.read(saved.storageKey);
-  return decodePng(bytes.toString("base64"));
+  if (saved.kind === "vector") {
+    const checked = validateVectorSaveInput({ vectorData: bytes.toString("utf8") });
+    if (!checked.ok) throw new Error(checked.error);
+    return { vector: checked.vectorData };
+  }
+  return { png: decodePng(bytes.toString("base64")) };
 }
 
 /**
@@ -128,10 +130,9 @@ export async function signDocumentNatively(input: unknown): Promise<NativeSignRe
       .limit(1);
     if (!settings?.enabled) return { ok: false, error: "Native signing is not enabled for this workspace." };
 
-    const signatureBytes = await getSignatureBytes({
+    const signature = await resolveSignature({
       workspaceId: context.organization.id,
       userId: context.user.id,
-      signaturePngBase64: parsed.data.signaturePngBase64,
       savedSignatureId: parsed.data.savedSignatureId,
       signatureVectorBase64: parsed.data.signatureVectorBase64,
     });
@@ -141,8 +142,8 @@ export async function signDocumentNatively(input: unknown): Promise<NativeSignRe
       actorId: context.user.id,
       signerName: context.user.name,
       signerEmail: context.user.email ?? "",
-      signaturePngBytes: signatureBytes,
-      signatureVector: parsed.data.signatureVectorBase64,
+      signaturePngBytes: signature.png,
+      signatureVector: signature.vector,
       placements: parsed.data.placements as SignaturePlacement[],
       verification: "self_sign",
     });

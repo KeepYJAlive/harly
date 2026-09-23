@@ -53,6 +53,7 @@ export function DocumentFieldPlacementDialog({
   const [placements, setPlacements] = useState<AuthorFieldPlacement[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [pageCount, setPageCount] = useState(0);
+  const [rotated, setRotated] = useState(false);
   const [recipients, setRecipients] = useState([{ email: "", name: "" }]);
   const [isPending, startTransition] = useTransition();
 
@@ -68,6 +69,7 @@ export function DocumentFieldPlacementDialog({
       setPlacements([]);
       setActiveIndex(0);
       setPageCount(0);
+      setRotated(false);
       setRecipients([{ email: "", name: "" }]);
     }
   }
@@ -214,6 +216,7 @@ export function DocumentFieldPlacementDialog({
               onChange={setPlacements}
               onActiveIndexChange={setActiveIndex}
               onPageCountChange={setPageCount}
+              onRotationChange={setRotated}
               onRemoveField={removeField}
               onLabelChange={updateLabel}
               maxPageWidth={960}
@@ -242,9 +245,14 @@ export function DocumentFieldPlacementDialog({
                 : `${placements.length} field${placements.length === 1 ? "" : "s"} placed.`}
             </p>
             <div className="mt-auto">
+              {rotated ? (
+                <p className="mb-2 text-xs text-destructive" role="alert">
+                  This PDF has rotated pages. Re-export it without rotation before sending.
+                </p>
+              ) : null}
               <Button
                 onClick={() => setStep("recipient")}
-                disabled={placements.length === 0}
+                disabled={placements.length === 0 || rotated}
               >
                 Continue
               </Button>

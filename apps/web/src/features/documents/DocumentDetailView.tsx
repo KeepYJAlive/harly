@@ -295,8 +295,8 @@ function VoidSignatureDialog({
         <DialogHeader>
           <DialogTitle>Void signature request</DialogTitle>
           <DialogDescription>
-            This cancels the DocuSeal submission. The recipient can no longer
-            sign it.
+            This cancels the signing request. Recipients can no longer sign it,
+            and the original document is left unsigned.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -1004,7 +1004,7 @@ export function DocumentDetailView({
                 Sign now
               </Button>
               {document.signatureStatus === "pending" &&
-              document.signatureProvider === "docuseal" ? (
+              (document.signatureProvider === "docuseal" || document.signatureProvider === "native") ? (
                 <Button
                   size="sm"
                   variant="outline"

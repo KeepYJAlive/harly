@@ -45,6 +45,7 @@ const PUBLIC_PATHS = [
   "/setup-2fa",
   "/sign",
   "/api/native-sign",
+  "/api/pdfjs-worker",
 ];
 
 const PROTECTED_PATH_PREFIXES = ["/dashboard", "/settings"];

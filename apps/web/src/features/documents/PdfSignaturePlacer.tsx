@@ -27,6 +27,7 @@ type Props = {
   onChange: (placements: AuthorFieldPlacement[]) => void;
   onActiveIndexChange: (index: number) => void;
   onPageCountChange?: (count: number) => void;
+  onRotationChange?: (rotated: boolean) => void;
   /** Cap on rendered page width in px. Callers with a wider viewport (e.g. a
    *  full-screen signing modal) can raise this so pages aren't stuck at the
    *  720px default sized for a narrow dialog column. */
@@ -46,12 +47,13 @@ export function PdfSignaturePlacer({
   onChange,
   onActiveIndexChange,
   onPageCountChange,
+  onRotationChange,
   maxPageWidth = 720,
   onRemoveField,
   onLabelChange,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const { pages, error } = usePdfPageRenderer(fileUrl, maxPageWidth, rootRef, onPageCountChange);
+  const { pages, error } = usePdfPageRenderer(fileUrl, maxPageWidth, rootRef, onPageCountChange, onRotationChange);
   const dragRef = useRef<{
     index: number;
     page: number;

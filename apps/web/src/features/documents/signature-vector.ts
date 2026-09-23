@@ -48,9 +48,12 @@ export type VectorSignatureData = {
   curveCount: number;
   /** `deflate-raw` base64 from `compressSignature`, null when empty. */
   compressed: string | null;
+  /** Square-space bbox used by the preview. Absent on legacy callers. */
+  viewBox?: string;
+  strokeWidth?: number;
 };
 
-type ExtractorOutline = { toSVGPath(): string };
+type ExtractorOutline = { toSVGPath(): string; viewBox?: string };
 type ExtractorResult = {
   outline: ExtractorOutline;
   newCurves: Array<{ points: number[] } | number[]>;
@@ -185,15 +188,6 @@ export function validateVectorSaveInput(
     return { ok: false, error: "Invalid vector signature encoding." };
   }
   return { ok: true, vectorData };
-}
-
-/**
- * Spike flag fallback. Prefer the workspace setting
- * (`workspaceSettings.vectorSignaturesEnabled`, Fase 2) when the caller has
- * it — this env flag covers flows without settings access (portal).
- */
-export function isVectorSignaturesEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_VECTOR_SIGNS === "1";
 }
 
 function assertDims(dims: VectorDims): void {
@@ -343,9 +337,23 @@ export async function getVectorFromImage(
   return toData(result, compressed);
 }
 
+export type VectorMark = {
+  outlinePath: string;
+  /** pdf.js outline bbox: "minX minY width height" in uniform page space. */
+  viewBox: string;
+  areContours: boolean;
+  /** Stroke width in viewBox units. Zero for filled contours. */
+  strokeWidth: number;
+  /** viewBox width / height. This is the aspect the preview and the bake share. */
+  aspect: number;
+};
+
 export type RebuiltVectorPreview = {
   outlinePath: string;
   areContours: boolean;
+  viewBox: string;
+  strokeWidth: number;
+  aspect: number;
 };
 
 /**
@@ -355,11 +363,48 @@ export type RebuiltVectorPreview = {
  * Returns null when the payload is corrupt — callers fall back to hiding
  * the entry, never to trusting it.
  */
-export async function rebuildVectorPreview(
+function escapeXml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function markFromOutline(
+  result: NonNullable<ExtractorResult>,
+  thickness: number,
+  maxDim: number,
+): VectorMark | null {
+  const outlinePath = result.outline.toSVGPath();
+  const viewBox = result.outline.viewBox;
+  if (!outlinePath || !viewBox) return null;
+  const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n)) || parts[2] <= 0 || parts[3] <= 0) {
+    return null;
+  }
+  const strokeWidth = result.areContours || !Number.isFinite(thickness)
+    ? 0
+    : Math.max(0, thickness) / Math.max(1, maxDim);
+  return {
+    outlinePath,
+    viewBox,
+    areContours: result.areContours,
+    strokeWidth,
+    aspect: parts[2] / parts[3],
+  };
+}
+
+/**
+ * Rebuild the mark the way Firefox previews a saved signature:
+ * decompress, then `processDrawnLines` in a square page so X and Y share
+ * a scale. Callers must use `viewBox`, not a hardcoded `0 0 1 1` box.
+ */
+export async function rebuildVectorMark(
   compressed: string,
   extractor?: VectorExtractor,
-): Promise<RebuiltVectorPreview | null> {
-  if (!compressed || compressed.length > 100_000) return null;
+): Promise<VectorMark | null> {
+  if (!compressed || compressed.length > MAX_VECTOR_COMPRESSED_CHARS) return null;
   const ext = extractor ?? (await defaultExtractor());
   const data = (await ext.decompressSignature(compressed)) as {
     outlines: Array<{ points: number[] } | number[]>;
@@ -368,17 +413,20 @@ export async function rebuildVectorPreview(
     width: number;
     height: number;
   } | null;
-  if (!data || !Array.isArray(data.outlines) || data.outlines.length === 0) {
+  if (!data || !Array.isArray(data.outlines) || data.outlines.length === 0) return null;
+  if (data.outlines.length > VECTOR_MAX_CURVES) return null;
+  if (
+    !Number.isFinite(data.width) || !Number.isFinite(data.height) ||
+    data.width < 1 || data.height < 1
+  ) {
     return null;
   }
-  if (data.outlines.length > VECTOR_MAX_CURVES) return null;
-  // Decompress yields Float32Arrays (see pdf.js `#addToolbarButton`, which
-  // wraps them the same way); plain arrays pass through untouched.
-  const curves = data.outlines.map((o) =>
-    Array.isArray(o) || ArrayBuffer.isView(o)
-      ? { points: Array.from(o as ArrayLike<number>) }
-      : o,
+  const curves = data.outlines.map((outline) =>
+    Array.isArray(outline) || ArrayBuffer.isView(outline)
+      ? { points: Array.from(outline as ArrayLike<number>) }
+      : outline,
   );
+  const maxDim = Math.max(data.width, data.height);
   const result = ext.processDrawnLines({
     lines: {
       curves,
@@ -386,58 +434,43 @@ export async function rebuildVectorPreview(
       width: data.width,
       height: data.height,
     },
-    pageWidth: data.width,
-    pageHeight: data.height,
+    pageWidth: maxDim,
+    pageHeight: maxDim,
     rotation: 0,
     innerMargin: 0,
     mustSmooth: false,
     areContours: data.areContours,
   });
   if (!result) return null;
-  const path = result.outline.toSVGPath();
-  if (!path) return null;
-  return { outlinePath: path, areContours: result.areContours };
+  return markFromOutline(result, data.thickness, maxDim);
 }
 
-/**
- * Dual-read bridge (browser-only): rasterize a stored vector payload to a
- * PNG data URL so saved vector signatures can feed the current PNG bake
- * flow (`signDocumentNatively`) unchanged. Returns null on any failure —
- * callers keep the PNG path.
- */
-export async function vectorToPngDataUrl(
+export function vectorMarkSvg(mark: VectorMark, pixelWidth = 800): string {
+  const height = Math.max(1, Math.round(pixelWidth / Math.max(mark.aspect, 1 / 32)));
+  const fill = mark.areContours ? "#171717" : "none";
+  const stroke = mark.areContours ? "none" : "#171717";
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${mark.viewBox}" width="${pixelWidth}" height="${height}">` +
+    `<path d="${escapeXml(mark.outlinePath)}" fill="${fill}" stroke="${stroke}" ` +
+    `stroke-width="${mark.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  );
+}
+
+export function vectorMarkDataUrl(mark: VectorMark): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(vectorMarkSvg(mark))}`;
+}
+
+export async function rebuildVectorPreview(
   compressed: string,
-  width = 700,
-  height = 180,
   extractor?: VectorExtractor,
-): Promise<string | null> {
-  try {
-    const preview = await rebuildVectorPreview(compressed, extractor);
-    if (!preview) return null;
-    const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" width="${width}" height="${height}">` +
-      `<path d="${preview.outlinePath}" fill="${preview.areContours ? "#171717" : "none"}" ` +
-      `stroke="${preview.areContours ? "none" : "#171717"}" stroke-width="4" stroke-linecap="round" ` +
-      `stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("rasterize failed"));
-        img.src = url;
-      });
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(image, 0, 0, width, height);
-      return canvas.toDataURL("image/png");
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  } catch {
-    return null;
-  }
+): Promise<RebuiltVectorPreview | null> {
+  const mark = await rebuildVectorMark(compressed, extractor);
+  if (!mark) return null;
+  return {
+    outlinePath: mark.outlinePath,
+    areContours: mark.areContours,
+    viewBox: mark.viewBox,
+    strokeWidth: mark.strokeWidth,
+    aspect: mark.aspect,
+  };
 }

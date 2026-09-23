@@ -35,13 +35,13 @@ export function NativeSignWorkspace({
   const [activeIndex, setActiveIndex] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [allowSaved, setAllowSaved] = useState(false);
-  const [vectorEnabled, setVectorEnabled] = useState<boolean | undefined>(undefined);
+  const [savedSignatureId, setSavedSignatureId] = useState<string | null>(null);
+  const [rotated, setRotated] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     void getNativeSignatureSettings().then((settings) => {
       setAllowSaved(Boolean(settings?.savedSignaturesEnabled));
-      setVectorEnabled(Boolean(settings?.vectorSignaturesEnabled));
     });
   }, []);
 
@@ -64,15 +64,15 @@ export function NativeSignWorkspace({
   }
 
   async function submit() {
-    if (!signature || !consent) return;
+    if (rotated || !consent || (!vectorSignature?.compressed && !savedSignatureId)) return;
     setPending(true);
     try {
       const result = await signDocumentNatively({
         documentId,
         placements,
-        signaturePngBase64: signature,
-        // Fase 3: vector wins in finalize when present; PNG stays as fallback.
-        ...(vectorSignature?.compressed ? { signatureVectorBase64: vectorSignature.compressed } : {}),
+        ...(vectorSignature?.compressed
+          ? { signatureVectorBase64: vectorSignature.compressed }
+          : { savedSignatureId: savedSignatureId ?? undefined }),
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -139,6 +139,7 @@ export function NativeSignWorkspace({
             onChange={setPlacements}
             onActiveIndexChange={setActiveIndex}
             onPageCountChange={setPageCount}
+            onRotationChange={setRotated}
           />
           <div className="sticky bottom-3 z-20 mx-auto mt-3 flex max-w-[720px] items-center justify-between gap-3 rounded-xl border border-primary/20 bg-card/95 px-3 py-2 shadow-lg backdrop-blur">
             <span className="text-xs text-muted-foreground">
@@ -162,11 +163,10 @@ export function NativeSignWorkspace({
             </p>
           </div>
           <SignaturePad
-            value={signature}
             onChange={handleSignatureChange}
             allowSaved={allowSaved}
-            vectorEnabled={vectorEnabled}
             onVectorChange={setVectorSignature}
+            onSavedSignatureIdChange={setSavedSignatureId}
           />
           <label className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
             <Checkbox
@@ -249,10 +249,15 @@ export function NativeSignWorkspace({
               ))}
             </div>
           ) : null}
+          {rotated ? (
+            <p className="text-xs text-destructive" role="alert">
+              This PDF has rotated pages. Re-export it without rotation before signing.
+            </p>
+          ) : null}
           <Button
             size="lg"
             className="w-full"
-            disabled={pending || !signature || !consent}
+            disabled={pending || rotated || !consent || (!vectorSignature?.compressed && !savedSignatureId)}
             onClick={submit}
           >
             {pending ? "Signing…" : "Sign document"}

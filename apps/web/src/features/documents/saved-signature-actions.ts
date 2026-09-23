@@ -112,11 +112,11 @@ export async function saveVectorSignature(input: unknown) {
   const parsed = validateVectorSaveInput(input);
   if (!parsed.ok) return parsed;
   const [settings] = await db
-    .select({ vectors: workspaceSettings.vectorSignaturesEnabled })
+    .select({ enabled: workspaceSettings.savedSignaturesEnabled })
     .from(workspaceSettings)
     .where(eq(workspaceSettings.organizationId, context.organization.id))
     .limit(1);
-  if (!settings?.vectors) return { ok: false, error: "Vector signatures are not enabled for this workspace." };
+  if (!settings?.enabled) return { ok: false, error: "Saved signatures are not enabled for this workspace." };
   try {
     const meta = await assertDecompressableVector(parsed.vectorData);
     if (!meta) return { ok: false, error: "Vector signature could not be verified." };

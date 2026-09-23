@@ -23,6 +23,7 @@ import {
 } from "@harly/db";
 
 import { bakeFieldsIntoPdf, renderVectorSignaturePng, type FieldPlacement, type SignaturePlacement } from "./bake";
+import { readWorkingDocument, WORKING_DOCUMENT_KIND } from "./working-pdf";
 import { createCompletionCertificate, NATIVE_CERTIFICATE_VERSION } from "./certificate";
 import { createSignaturePreview } from "./preview";
 import { storage } from "@/lib/storage";
@@ -237,9 +238,16 @@ export async function finalizeNativeSignature(input: {
     recipientIndex: signerRoutingOrder - 1,
   });
 
-  const originalBytes = await storage.read(document.storageKey);
-  const originalSha256 = sha256(originalBytes);
-  const signedBytes = await bakeFieldsIntoPdf({ pdfBytes: originalBytes, signaturePngBytes, fields });
+  const sourceBytes = await storage.read(document.storageKey);
+  const working = input.existingEnvelopeId
+    ? await readWorkingDocument(database, input.workspaceId, input.existingEnvelopeId)
+    : null;
+  if (input.existingEnvelopeId && signerRoutingOrder > 1 && !working) {
+    throw new Error("The previous signature could not be loaded.");
+  }
+  const baseBytes = working?.bytes ?? sourceBytes;
+  const originalSha256 = sha256(sourceBytes);
+  const signedBytes = await bakeFieldsIntoPdf({ pdfBytes: baseBytes, signaturePngBytes, fields });
   const signedDocumentSha256 = sha256(signedBytes);
   const signedAt = new Date();
   const signerRows = input.existingEnvelopeId
@@ -264,7 +272,7 @@ export async function finalizeNativeSignature(input: {
     ...previewKeys.map((p) => storage.put(p.key, p.bytes, "image/png")),
   ]);
 
-  let result: FinalizedNativeSignature;
+  let result: FinalizedNativeSignature & { supersededWorkingKey: string | null };
   try {
     result = await database.transaction(async (tx) => {
     let nativeOffer:
@@ -357,11 +365,9 @@ export async function finalizeNativeSignature(input: {
 
     const [locked] = await tx.select({ versionNumber: documentVersions.versionNumber, signatureStatus: documents.signatureStatus }).from(documentVersions).innerJoin(documents, eq(documents.id, documentVersions.documentId)).where(and(eq(documentVersions.documentId, input.documentId), eq(documents.workspaceId, input.workspaceId), eq(documentVersions.isCurrent, true))).for("update").limit(1);
     if (!locked || locked.signatureStatus !== expectedStatus) throw new Error("The document changed while it was being signed.");
-    const versionNumber = locked.versionNumber + 1;
-    await tx.update(documentVersions).set({ isCurrent: false }).where(eq(documentVersions.documentId, input.documentId));
-    const [version] = await tx.insert(documentVersions).values({ workspaceId: input.workspaceId, documentId: input.documentId, versionNumber, storageKey: signedKey, sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, uploadedById: input.actorId }).returning({ id: documentVersions.id });
-    if (!version) throw new Error("Signed document version could not be saved.");
     let providerEnvelopeId = `native:${randomUUID()}`;
+    let version: { id: string } | undefined;
+    let supersededWorkingKey: string | null = null;
     let envelope: { id: string; providerEnvelopeId?: string; status?: string } | undefined;
     let recipient: { id: string; routingOrder: number; status: string } | undefined;
     let nextOutboxId: string | null = null;
@@ -408,12 +414,40 @@ export async function finalizeNativeSignature(input: {
       if (createdRecipient) recipient = createdRecipient;
     }
     if (!envelope || !recipient) throw new Error("Signature envelope could not be saved.");
-    await tx.update(documents).set({ storageKey: signedKey, sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, signatureStatus: complete ? "signed" : "pending", signatureProvider: "native", signatureEnvelopeId: providerEnvelopeId, signatureEnvelopeRefId: envelope.id, signatureUrl: null, updatedAt: signedAt }).where(and(eq(documents.id, input.documentId), eq(documents.workspaceId, input.workspaceId)));
-    const artifactRows = complete && certificateBytes && certificateKey
+    const [previousWorking] = await tx
+      .select({ id: signatureArtifacts.id, storageKey: signatureArtifacts.storageKey })
+      .from(signatureArtifacts)
+      .where(and(
+        eq(signatureArtifacts.workspaceId, input.workspaceId),
+        eq(signatureArtifacts.envelopeId, envelope.id),
+        eq(signatureArtifacts.kind, WORKING_DOCUMENT_KIND),
+      ))
+      .limit(1);
+    if (complete) {
+      const versionNumber = locked.versionNumber + 1;
+      await tx.update(documentVersions).set({ isCurrent: false }).where(eq(documentVersions.documentId, input.documentId));
+      const [createdVersion] = await tx.insert(documentVersions).values({ workspaceId: input.workspaceId, documentId: input.documentId, versionNumber, storageKey: signedKey, sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, uploadedById: input.actorId }).returning({ id: documentVersions.id });
+      if (!createdVersion) throw new Error("Signed document version could not be saved.");
+      version = createdVersion;
+      await tx.update(documents).set({ storageKey: signedKey, sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, signatureStatus: "signed", signatureProvider: "native", signatureEnvelopeId: providerEnvelopeId, signatureEnvelopeRefId: envelope.id, signatureUrl: null, updatedAt: signedAt }).where(and(eq(documents.id, input.documentId), eq(documents.workspaceId, input.workspaceId)));
+      if (previousWorking) {
+        supersededWorkingKey = previousWorking.storageKey;
+        await tx.delete(signatureArtifacts).where(eq(signatureArtifacts.id, previousWorking.id));
+      }
+    } else {
+      await tx.update(documents).set({ signatureStatus: "pending", signatureProvider: "native", signatureEnvelopeId: providerEnvelopeId, signatureEnvelopeRefId: envelope.id, signatureUrl: null, updatedAt: signedAt }).where(and(eq(documents.id, input.documentId), eq(documents.workspaceId, input.workspaceId)));
+      if (previousWorking) {
+        supersededWorkingKey = previousWorking.storageKey;
+        await tx.update(signatureArtifacts).set({ storageKey: signedKey, sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, metadata: { originalSha256, signedDocumentSha256, signatureMode } }).where(eq(signatureArtifacts.id, previousWorking.id));
+      } else {
+        await tx.insert(signatureArtifacts).values({ workspaceId: input.workspaceId, envelopeId: envelope.id, documentId: input.documentId, kind: WORKING_DOCUMENT_KIND, storageKey: signedKey, mimeType: "application/pdf", sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, metadata: { originalSha256, signedDocumentSha256, signatureMode } });
+      }
+    }
+    const artifactRows = complete && certificateBytes && certificateKey && version
       ? [
           { workspaceId: input.workspaceId, envelopeId: envelope.id, documentId: input.documentId, documentVersionId: version.id, kind: "signed_document", storageKey: signedKey, mimeType: "application/pdf", sizeBytes: signedBytes.byteLength, checksum: signedDocumentSha256, metadata: { originalSha256, signedDocumentSha256 } },
           { workspaceId: input.workspaceId, envelopeId: envelope.id, documentId: input.documentId, documentVersionId: version.id, kind: "completion_certificate", storageKey: certificateKey, mimeType: "application/pdf", sizeBytes: certificateBytes.byteLength, checksum: sha256(certificateBytes), certificateVersion: NATIVE_CERTIFICATE_VERSION, metadata: { originalSha256, signedDocumentSha256 } },
-          ...previewKeys.map((p) => ({ workspaceId: input.workspaceId, envelopeId: envelope!.id, documentId: input.documentId, documentVersionId: version.id, kind: `signed_preview_${p.width}`, storageKey: p.key, mimeType: "image/png", sizeBytes: p.bytes.byteLength, checksum: p.checksum, metadata: { signedDocumentSha256, width: p.width } })),
+          ...previewKeys.map((p) => ({ workspaceId: input.workspaceId, envelopeId: envelope!.id, documentId: input.documentId, documentVersionId: version!.id, kind: `signed_preview_${p.width}`, storageKey: p.key, mimeType: "image/png", sizeBytes: p.bytes.byteLength, checksum: p.checksum, metadata: { signedDocumentSha256, width: p.width } })),
         ]
       : [];
     const artifacts = artifactRows.length ? await tx.insert(signatureArtifacts).values(artifactRows).returning({ id: signatureArtifacts.id, kind: signatureArtifacts.kind }) : [];
@@ -425,7 +459,7 @@ export async function finalizeNativeSignature(input: {
     await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "signature_validated", payload: { originalSha256, consentAt: input.consentAt?.toISOString() ?? null, signatureMode } });
     await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: "baked", payload: { signedDocumentSha256, signatureMode } });
     await evidence(tx, { workspaceId: input.workspaceId, envelopeId: envelope.id, recipientId: recipient.id, eventType: complete ? "completed" : "recipient_signed", payload: { certificateVersion: complete ? NATIVE_CERTIFICATE_VERSION : null, ipAddress: input.ipAddress ?? null, userAgent: input.userAgent ?? null, routingOrder: recipient.routingOrder, signatureMode } });
-    await tx.insert(activityEvents).values({ workspaceId: input.workspaceId, actorId: input.actorId, entityType: "document", entityId: input.documentId, type: "document.signature_changed", metadata: { status: complete ? "signed" : "pending", provider: "native", versionNumber, routingOrder: recipient.routingOrder } });
+    await tx.insert(activityEvents).values({ workspaceId: input.workspaceId, actorId: input.actorId, entityType: "document", entityId: input.documentId, type: "document.signature_changed", metadata: { status: complete ? "signed" : "pending", provider: "native", versionNumber: complete ? locked.versionNumber + 1 : locked.versionNumber, routingOrder: recipient.routingOrder } });
     const documentTargetContext = await documentAutomationContext(tx, input.workspaceId, input.documentId);
     const documentSignatureEvent = await persistDomainEvent(tx, {
       name: "document.signature_changed",
@@ -512,7 +546,8 @@ export async function finalizeNativeSignature(input: {
     }
       return {
         envelopeId: envelope.id,
-        versionId: version.id,
+        versionId: version?.id ?? "",
+        supersededWorkingKey,
         recipientId: recipient.id,
         artifacts,
         applicationHiredEvent,
@@ -538,6 +573,11 @@ export async function finalizeNativeSignature(input: {
 
   // From here on the signature and all referenced artifacts are committed.
   // Follow-up delivery must never enter the rollback cleanup path above.
+  if (result.supersededWorkingKey) {
+    await storage.delete(result.supersededWorkingKey).catch((cleanupError) => {
+      log.warn({ cleanupError, storageKey: result.supersededWorkingKey }, "native signature working-copy cleanup failed");
+    });
+  }
   await finalizeNativeSignatureEffects({
     database,
     workspaceId: input.workspaceId,

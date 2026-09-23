@@ -61,16 +61,14 @@ export function PortalOfferSignDialog({
 
   const requiredTextFieldsFilled =
     fields?.filter((f) => f.type === "text" && f.required).every((f) => (textValues[f.id] ?? "").trim().length > 0) ?? false;
-  const canSubmit = Boolean(signature) && consent && fields !== null && fields.length > 0 && requiredTextFieldsFilled;
+  const canSubmit = Boolean(vectorSignature?.compressed) && consent && fields !== null && fields.length > 0 && requiredTextFieldsFilled;
 
   function submit() {
     if (!canSubmit) return;
     startTransition(async () => {
       const result = await signOfferNatively({
         offerId,
-        signaturePngBase64: signature,
-        // Fase 3: vector wins in finalize when present; PNG stays as fallback.
-        ...(vectorSignature?.compressed ? { signatureVectorBase64: vectorSignature.compressed } : {}),
+        signatureVectorBase64: vectorSignature?.compressed,
         textValues,
       });
       if (!result.ok) {
@@ -113,7 +111,7 @@ export function PortalOfferSignDialog({
                 Draw or type your signature — it fills in every signature field above.
               </p>
             </div>
-            <SignaturePad value={signature} onChange={setSignature} allowSaved={false} onVectorChange={setVectorSignature} />
+            <SignaturePad onChange={setSignature} allowSaved={false} onVectorChange={setVectorSignature} />
             <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
               <Checkbox checked={consent} onCheckedChange={(value) => setConsent(value === true)} />
               <span>

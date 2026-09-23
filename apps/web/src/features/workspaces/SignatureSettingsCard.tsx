@@ -36,7 +36,7 @@ type SavedSignature =
   | { id: string; createdAt: Date; kind: "vector"; vectorData: string };
 
 const TOGGLES: Array<{
-  key: "nativeSignEnabled" | "remoteSignEnabled" | "savedSignaturesEnabled" | "vectorSignaturesEnabled" | "signatureTimelineEnabled";
+  key: "nativeSignEnabled" | "remoteSignEnabled" | "savedSignaturesEnabled" | "signatureTimelineEnabled";
   title: string;
   description: string;
 }> = [
@@ -54,11 +54,6 @@ const TOGGLES: Array<{
     key: "savedSignaturesEnabled",
     title: "Saved signatures",
     description: "Let members reuse a saved signature instead of drawing one each time.",
-  },
-  {
-    key: "vectorSignaturesEnabled",
-    title: "Vector signatures (beta)",
-    description: "Capture Type/Draw/Image as resolution-independent outlines that stay sharp at any size. PNG signatures keep working.",
   },
   {
     key: "signatureTimelineEnabled",
