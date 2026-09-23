@@ -1,8 +1,16 @@
 import path from "node:path";
 import { tmpdir } from "node:os";
 
-export const E2E_DATABASE_URL =
+export const DEFAULT_E2E_DATABASE_URL =
   "postgresql://harly:harly@localhost:5432/harly_e2e";
+
+export function resolveE2EDatabaseUrl(
+  env: { HARLY_E2E_DATABASE_URL?: string } = process.env,
+) {
+  return env.HARLY_E2E_DATABASE_URL || DEFAULT_E2E_DATABASE_URL;
+}
+
+export const E2E_DATABASE_URL = resolveE2EDatabaseUrl();
 export const E2E_BASE_URL = "http://127.0.0.1:3000";
 // Production-mode E2E uses a narrowly allowed loopback origin so generated
 // sign-in and document links stay inside the local test server. All secrets
