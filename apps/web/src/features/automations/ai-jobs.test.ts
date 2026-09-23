@@ -49,4 +49,16 @@ describe("durable automation jobs in public demo", () => {
       }),
     ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
   });
+
+  it("blocks direct reads of durable job results", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+
+    await expect(
+      getAutomationAiJob({
+        workspaceId: "workspace-demo",
+        actorId: "actor-demo",
+        jobId: "job-demo",
+      }),
+    ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+  });
 });

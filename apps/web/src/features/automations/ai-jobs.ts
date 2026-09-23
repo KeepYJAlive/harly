@@ -161,6 +161,7 @@ export async function getAutomationAiJob(input: {
   actorId: string;
   jobId: string;
 }): Promise<AutomationAiJobView | null> {
+  assertNotDemo();
   const [job] = await db
     .select()
     .from(automationAiJobs)
