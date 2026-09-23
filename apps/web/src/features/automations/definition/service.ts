@@ -594,7 +594,7 @@ export async function requestDraftApproval(input: {
       })
       .where(eq(workflowDefinitions.id, def.id))
       .returning();
-    if (!updatedDef || !updatedDraft)
+    if (!updatedDef)
       throw ApiError.notFound("Workflow not found.");
     const publishedContentHash = await loadPublishedContentHash(
       tx,

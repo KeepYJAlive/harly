@@ -650,7 +650,6 @@ export function matchCriteriaAgainstFacts(
                   ? "deterministic_exact"
                   : "built_in_alias",
             });
-            matchedInRole = true;
             break;
           }
         }

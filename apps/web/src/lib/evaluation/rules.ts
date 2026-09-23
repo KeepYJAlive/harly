@@ -383,29 +383,21 @@ export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
       ? anyKnockoutFailed
       : matchedResults.some((r) => r.knockoutFailed && r.status === "not_met");
 
-  let recommendation: CandidateScore["recommendation"] = "maybe";
-
-  if (knockoutBlocksRecommendation || requiredNotMetCount >= 2 || coverageAdjustedScore < tiers.maybeMinScore) {
-    recommendation = "no";
-  } else if (
-    coverageAdjustedScore >= tiers.strongYesMinScore &&
-    evidenceCoverage >= tiers.strongYesMinCoverage &&
-    confidence >= tiers.strongYesMinConfidence &&
-    requiredNotMetCount === 0 &&
-    requiredUnverifiedCount <= modeThresholds.strongYesMaxRequiredUnverified
-  ) {
-    // Note: Preferred criteria do not block Strong Yes!
-    recommendation = "strong_yes";
-  } else if (
-    coverageAdjustedScore >= tiers.yesMinScore &&
-    evidenceCoverage >= tiers.yesMinCoverage &&
-    requiredNotMetCount === 0 &&
-    requiredUnverifiedCount <= modeThresholds.yesMaxRequiredUnverified
-  ) {
-    recommendation = "yes";
-  } else {
-    recommendation = "maybe";
-  }
+  const recommendation: CandidateScore["recommendation"] =
+    knockoutBlocksRecommendation || requiredNotMetCount >= 2 || coverageAdjustedScore < tiers.maybeMinScore
+      ? "no"
+      : coverageAdjustedScore >= tiers.strongYesMinScore &&
+          evidenceCoverage >= tiers.strongYesMinCoverage &&
+          confidence >= tiers.strongYesMinConfidence &&
+          requiredNotMetCount === 0 &&
+          requiredUnverifiedCount <= modeThresholds.strongYesMaxRequiredUnverified
+        ? "strong_yes"
+        : coverageAdjustedScore >= tiers.yesMinScore &&
+            evidenceCoverage >= tiers.yesMinCoverage &&
+            requiredNotMetCount === 0 &&
+            requiredUnverifiedCount <= modeThresholds.yesMaxRequiredUnverified
+          ? "yes"
+          : "maybe";
 
   // Human Review Required Trigger
   const requiresHumanReview =
@@ -418,10 +410,8 @@ export function evaluateCandidateWithRules(input: RulesInput): RulesEvaluation {
 
   // Map to backwards-compatible RuleCriterionResult
   const criterionResults: RuleCriterionResult[] = matchedResults.map((m) => {
-    let legacyStatus: "met" | "not_met" | "unknown" = "unknown";
-    if (m.status === "met") legacyStatus = "met";
-    else if (m.status === "not_met") legacyStatus = "not_met";
-    else legacyStatus = "unknown";
+    const legacyStatus =
+      m.status === "met" ? "met" : m.status === "not_met" ? "not_met" : "unknown";
 
     return {
       key: m.criterionId,

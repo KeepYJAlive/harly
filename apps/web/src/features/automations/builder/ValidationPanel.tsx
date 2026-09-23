@@ -74,7 +74,7 @@ export function ValidationPanel({
           initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97 }}
-          transition={open ? openTransition : closeTransition}
+          transition={closeTransition}
           className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-pure-snow/95 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 shadow-sm backdrop-blur-sm transition-all hover:border-amber-500/60 hover:bg-pure-snow hover:shadow-md"
         >
           <AlertCircle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
