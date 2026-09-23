@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isDemoMode } from "@harly/config";
 
 import { getBuilderData } from "@/features/automations/builder-data";
 import { WorkflowBuilder } from "@/features/automations/builder/WorkflowBuilder";
@@ -12,6 +13,10 @@ export default async function WorkflowBuilderRoute({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  if (isDemoMode()) {
+    redirect("/dashboard/automations");
+  }
+
   const [{ id }, workspace] = await Promise.all([
     params,
     requirePagePermission("automations:manage"),
