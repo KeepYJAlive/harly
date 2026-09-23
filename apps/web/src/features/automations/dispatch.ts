@@ -35,6 +35,7 @@ import { matchesTriggerFilter } from "./conditions";
 import { AUTOMATIONS_ENABLED, legacyWorkflowDispatchDisabled } from "./status";
 import { findDueWorkflowRuns } from "./runtime/due-runs";
 import { reserveRunAdmissionPolicy } from "./runtime/operational-policy";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 const log = createLogger("automations");
 
@@ -100,6 +101,7 @@ export async function dispatchWorkflowEvent(
   data: Record<string, unknown>,
   options: WorkflowDispatchOptions = {},
 ): Promise<boolean> {
+  assertNotDemo();
   const database = options.database ?? db;
   if (!AUTOMATIONS_ENABLED) return true;
 
@@ -491,6 +493,7 @@ export async function dispatchWorkflowEventsFromOutbox(
   processed: number;
   failed: number;
 }> {
+  assertNotDemo();
   if (!AUTOMATIONS_ENABLED) return { processed: 0, failed: 0 };
 
   const rows = await db
@@ -618,6 +621,7 @@ export async function reclaimStalledWorkflowRuns(): Promise<{
   reclaimed: number;
   deadLettered: number;
 }> {
+  assertNotDemo();
   const cutoff = new Date(Date.now() - STALLED_RUN_THRESHOLD_MS);
   const stale = await db
     .select({
@@ -679,6 +683,7 @@ export async function reclaimStalledWorkflowRuns(): Promise<{
 export async function dispatchDueWorkflowRuns(limit = 50): Promise<{
   queued: number;
 }> {
+  assertNotDemo();
   // A failed due-queue read is an infrastructure failure, not an empty
   // queue. Let it reach the cron route so the scheduler records a failed run
   // and alerts can fire instead of silently acknowledging a DB outage.

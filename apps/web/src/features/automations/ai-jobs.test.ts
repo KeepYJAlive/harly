@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("./ai-proposals", () => ({ simulateAutomationProposal: vi.fn() }));
 
 import {
   computeJobBackoffMs,
@@ -29,5 +31,22 @@ describe("durable automation job aliases", () => {
   it("exposes the tool-facing names for the same service functions", () => {
     expect(queueAutomationSimulation).toBe(enqueueAutomationAiJob);
     expect(getAutomationJob).toBe(getAutomationAiJob);
+  });
+});
+
+describe("durable automation jobs in public demo", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("blocks a direct AI simulation job enqueue before persistence", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+
+    await expect(
+      enqueueAutomationAiJob({
+        workspaceId: "workspace-demo",
+        actorId: "actor-demo",
+        kind: "proposal_simulation",
+        payload: { proposalId: "proposal-demo" },
+      }),
+    ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
   });
 });

@@ -11,6 +11,7 @@ import { purgeExpiredAiConversations } from "@/features/ai-chat/data";
 import { processAutomationAiJobs } from "@/features/automations/ai-jobs";
 import { authorizeCron } from "@/server/cron-auth";
 import { startCronRun } from "@/server/cron-runs";
+import { assertNotDemo, DemoActionDisabledError } from "@/features/demo/assert-not-demo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,14 @@ const ORPHAN_PROPOSAL_THRESHOLD_MINUTES = 5;
  * or webhook backlog from delaying graph waits, retries, or lease recovery.
  */
 export async function POST(request: NextRequest) {
+  try {
+    assertNotDemo();
+  } catch (error) {
+    if (error instanceof DemoActionDisabledError) {
+      return NextResponse.json({ ok: false, error: error.message, code: error.code }, { status: 403 });
+    }
+    throw error;
+  }
   const auth = await authorizeCron(request, CRON_KEY);
   if (!auth.ok) return auth.response;
   const run = startCronRun(CRON_KEY);

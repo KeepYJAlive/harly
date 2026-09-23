@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_ACTIONS_PER_WORKFLOW } from "./schema";
 
 /**
@@ -229,5 +229,25 @@ describe("automations data — scoping + notFound", () => {
     dbState.workflows = [{ id: "wf-a", workspaceId: "ws-1" }];
     const rows = await listWorkflows("ws-1");
     expect(rows[0]).toMatchObject({ id: "wf-a", workspaceId: "ws-1" });
+  });
+});
+
+describe("automations data mutations in public demo", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("blocks direct create and delete calls before storage writes", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+    const insertedBefore = dbState.inserted.length;
+    const deletedBefore = dbState.deleted.length;
+
+    await expect(
+      createWorkflow({ workspaceId: "ws-demo", values: validInput, createdById: "user-demo" }),
+    ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+    await expect(deleteWorkflow({ workspaceId: "ws-demo", id: "workflow-demo" })).rejects.toMatchObject({
+      code: "DEMO_ACTION_DISABLED",
+    });
+
+    expect(dbState.inserted).toHaveLength(insertedBefore);
+    expect(dbState.deleted).toHaveLength(deletedBefore);
   });
 });

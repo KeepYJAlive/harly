@@ -50,6 +50,7 @@ import { parseGraph } from "./definition/schema-v2";
 import { jsonValueSchema } from "./definition/schema-v2";
 import { compileGraph } from "./definition/compile";
 import { effectiveApprovalPolicy } from "./runtime/approval-policy";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 /**
  * Automations data layer (§3.1). All queries are workspace-scoped: every read
@@ -325,6 +326,7 @@ export async function createWorkflow(input: {
   graph?: import("./definition/schema-v2").WorkflowGraphV2;
   layout?: import("./definition/schema-v2").EditorLayout;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return createWorkflowWithDraft(input);
 }
 
@@ -337,6 +339,7 @@ export async function updateWorkflow(input: {
   graph?: import("./definition/schema-v2").WorkflowGraphV2;
   layout?: import("./definition/schema-v2").EditorLayout;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return saveWorkflowDraft(input);
 }
 
@@ -344,6 +347,7 @@ export async function deleteWorkflow(input: {
   workspaceId: string;
   id: string;
 }): Promise<void> {
+  assertNotDemo();
   const [row] = await db
     .update(workflowDefinitions)
     .set({ enabled: false, deletedAt: new Date(), updatedAt: new Date() })
@@ -365,6 +369,7 @@ export async function requestWorkflowApproval(input: {
   requesterId: string;
   expectedRevision: number;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return requestDraftApproval(input);
 }
 
@@ -374,6 +379,7 @@ export async function approveWorkflow(input: {
   approverId: string;
   expectedRevision: number;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return approveDraft(input);
 }
 
@@ -383,6 +389,7 @@ export async function publishWorkflow(input: {
   publisherId: string;
   expectedRevision: number;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return publishDraft(input);
 }
 
@@ -390,6 +397,7 @@ export async function pauseWorkflow(input: {
   workspaceId: string;
   id: string;
 }): Promise<WorkflowDefinition> {
+  assertNotDemo();
   const [row] = await db
     .update(workflowDefinitions)
     .set({ status: "paused", enabled: false, updatedAt: new Date() })
@@ -410,6 +418,7 @@ export async function resumeWorkflow(input: {
   workspaceId: string;
   id: string;
 }): Promise<WorkflowDefinition> {
+  assertNotDemo();
   const [row] = await db
     .update(workflowDefinitions)
     .set({
@@ -499,6 +508,7 @@ export async function rollbackWorkflow(input: {
   version: number;
   actorId?: string | null;
 }): Promise<HydratedWorkflow> {
+  assertNotDemo();
   return rollbackVersionToDraft(input);
 }
 
@@ -704,6 +714,7 @@ export async function requestCancelRun(input: {
   id: string;
   workflowId?: string;
 }): Promise<WorkflowRun> {
+  assertNotDemo();
   const [current] = await db
     .select()
     .from(workflowRuns)
@@ -799,6 +810,7 @@ export async function retryRun(input: {
   id: string;
   workflowId?: string;
 }): Promise<WorkflowRun> {
+  assertNotDemo();
   const [current] = await db
     .select()
     .from(workflowRuns)
@@ -900,6 +912,7 @@ export async function replayRunFromStep(input: {
   stepIndex: number;
   database?: typeof db;
 }): Promise<WorkflowRun> {
+  assertNotDemo();
   const database = input.database ?? db;
   if (!Number.isInteger(input.stepIndex) || input.stepIndex < 0) {
     throw ApiError.badRequest("Invalid step index.");

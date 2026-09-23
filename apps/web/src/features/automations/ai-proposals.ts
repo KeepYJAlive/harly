@@ -39,6 +39,7 @@ import {
   type SimulationScenario,
 } from "./simulation-coverage";
 import type { ConditionContext } from "./conditions";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 const PROPOSAL_TTL_MS = 30 * 60 * 1000;
 const PREVIEW_TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -386,6 +387,7 @@ export async function prepareAutomationProposal(input: {
   operationalPolicy?: OperationalPolicyPatch;
   permissions?: Permission[];
 }): Promise<AutomationProposal> {
+  assertNotDemo();
   await assertAutomationPermission(input);
   await assertAutomationProposalStoreAvailable();
   const graph = parseGraph(input.graph);
@@ -619,6 +621,7 @@ export async function simulateAutomationProposal(input: {
   /** Re-run even when a passing report already covers this graph. */
   force?: boolean;
 }): Promise<AutomationProposalSimulation & { reused: boolean }> {
+  assertNotDemo();
   const proposal = await getAutomationProposal(input);
   if (proposal.status !== "prepared") {
     throw ApiError.conflict("Only a prepared proposal can be simulated.");
@@ -708,6 +711,7 @@ export async function applyAutomationProposal(input: {
   draftRevision: number;
   replayed: boolean;
 }> {
+  assertNotDemo();
   await assertAutomationPermission(input);
   const proposal = await getAutomationProposal(input);
   if (

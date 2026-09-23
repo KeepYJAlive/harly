@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { dispatchWorkflowEvent } from "@/features/automations/dispatch";
 import { receiveWorkflowWebhook } from "@/features/automations/webhook-ingress";
+import { assertNotDemo, DemoActionDisabledError } from "@/features/demo/assert-not-demo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ endpointId: string; token: string }> },
 ) {
+  try {
+    assertNotDemo();
+  } catch (error) {
+    if (error instanceof DemoActionDisabledError) {
+      return NextResponse.json({ ok: false, error: error.message, code: error.code }, { status: 403 });
+    }
+    throw error;
+  }
   const { endpointId, token } = await params;
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (mediaType !== "application/json" && !/^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(mediaType ?? "")) {

@@ -74,6 +74,7 @@ import { requirePermission } from "@/features/workspaces/permissions-server";
 import { createLogger } from "@/lib/logger";
 import { logAuditEvent } from "@/lib/audit-log";
 import { AUTOMATIONS_DISABLED_MESSAGE, AUTOMATIONS_ENABLED } from "./status";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 const log = createLogger("automations");
 
@@ -151,6 +152,11 @@ function assertAutomationsEnabled() {
 async function requireAutomationsPermission() {
   assertAutomationsEnabled();
   return requirePermission("automations:manage");
+}
+
+async function requireAutomationsMutationPermission() {
+  assertNotDemo();
+  return requireAutomationsPermission();
 }
 
 // ----- Reads (the list page + builder + run history) -----------------------
@@ -293,7 +299,7 @@ export async function cancelRunAction(
   id: string,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await requestCancelRun({ workspaceId: organization.id, id });
     await logAuditEvent({
       workspaceId: organization.id,
@@ -312,7 +318,7 @@ export async function retryRunAction(
   id: string,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await retryRun({ workspaceId: organization.id, id });
     await logAuditEvent({
       workspaceId: organization.id,
@@ -336,7 +342,7 @@ export async function resolveRunApprovalAction(input: {
   decision: "approved" | "rejected";
 }): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const count = await resolveWorkflowApproval({
       workspaceId: organization.id,
       actorId: user.id,
@@ -373,7 +379,7 @@ export async function reassignRunApprovalAction(input: {
   actorIds: string[];
 }): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const result = await reassignWorkflowApproval({
       workspaceId: organization.id,
       actorId: user.id,
@@ -413,7 +419,7 @@ export async function resolveRunUncertainAction(input: {
   outputJson?: string;
 }): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     let output: JsonValue | undefined;
     if (input.outputJson?.trim()) {
       let parsed: unknown;
@@ -471,7 +477,7 @@ export async function replayRunFromStepAction(
   stepIndex: number,
 ): Promise<AutomationsActionResult & { runId?: string }> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const run = await replayRunFromStep({
       workspaceId: organization.id,
       id,
@@ -496,7 +502,7 @@ export async function requestWorkflowApprovalAction(
   expectedRevision: number,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const current = await getWorkflow({ workspaceId: organization.id, id });
     if (current.draftRevision !== expectedRevision) {
       return {
@@ -542,7 +548,7 @@ export async function approveWorkflowAction(
   expectedRevision: number,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await approveWorkflow({
       workspaceId: organization.id,
       id,
@@ -571,7 +577,7 @@ export async function publishWorkflowAction(
   expectedRevision: number,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const current = await getWorkflow({ workspaceId: organization.id, id });
     if (current.draftRevision !== expectedRevision) {
       return {
@@ -617,7 +623,7 @@ export async function pauseWorkflowAction(
   id: string,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await pauseWorkflow({ workspaceId: organization.id, id });
     await logAuditEvent({
       workspaceId: organization.id,
@@ -640,7 +646,7 @@ export async function resumeWorkflowAction(
   id: string,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await resumeWorkflow({ workspaceId: organization.id, id });
     await logAuditEvent({
       workspaceId: organization.id,
@@ -664,7 +670,7 @@ export async function rollbackWorkflowAction(
   version: number,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await rollbackWorkflow({
       workspaceId: organization.id,
       workflowId: id,
@@ -700,7 +706,7 @@ export async function createWorkflowAction(
   AutomationsActionResult & { workflow?: ReturnType<typeof serializeWorkflow> }
 > {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const parsed = workflowInputSchema.parse(values);
     const workflow = await createWorkflow({
       workspaceId: organization.id,
@@ -745,7 +751,7 @@ export async function updateWorkflowAction(
   let organization: { id: string };
   let user: { id: string };
   try {
-    const session = await requireAutomationsPermission();
+    const session = await requireAutomationsMutationPermission();
     organization = session.organization;
     user = session.user;
   } catch (error) {
@@ -824,7 +830,7 @@ export async function toggleWorkflowAction(
   enabled: boolean,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     if (enabled) {
       const workflow = await getWorkflow({ workspaceId: organization.id, id });
       if (workflow.status === "paused") {
@@ -884,7 +890,7 @@ export async function createWorkflowWebhookEndpointAction(input: {
   payloadSchema?: Record<string, unknown>;
 }) {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const result = await createWorkflowWebhookEndpoint({
       workspaceId: organization.id,
       workflowId: input.workflowId,
@@ -919,7 +925,7 @@ export async function toggleWorkflowWebhookEndpointAction(input: {
   enabled: boolean;
 }) {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const updated = await setWorkflowWebhookEndpointEnabled({
       workspaceId: organization.id,
       endpointId: input.endpointId,
@@ -948,7 +954,7 @@ export async function updateWorkflowWebhookEndpointPayloadSchemaAction(input: {
   payloadSchema: unknown;
 }) {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const updated = await setWorkflowWebhookEndpointPayloadSchema({
       workspaceId: organization.id,
       endpointId: input.endpointId,
@@ -980,7 +986,7 @@ export async function deleteWorkflowAction(
   id: string,
 ): Promise<AutomationsActionResult> {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     await deleteWorkflow({ workspaceId: organization.id, id });
     await logAuditEvent({
       workspaceId: organization.id,
@@ -1053,7 +1059,7 @@ export async function createWorkflowFromTemplateAction(
   AutomationsActionResult & { workflow?: ReturnType<typeof serializeWorkflow> }
 > {
   try {
-    const { organization, user } = await requireAutomationsPermission();
+    const { organization, user } = await requireAutomationsMutationPermission();
     const parsed = workflowInputSchema.parse(values);
     const workflow = await createWorkflow({
       workspaceId: organization.id,

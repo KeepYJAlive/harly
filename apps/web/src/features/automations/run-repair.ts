@@ -24,6 +24,7 @@ import { semanticGraphHash } from "./definition/hash";
 import { parseGraph } from "./definition/schema-v2";
 import { getWorkflow } from "./data";
 import { runLifecycleStage, type AutomationLifecycleStage } from "./lifecycle-status";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 export type WorkflowRunDiagnosis = {
   runId: string;
@@ -209,6 +210,7 @@ export async function prepareAutomationRepair(input: {
 export async function reconcileOrphanApplyingProposals(
   olderThanMinutes = 5,
 ): Promise<number> {
+  assertNotDemo();
   const threshold = new Date(Date.now() - olderThanMinutes * 60 * 1000);
   const now = new Date();
   const stale = await db

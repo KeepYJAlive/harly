@@ -17,6 +17,7 @@ import {
 import { createLogger } from "@/lib/logger";
 import { getRolePermissions } from "@/features/workspaces/permissions-server";
 import { roleIsAllPowerful } from "@/features/workspaces/permissions";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 import {
   evaluateConditions,
@@ -408,6 +409,7 @@ export async function runWorkflow(
   runId: string,
   options: RunWorkflowOptions = {},
 ): Promise<RunOutcome> {
+  assertNotDemo();
   const { dryRun = false } = options;
   const workerId = options.workerId ?? `workflow-worker:${randomUUID()}`;
 

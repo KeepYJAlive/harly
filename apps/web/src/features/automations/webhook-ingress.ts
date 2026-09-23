@@ -19,6 +19,7 @@ import {
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import {
   assertWorkflowWebhookPayloadSchema,
   validateWorkflowWebhookPayload,
@@ -68,6 +69,7 @@ export async function createWorkflowWebhookEndpoint(input: {
   name: string;
   payloadSchema?: Record<string, unknown>;
 }): Promise<{ endpoint: WorkflowWebhookEndpointPublic; token: string; secret: string }> {
+  assertNotDemo();
   const name = input.name.trim();
   if (name.length < 1 || name.length > 120) {
     throw new Error("Webhook endpoint name must be between 1 and 120 characters.");
@@ -151,6 +153,7 @@ export async function setWorkflowWebhookEndpointEnabled(input: {
   endpointId: string;
   enabled: boolean;
 }) {
+  assertNotDemo();
   const [updated] = await db
     .update(workflowWebhookEndpoints)
     .set({ enabled: input.enabled, updatedAt: new Date() })
@@ -167,6 +170,7 @@ export async function setWorkflowWebhookEndpointPayloadSchema(input: {
   endpointId: string;
   payloadSchema: unknown;
 }): Promise<boolean> {
+  assertNotDemo();
   const payloadSchema = assertWorkflowWebhookPayloadSchema(input.payloadSchema);
   const [updated] = await db
     .update(workflowWebhookEndpoints)
@@ -204,6 +208,7 @@ export async function receiveWorkflowWebhook(input: {
   timestamp: string | null;
   externalEventId: string | null;
 }): Promise<WorkflowWebhookReceiptResult> {
+  assertNotDemo();
   if (!TOKEN_PATTERN.test(input.token)) {
     return { ok: false, status: 404, error: "Webhook endpoint not found." };
   }

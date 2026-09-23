@@ -48,6 +48,7 @@ import {
   type WorkflowNode,
 } from "../definition/schema-v2";
 import type { AdvanceDecision, NodeOutcome } from "./advance";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { graphNodeStore } from "./node-store";
 import { graphRunLeases, type RunLease } from "./leases";
 import { graphRunStore } from "./run-store";
@@ -515,6 +516,7 @@ export async function runWorkflowV2(
   runId: string,
   options: V2WorkerOptions = {},
 ): Promise<V2RunOutcome> {
+  assertNotDemo();
   const database = options.database ?? db;
   const context = await loadRunContext(database, runId);
   if (!context) return { status: "not_claimed", code: "V2_RUN_NOT_FOUND" };
@@ -800,6 +802,7 @@ export async function resumeWorkflowEventWaits(
   input: WaitResolution & { eventSequence?: number },
   database: typeof db = db,
 ): Promise<number> {
+  assertNotDemo();
   const resourceIds = input.resourceId
     ? [input.resourceId]
     : eventResourceIds(input.payload);
@@ -911,6 +914,7 @@ export async function reconcileMissedWorkflowEventWaits(
   database: typeof db = db,
   input: { workspaceId?: string; runId?: string; limit?: number } = {},
 ): Promise<number> {
+  assertNotDemo();
   const waits = await database
     .select({
       workspaceId: workflowNodeExecutions.workspaceId,
@@ -1054,6 +1058,7 @@ export async function resumeWorkflowDocumentWaits(
   input: { workspaceId: string; resourceId?: string },
   database: typeof db = db,
 ): Promise<number> {
+  assertNotDemo();
   const candidates = await database
     .select({
       runId: workflowRuns.id,

@@ -114,7 +114,7 @@ vi.mock("@/lib/logger", () => ({
   }),
 }));
 
-import { dispatchDueWorkflowRuns, dispatchWorkflowEvent } from "./dispatch";
+import { dispatchDueWorkflowRuns, dispatchWorkflowEvent, reclaimStalledWorkflowRuns } from "./dispatch";
 
 describe("workflow dispatcher — FASE 2.3 trigger matching", () => {
   beforeEach(() => {
@@ -287,5 +287,27 @@ describe("workflow dispatcher — FASE 2.4 anti-loop", () => {
 
     expect(ok).toBe(false);
     expect(dbState.runsInserted).toHaveLength(0);
+  });
+
+  it("blocks direct event dispatch in public demo before creating a run", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+    dbState.workflows = [{ id: "wf-demo", trigger: null }];
+
+    await expect(
+      dispatchWorkflowEvent("ws-1", "application.created", { application: { id: "app-1" } }),
+    ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+
+    expect(dbState.runsInserted).toHaveLength(0);
+    vi.unstubAllEnvs();
+  });
+
+  it("blocks direct scheduler reconciliation and due-run dispatch in public demo", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+
+    await expect(reclaimStalledWorkflowRuns()).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+    await expect(dispatchDueWorkflowRuns()).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+    expect(findDueWorkflowRuns).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
   });
 });

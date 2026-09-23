@@ -100,6 +100,25 @@ describe("receiveWorkflowWebhook", () => {
     });
   });
 
+  it("blocks direct webhook receipt in public demo before reading or persisting", async () => {
+    vi.stubEnv("DEMO_MODE", "true");
+
+    await expect(
+      receiveWorkflowWebhook({
+        endpointId: endpoint.id,
+        token,
+        rawBody: JSON.stringify({ id: "demo-event" }),
+        signature: null,
+        timestamp: null,
+        externalEventId: "demo-event",
+      }),
+    ).rejects.toMatchObject({ code: "DEMO_ACTION_DISABLED" });
+
+    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it("rejects oversized external ids instead of truncating their identity", async () => {
     const body = JSON.stringify({ ok: true });
     const timestamp = String(Math.floor(Date.now() / 1_000));

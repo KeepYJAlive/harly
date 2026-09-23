@@ -20,6 +20,7 @@ import {
 import { jobLifecycleStage, type AutomationLifecycleStage } from "./lifecycle-status";
 import type { SimulationScenario } from "./simulation-coverage";
 import type { ConditionContext } from "./conditions";
+import { assertNotDemo } from "@/features/demo/assert-not-demo";
 
 const MAX_JOB_INPUT_BYTES = 96_000;
 const DEFAULT_LEASE_MS = 45_000;
@@ -103,6 +104,7 @@ export async function enqueueAutomationAiJob(input: {
   maxAttempts?: number;
   ttlMs?: number;
 }): Promise<AutomationAiJobView> {
+  assertNotDemo();
   assertBoundedJson(input.payload);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + (input.ttlMs ?? DEFAULT_TTL_MS));
@@ -191,6 +193,7 @@ export const getAutomationJob = getAutomationAiJob;
 export async function sweepExpiredAutomationAiJobs(input?: {
   limit?: number;
 }): Promise<{ expired: number }> {
+  assertNotDemo();
   const now = new Date();
   const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500);
   const stale = await db
@@ -379,6 +382,7 @@ export async function processAutomationAiJobs(input?: {
   workerId?: string;
   limit?: number;
 }): Promise<{ processed: number; succeeded: number; failed: number; expired: number }> {
+  assertNotDemo();
   const workerId = input?.workerId ?? `automation-ai-${crypto.randomUUID()}`;
   const limit = Math.min(Math.max(input?.limit ?? 2, 1), 10);
   const { expired } = await sweepExpiredAutomationAiJobs();
