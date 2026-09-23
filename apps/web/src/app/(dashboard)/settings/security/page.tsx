@@ -2,9 +2,11 @@ import { isDemoMode } from "@harly/config";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { requirePagePermission } from "@/features/workspaces/permissions-server";
 import { getWorkspaceAuditLogs, getWorkspaceSecuritySettings } from "@/features/security/data";
-import { getOAuthProviderStatus, listOAuthProvidersAction } from "@/features/security/actions";
+import { getOAuthProviderStatus, listOAuthProvidersAction, getEnabledLoginMethodsAction } from "@/features/security/actions";
 import { listSSOProvidersAction } from "@/features/security/sso-actions";
+import { getConfiguredLoginMethods } from "@/features/auth/login-methods.server";
 import { SsoCard } from "@/features/security/SsoCard";
+import { LoginMethodsCard } from "@/features/security/LoginMethodsCard";
 import { AuditLogsCard } from "@/features/security/AuditLogsCard";
 import { Force2FACard } from "@/features/security/Force2FACard";
 import { ScimProvisioningCard } from "@/features/security/ScimProvisioningCard";
@@ -18,7 +20,7 @@ export default async function SecuritySettingsPage() {
   await requirePagePermission("security:manage");
   const { organization, roleKey } = await getWorkspaceContext();
 
-  const [securitySettings, auditLogRows, providerStatus, existingConfigs, ssoProviders, scimTokens] =
+  const [securitySettings, auditLogRows, providerStatus, existingConfigs, ssoProviders, scimTokens, configuredLoginMethods, enabledLoginMethods] =
     await Promise.all([
       getWorkspaceSecuritySettings(organization.id),
       getWorkspaceAuditLogs(organization.id),
@@ -26,6 +28,8 @@ export default async function SecuritySettingsPage() {
       listOAuthProvidersAction(),
       listSSOProvidersAction(),
       listScimTokensAction(),
+      getConfiguredLoginMethods(),
+      getEnabledLoginMethodsAction(),
     ]);
 
   const isOwner = roleKey === "owner";
@@ -45,6 +49,11 @@ export default async function SecuritySettingsPage() {
         providerConfigs={providerStatus}
         existingConfigs={existingConfigs}
         ssoProviders={ssoProviders}
+      />
+      <LoginMethodsCard
+        configured={configuredLoginMethods}
+        enabledMethods={enabledLoginMethods}
+        isOwner={canMutate}
       />
       <ScimProvisioningCard tokens={scimTokens} workspaceId={organization.id} isOwner={canMutate} />
       <AuditLogsCard

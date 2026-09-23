@@ -728,6 +728,16 @@ export const workspaceSettings = pgTable("workspace_settings", {
   securityRequirePasskey: boolean("security_require_passkey")
     .default(false)
     .notNull(),
+  // Curated allow-list of staff login methods shown on the sign-in screen.
+  // Values: "password" | "google" | "microsoft" | "github" | "linkedin" |
+  // "sso" | "magic_link" | "passkey". An empty array means "auto": the login
+  // screen falls back to showing every method that is actually configured
+  // (OAuth creds present, an SSO provider registered, email sender set, etc.).
+  // A non-empty array is an explicit admin choice — only those methods render,
+  // and each is still additionally gated by whether it is actually configured.
+  enabledLoginMethods: jsonb("enabled_login_methods")
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
   // Shape lives in apps/web/src/features/career-page/config.ts.
   careerPageConfig: jsonb("career_page_config")
     .default(sql`'{}'::jsonb`)

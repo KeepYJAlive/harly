@@ -649,7 +649,7 @@ export function AccountSettingsPanel({
             name={displayName}
             src={image || null}
             size="xl"
-            className="size-20 text-2xl ring-2 ring-border/50 ring-offset-2 ring-offset-background"
+            className="ring-2 ring-border/50 ring-offset-2 ring-offset-background"
           />
           <button
             type="button"
