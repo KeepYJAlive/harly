@@ -134,6 +134,8 @@ export type AutomationTarget = {
 
 export type ActionResult = {
   success: boolean;
+  /** Control-plane quota deferral; no action effect was attempted. */
+  deferUntil?: Date;
   error?: string;
   errorCode?: string;
   /** Stable provider identifier, never inferred from arbitrary result data. */

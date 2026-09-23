@@ -1,5 +1,6 @@
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { workflowRuns, type db } from "@harly/db";
+import { and, count, eq, gt, inArray, isNull, isNotNull, lte, or, sql } from "drizzle-orm";
+import { workflowRuns, workspaceAutomationPolicies, type db } from "@harly/db";
+import { recordAutomationGuardDecision } from "@/server/observability/metrics";
 
 export type RunLease = {
   workspaceId: string;
@@ -33,6 +34,63 @@ export function graphRunLeases(database: Pick<typeof db, "transaction" | "update
     ): Promise<RunLease | null> {
       if (!input.workerId.trim()) throw new Error("Worker identity is required");
       return database.transaction(async (tx) => {
+        await tx
+          .insert(workspaceAutomationPolicies)
+          .values({ workspaceId: input.workspaceId })
+          .onConflictDoNothing();
+        const [policy] = await tx
+          .select({
+            enabled: workspaceAutomationPolicies.enabled,
+            maxConcurrentRuns: workspaceAutomationPolicies.maxConcurrentRuns,
+          })
+          .from(workspaceAutomationPolicies)
+          .where(eq(workspaceAutomationPolicies.workspaceId, input.workspaceId))
+          .for("update");
+        const canDeferRun = and(
+          eq(workflowRuns.workspaceId, input.workspaceId),
+          eq(workflowRuns.id, input.runId),
+          inArray(workflowRuns.logicalStatus, ["queued", "retrying", "waiting", "running"]),
+          or(isNull(workflowRuns.lockedBy), lte(workflowRuns.leaseUntil, sql`clock_timestamp()`)),
+        );
+        if (!policy || (!policy.enabled && !options.allowCancellation)) {
+          recordAutomationGuardDecision("WORKSPACE_PAUSED");
+          await tx
+            .update(workflowRuns)
+            .set({ nextAttemptAt: sql`clock_timestamp() + interval '1 minute'` })
+            .where(canDeferRun);
+          return null;
+        }
+
+        const [{ activeRuns }] = await tx
+          .select({ activeRuns: count() })
+          .from(workflowRuns)
+          .where(
+            and(
+              eq(workflowRuns.workspaceId, input.workspaceId),
+              or(
+                and(
+                  eq(workflowRuns.engineVersion, 1),
+                  eq(workflowRuns.status, "running"),
+                  isNull(workflowRuns.finishedAt),
+                ),
+                and(
+                  eq(workflowRuns.engineVersion, 2),
+                  eq(workflowRuns.logicalStatus, "running"),
+                  isNotNull(workflowRuns.lockedBy),
+                  gt(workflowRuns.leaseUntil, sql`clock_timestamp()`),
+                ),
+              ),
+            ),
+          );
+        if (!options.allowCancellation && (activeRuns ?? 0) >= policy.maxConcurrentRuns) {
+          recordAutomationGuardDecision("WORKSPACE_CONCURRENCY_LIMITED");
+          await tx
+            .update(workflowRuns)
+            .set({ nextAttemptAt: sql`clock_timestamp() + interval '15 seconds'` })
+            .where(canDeferRun);
+          return null;
+        }
+
         // Lock the candidate before updating it. This makes the one-winner
         // invariant explicit under burst delivery and worker replacement.
         const terminalDocumentWake = sql`(
@@ -136,6 +194,20 @@ export function graphRunLeases(database: Pick<typeof db, "transaction" | "update
     async release(lease: RunLease, status: "queued" | "waiting" | "retrying"): Promise<boolean> {
       const rows = await database.update(workflowRuns).set({
         logicalStatus: status, lockedBy: null, lockedAt: null, leaseUntil: null, updatedAt: sql`clock_timestamp()`,
+      }).where(valid(lease)).returning({ id: workflowRuns.id });
+      return rows.length === 1;
+    },
+    async deferPaused(
+      lease: RunLease,
+      deferUntil = new Date(Date.now() + 60_000),
+    ): Promise<boolean> {
+      const rows = await database.update(workflowRuns).set({
+        logicalStatus: "queued",
+        nextAttemptAt: deferUntil,
+        lockedBy: null,
+        lockedAt: null,
+        leaseUntil: null,
+        updatedAt: sql`clock_timestamp()`,
       }).where(valid(lease)).returning({ id: workflowRuns.id });
       return rows.length === 1;
     },

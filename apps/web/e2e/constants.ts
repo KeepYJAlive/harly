@@ -5,9 +5,13 @@ export const DEFAULT_E2E_DATABASE_URL =
   "postgresql://harly:harly@localhost:5432/harly_e2e";
 
 export function resolveE2EDatabaseUrl(
-  env: { HARLY_E2E_DATABASE_URL?: string } = process.env,
+  env?: { HARLY_E2E_DATABASE_URL?: string },
 ) {
-  return env.HARLY_E2E_DATABASE_URL || DEFAULT_E2E_DATABASE_URL;
+  return (
+    env?.HARLY_E2E_DATABASE_URL ||
+    process.env.HARLY_E2E_DATABASE_URL ||
+    DEFAULT_E2E_DATABASE_URL
+  );
 }
 
 export const E2E_DATABASE_URL = resolveE2EDatabaseUrl();

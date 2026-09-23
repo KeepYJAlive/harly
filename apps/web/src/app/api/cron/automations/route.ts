@@ -12,6 +12,7 @@ import { processAutomationAiJobs } from "@/features/automations/ai-jobs";
 import { authorizeCron } from "@/server/cron-auth";
 import { startCronRun } from "@/server/cron-runs";
 import { assertNotDemo, DemoActionDisabledError } from "@/features/demo/assert-not-demo";
+import { cleanupExpiredWorkspaceAutomationBuckets } from "@/features/automations/runtime/operational-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest) {
     const agentReceiptsReaped = await reapStaleProcessingAgentReceipts(10, 100);
     const aiConversationsPurged = await purgeExpiredAiConversations(500);
     const automationAiJobs = await processAutomationAiJobs({ limit: 2 });
+    const automationBucketsPruned =
+      await cleanupExpiredWorkspaceAutomationBuckets({ limit: 500 });
     const counters = {
       workflowRunsReclaimed: reclaimed.reclaimed,
       workflowRunsDeadLettered: reclaimed.deadLettered,
@@ -65,6 +68,7 @@ export async function POST(request: NextRequest) {
       agentReceiptsReaped,
       aiConversationsPurged,
       automationAiJobs,
+      automationBucketsPruned,
     };
     await run.finish("succeeded", counters);
     return NextResponse.json({ ok: true, ...counters });

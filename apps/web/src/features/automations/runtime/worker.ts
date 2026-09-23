@@ -58,8 +58,12 @@ import { nextLocalDeadline } from "./local-time";
 import {
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
+  workspaceAutomationsEnabled,
 } from "./operational-policy";
-import { recordWorkflowNodeAttempt } from "@/server/observability/metrics";
+import {
+  recordAutomationGuardDecision,
+  recordWorkflowNodeAttempt,
+} from "@/server/observability/metrics";
 
 export { nextLocalDeadline } from "./local-time";
 
@@ -583,6 +587,14 @@ export async function runWorkflowV2(
     for (let transition = 0; transition < maxTransitions; transition += 1) {
       if (leaseLost || abort.signal.aborted)
         return { status: "lost", code: "LEASE_LOST" };
+      if (
+        !lease.cancellationOnly &&
+        !(await workspaceAutomationsEnabled(lease.workspaceId, database))
+      ) {
+        recordAutomationGuardDecision("WORKSPACE_PAUSED");
+        await leases.deferPaused(lease);
+        return { status: "waiting", code: "WORKSPACE_PAUSED" };
+      }
       const decision = await runStore.advance(lease);
       if (!decision) return { status: "lost", code: "LEASE_LOST" };
       if (decision.type === "finish")
@@ -658,6 +670,21 @@ export async function runWorkflowV2(
           database,
         });
         if (!policy.ok) {
+          if (
+            policy.code === "WORKSPACE_PAUSED" ||
+            policy.code === "WORKSPACE_EXTERNAL_RATE_LIMITED"
+          ) {
+            await nodeStore.releaseUnstarted(
+              lease,
+              reservation.execution.id,
+              reservation.attemptId,
+            );
+            await leases.deferPaused(
+              lease,
+              policy.deferUntil ?? new Date(Date.now() + 60_000),
+            );
+            return { status: "waiting", code: policy.code };
+          }
           outcome = { status: "failed", code: policy.code, retryable: false };
         } else {
           try {
@@ -684,6 +711,16 @@ export async function runWorkflowV2(
           });
         }
       } else {
+        if (!(await workspaceAutomationsEnabled(lease.workspaceId, database))) {
+          await nodeStore.releaseUnstarted(
+            lease,
+            reservation.execution.id,
+            reservation.attemptId,
+          );
+          recordAutomationGuardDecision("WORKSPACE_PAUSED");
+          await leases.deferPaused(lease);
+          return { status: "waiting", code: "WORKSPACE_PAUSED" };
+        }
         try {
           outcome = await adapter.execute({
           workspaceId: lease.workspaceId,

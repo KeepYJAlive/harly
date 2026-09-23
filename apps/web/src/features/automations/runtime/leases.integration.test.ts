@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, desc, eq, sql as expression } from "drizzle-orm";
+import { and, desc, eq, inArray, sql as expression } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
 import {
   activityEvents,
@@ -31,6 +31,9 @@ import {
   workflowNodeAttempts,
   workflowNodeExecutions,
   workflowRuns,
+  workspaceAutomationPolicies,
+  workspaceAutomationRunBuckets,
+  workspaceAutomationExternalActionBuckets,
 } from "@harly/db";
 import { graphRunLeases } from "./leases";
 import { graphNodeStore } from "./node-store";
@@ -53,6 +56,8 @@ import { findDueWorkflowRuns } from "./due-runs";
 import {
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
+  reserveRunAdmissionPolicy,
+  workspaceAutomationsEnabled,
 } from "./operational-policy";
 import { expireOverdueDocuments } from "@/features/documents/expiry";
 import {
@@ -75,6 +80,7 @@ if (
 describe.skipIf(!url)("Postgres graph leases", () => {
   const client = url ? createDatabaseClient(url) : null;
   const workspaceId = `lease-test-${randomUUID()}`;
+  const otherWorkspaceId = `lease-other-${randomUUID()}`;
   const workflowId = randomUUID();
   const versionId = randomUUID();
   const fixtureUserId = `lease-user-${randomUUID()}`;
@@ -118,6 +124,12 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       id: workspaceId,
       name: "Lease test",
       slug: workspaceId,
+      createdAt: new Date(),
+    });
+    await db.insert(organization).values({
+      id: otherWorkspaceId,
+      name: "Other lease test",
+      slug: otherWorkspaceId,
       createdAt: new Date(),
     });
     fixtureCreated = true;
@@ -212,7 +224,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       if (fixtureCreated) {
         await client.db
           .delete(organization)
-          .where(eq(organization.id, workspaceId));
+          .where(inArray(organization.id, [workspaceId, otherWorkspaceId]));
         await client.db.delete(authUser).where(eq(authUser.id, fixtureUserId));
         await client.db
           .delete(authUser)
@@ -291,6 +303,13 @@ describe.skipIf(!url)("Postgres graph leases", () => {
   }
 
   it("atomically reserves external capacity and opens the v2 circuit", async () => {
+    await client!.db
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId, maxExternalActionsPerMinute: 2 })
+      .onConflictDoUpdate({
+        target: workspaceAutomationPolicies.workspaceId,
+        set: { enabled: true, maxExternalActionsPerMinute: 2 },
+      });
     const policyWorkflowId = randomUUID();
     const rootRunId = randomUUID();
     await client!.db.insert(workflowDefinitions).values({
@@ -347,6 +366,53 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       .where(eq(workflowExternalActionBuckets.workflowId, policyWorkflowId));
     expect(bucket?.reserved).toBe(1);
 
+    async function createExternalWorkflow() {
+      const externalWorkflowId = randomUUID();
+      const externalRunId = randomUUID();
+      await client!.db.insert(workflowDefinitions).values({
+        id: externalWorkflowId,
+        workspaceId,
+        name: "Workspace external quota test",
+        triggerEvent: "application.created",
+        trigger: { event: "application.created" },
+        conditions: [],
+        actions: [],
+        maxExternalActionsPerMinute: 10,
+      });
+      await client!.db.insert(workflowRuns).values({
+        id: externalRunId,
+        rootRunId: externalRunId,
+        workspaceId,
+        workflowId: externalWorkflowId,
+        triggerEvent: "application.created",
+        engineVersion: 1,
+      });
+      return { workflowId: externalWorkflowId, runId: externalRunId };
+    }
+    const secondWorkflow = await createExternalWorkflow();
+    expect(
+      await reserveExternalActionPolicy({
+        workspaceId,
+        ...secondWorkflow,
+        database: client!.db,
+        now,
+      }),
+    ).toEqual({ ok: true });
+    const thirdWorkflow = await createExternalWorkflow();
+    expect(
+      await reserveExternalActionPolicy({
+        workspaceId,
+        ...thirdWorkflow,
+        database: client!.db,
+        now,
+      }),
+    ).toMatchObject({ ok: false, code: "WORKSPACE_EXTERNAL_RATE_LIMITED" });
+    const [workspaceBucket] = await client!.db
+      .select({ reserved: workspaceAutomationExternalActionBuckets.reserved })
+      .from(workspaceAutomationExternalActionBuckets)
+      .where(eq(workspaceAutomationExternalActionBuckets.workspaceId, workspaceId));
+    expect(workspaceBucket?.reserved).toBe(2);
+
     await recordExternalActionOutcome({
       workspaceId,
       workflowId: policyWorkflowId,
@@ -368,6 +434,142 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       .where(eq(workflowDefinitions.id, policyWorkflowId));
     expect(definition?.failures).toBe(2);
     expect(definition?.openUntil?.getTime()).toBeGreaterThan(Date.now());
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ maxExternalActionsPerMinute: 150 })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+    await client!.db
+      .update(workflowRuns)
+      .set({ status: "succeeded", finishedAt: new Date() })
+      .where(
+        and(
+          eq(workflowRuns.workspaceId, workspaceId),
+          eq(workflowRuns.engineVersion, 1),
+        ),
+      );
+  });
+
+  it("enforces workspace run ceilings and pause status across workflows", async () => {
+    await client!.db
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId, maxRunsPerMinute: 1 })
+      .onConflictDoUpdate({
+        target: workspaceAutomationPolicies.workspaceId,
+        set: { enabled: true, maxRunsPerMinute: 1 },
+      });
+    const firstWorkflowId = randomUUID();
+    const secondWorkflowId = randomUUID();
+    await client!.db.insert(workflowDefinitions).values([
+      {
+        id: firstWorkflowId,
+        workspaceId,
+        name: "Workspace run quota one",
+        triggerEvent: "application.created",
+        trigger: { event: "application.created" },
+        conditions: [],
+        actions: [],
+        maxRunsPerMinute: 10,
+      },
+      {
+        id: secondWorkflowId,
+        workspaceId,
+        name: "Workspace run quota two",
+        triggerEvent: "application.created",
+        trigger: { event: "application.created" },
+        conditions: [],
+        actions: [],
+        maxRunsPerMinute: 10,
+      },
+    ]);
+    const now = new Date("2099-01-01T13:00:20.000Z");
+    const first = await reserveRunAdmissionPolicy({
+      workspaceId,
+      workflowId: firstWorkflowId,
+      maxRunsPerMinute: 10,
+      circuitOpenUntil: null,
+      database: client!.db,
+      now,
+    });
+    const second = await reserveRunAdmissionPolicy({
+      workspaceId,
+      workflowId: secondWorkflowId,
+      maxRunsPerMinute: 10,
+      circuitOpenUntil: null,
+      database: client!.db,
+      now,
+    });
+    expect(first).toEqual({ ok: true });
+    expect(second).toMatchObject({ ok: false, code: "WORKSPACE_RUN_RATE_LIMITED" });
+    const [bucket] = await client!.db
+      .select({ reserved: workspaceAutomationRunBuckets.reserved })
+      .from(workspaceAutomationRunBuckets)
+      .where(eq(workspaceAutomationRunBuckets.workspaceId, workspaceId));
+    expect(bucket?.reserved).toBe(1);
+
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({
+        enabled: false,
+        pausedAt: new Date(),
+        pausedById: fixtureUserId,
+        pauseReason: "Integration pause test",
+      })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+    expect(await workspaceAutomationsEnabled(workspaceId, client!.db)).toBe(false);
+    expect(
+      await reserveRunAdmissionPolicy({
+        workspaceId,
+        workflowId: firstWorkflowId,
+        maxRunsPerMinute: 10,
+        circuitOpenUntil: null,
+        database: client!.db,
+        now: new Date("2099-01-01T13:01:20.000Z"),
+      }),
+    ).toMatchObject({ ok: false, code: "WORKSPACE_PAUSED" });
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ enabled: true, pausedAt: null, pausedById: null, pauseReason: null })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ maxRunsPerMinute: 300 })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
+  });
+
+  it("limits simultaneous run leases and does not count waiting runs", async () => {
+    await client!.db
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId, maxConcurrentRuns: 1 })
+      .onConflictDoUpdate({
+        target: workspaceAutomationPolicies.workspaceId,
+        set: { enabled: true, maxConcurrentRuns: 1 },
+      });
+    const firstRunId = await run();
+    const secondRunId = await run();
+    const leases = graphRunLeases(client!.db);
+    const [firstClaim, secondClaim] = await Promise.all([
+      leases.claim({ workspaceId, runId: firstRunId, workerId: "workspace-one" }),
+      leases.claim({ workspaceId, runId: secondRunId, workerId: "workspace-two" }),
+    ]);
+    expect([firstClaim, secondClaim].filter(Boolean)).toHaveLength(1);
+    const waitingClaim = firstClaim ?? secondClaim;
+    const deferredRunId = firstClaim ? secondRunId : firstRunId;
+    expect(await leases.release(waitingClaim!, "waiting")).toBe(true);
+    await client!.db
+      .update(workflowRuns)
+      .set({ nextAttemptAt: new Date(0) })
+      .where(eq(workflowRuns.id, deferredRunId));
+    const nextClaim = await leases.claim({
+      workspaceId,
+      runId: deferredRunId,
+      workerId: "workspace-after-wait",
+    });
+    expect(nextClaim).not.toBeNull();
+    expect(await leases.release(nextClaim!, "waiting")).toBe(true);
+    await client!.db
+      .update(workspaceAutomationPolicies)
+      .set({ maxConcurrentRuns: 20 })
+      .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId));
   });
 
   it("retains old domain events until every applicable durable consumer acknowledges them", async () => {
@@ -482,7 +684,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
     ).toBeNull();
     expect(
       await repo.claim({
-        workspaceId: "other",
+        workspaceId: otherWorkspaceId,
         runId: await run(),
         workerId: "worker",
       }),

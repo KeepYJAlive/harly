@@ -2,18 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const { isDemoMode, requirePagePermission, listWorkflows, listPendingWorkflowApprovals, serializeWorkflow } = vi.hoisted(() => ({
+const { isDemoMode, requirePagePermission, listWorkflows, getWorkspaceAutomationPolicy, listPendingWorkflowApprovals, serializeWorkflow } = vi.hoisted(() => ({
   isDemoMode: vi.fn(),
   requirePagePermission: vi.fn(),
   listWorkflows: vi.fn(),
+  getWorkspaceAutomationPolicy: vi.fn(),
   listPendingWorkflowApprovals: vi.fn(),
   serializeWorkflow: vi.fn((value: unknown) => value),
 }));
 
-vi.mock("@harly/config", () => ({ isDemoMode }));
+vi.mock("@harly/config", () => ({
+  isDemoMode,
+  loadHarlyConfig: () => ({ HARLY_URL: "https://ci.example.invalid" }),
+}));
 vi.mock("@/features/workspaces/permissions-server", () => ({ requirePagePermission }));
 vi.mock("@/features/automations/data", () => ({
   listWorkflows,
+  getWorkspaceAutomationPolicy,
   listPendingWorkflowApprovals,
   serializeWorkflow,
 }));
@@ -36,6 +41,7 @@ describe("Automations page demo branch", () => {
     expect((page as ReactElement).type).toBe(AutomationsDemo);
     expect(requirePagePermission).not.toHaveBeenCalled();
     expect(listWorkflows).not.toHaveBeenCalled();
+    expect(getWorkspaceAutomationPolicy).not.toHaveBeenCalled();
     expect(listPendingWorkflowApprovals).not.toHaveBeenCalled();
 
     const markup = renderToStaticMarkup(page);
@@ -56,12 +62,22 @@ describe("Automations page demo branch", () => {
       user: { id: "user-1" },
     });
     listWorkflows.mockResolvedValue([]);
+    getWorkspaceAutomationPolicy.mockResolvedValue({
+      enabled: true,
+      maxRunsPerMinute: 300,
+      maxExternalActionsPerMinute: 150,
+      maxConcurrentRuns: 20,
+      pausedAt: null,
+      pausedById: null,
+      pauseReason: null,
+    });
     listPendingWorkflowApprovals.mockResolvedValue([]);
 
     const page = await AutomationsPage();
 
     expect(requirePagePermission).toHaveBeenCalledWith("automations:manage");
     expect(listWorkflows).toHaveBeenCalledWith("workspace-1");
+    expect(getWorkspaceAutomationPolicy).toHaveBeenCalledWith("workspace-1");
     expect(listPendingWorkflowApprovals).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       actorId: "user-1",

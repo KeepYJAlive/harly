@@ -10,6 +10,7 @@ import {
   deleteWorkflow,
   getRun,
   getWorkflowMetrics,
+  getWorkspaceAutomationPolicy,
   getWorkflow,
   listRunSteps,
   listRuns,
@@ -28,6 +29,7 @@ import {
   serializeRunStep,
   serializeWorkflow,
   serializeWorkflowVersion,
+  setWorkspaceAutomationEnabled,
   updateWorkflow,
 } from "./data";
 import {
@@ -86,6 +88,40 @@ const log = createLogger("automations");
  */
 
 const AUTOMATIONS_PATH = "/dashboard/automations";
+
+export async function setWorkspaceAutomationEnabledAction(input: {
+  enabled: boolean;
+  reason: string;
+}): Promise<AutomationsActionResult & {
+  policy?: Awaited<ReturnType<typeof getWorkspaceAutomationPolicy>>;
+}> {
+  try {
+    const { organization, user } = await requireAutomationsMutationPermission();
+    const policy = await setWorkspaceAutomationEnabled({
+      workspaceId: organization.id,
+      actorId: user.id,
+      enabled: input.enabled,
+      reason: input.reason,
+    });
+    await logAuditEvent({
+      workspaceId: organization.id,
+      actorId: user.id,
+      action: input.enabled
+        ? "automation.workspace_resumed"
+        : "automation.workspace_paused",
+      resourceType: "workspace_automation_policy",
+      resourceId: organization.id,
+      metadata: { reason: input.reason.trim() },
+    });
+    revalidatePath(AUTOMATIONS_PATH);
+    return { ok: true, policy };
+  } catch (error) {
+    return {
+      ok: false,
+      error: errorMessage(error, "Could not update workspace automations."),
+    };
+  }
+}
 
 function serializeWebhookEndpoint(endpoint: {
   id: string;

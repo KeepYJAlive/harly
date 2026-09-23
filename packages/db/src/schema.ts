@@ -5430,6 +5430,94 @@ export const workflowRunBuckets = pgTable(
   ],
 );
 
+/** Workspace-wide Automations guardrails and the current pause attribution. */
+export const workspaceAutomationPolicies = pgTable(
+  "workspace_automation_policies",
+  {
+    workspaceId: text("workspace_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").default(true).notNull(),
+    maxRunsPerMinute: integer("max_runs_per_minute").default(300).notNull(),
+    maxExternalActionsPerMinute: integer("max_external_actions_per_minute")
+      .default(150)
+      .notNull(),
+    maxConcurrentRuns: integer("max_concurrent_runs").default(20).notNull(),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pausedById: text("paused_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    pauseReason: text("pause_reason"),
+    updatedById: text("updated_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps(),
+  },
+  (table) => [
+    check(
+      "workspace_automation_policies_run_limit_check",
+      sql`${table.maxRunsPerMinute} > 0`,
+    ),
+    check(
+      "workspace_automation_policies_external_limit_check",
+      sql`${table.maxExternalActionsPerMinute} > 0`,
+    ),
+    check(
+      "workspace_automation_policies_concurrent_limit_check",
+      sql`${table.maxConcurrentRuns} > 0`,
+    ),
+  ],
+);
+
+/** Atomic workspace-wide run admission reservations, one row per UTC minute. */
+export const workspaceAutomationRunBuckets = pgTable(
+  "workspace_automation_run_buckets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    bucketStart: timestamp("bucket_start", { withTimezone: true }).notNull(),
+    reserved: integer("reserved").default(0).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("workspace_automation_run_buckets_window_uidx").on(
+      table.workspaceId,
+      table.bucketStart,
+    ),
+    index("workspace_automation_run_buckets_cleanup_idx").on(table.bucketStart),
+    check("workspace_automation_run_buckets_reserved_check", sql`${table.reserved} >= 0`),
+  ],
+);
+
+/** Atomic workspace-wide external-effect reservations, one row per UTC minute. */
+export const workspaceAutomationExternalActionBuckets = pgTable(
+  "workspace_automation_external_action_buckets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    bucketStart: timestamp("bucket_start", { withTimezone: true }).notNull(),
+    reserved: integer("reserved").default(0).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("workspace_automation_external_action_buckets_window_uidx").on(
+      table.workspaceId,
+      table.bucketStart,
+    ),
+    index("workspace_automation_external_action_buckets_cleanup_idx").on(
+      table.bucketStart,
+    ),
+    check(
+      "workspace_automation_external_action_buckets_reserved_check",
+      sql`${table.reserved} >= 0`,
+    ),
+  ],
+);
+
 export const workflowExternalActionBuckets = pgTable(
   "workflow_external_action_buckets",
   {

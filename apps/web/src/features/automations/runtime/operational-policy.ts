@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 
 import {
   db,
@@ -8,14 +8,31 @@ import {
   workflowExternalActionBuckets,
   workflowRunBuckets,
   workflowRuns,
+  workspaceAutomationPolicies,
+  workspaceAutomationExternalActionBuckets,
+  workspaceAutomationRunBuckets,
 } from "@harly/db";
+import { recordAutomationGuardDecision } from "@/server/observability/metrics";
 
 /** A bounded chain may still span several workflow definitions. */
 export const MAX_LINEAGE_EXTERNAL_ACTIONS = 100;
 
 export type ExternalActionReservation =
   | { ok: true }
-  | { ok: false; code: "CIRCUIT_OPEN" | "EXTERNAL_RATE_LIMITED" | "LINEAGE_EFFECT_BUDGET_EXHAUSTED" | "WORKFLOW_POLICY_NOT_FOUND" };
+  | {
+      ok: false;
+      code:
+        | "CIRCUIT_OPEN"
+        | "EXTERNAL_RATE_LIMITED"
+        | "WORKSPACE_PAUSED"
+        | "WORKSPACE_EXTERNAL_RATE_LIMITED"
+        | "WORKSPACE_RUN_RATE_LIMITED"
+        | "RUN_RATE_LIMITED"
+        | "WORKSPACE_CONCURRENCY_LIMITED"
+        | "LINEAGE_EFFECT_BUDGET_EXHAUSTED"
+        | "WORKFLOW_POLICY_NOT_FOUND";
+      deferUntil?: Date;
+    };
 
 class ReservationRejected extends Error {
   constructor(readonly code: Extract<ExternalActionReservation, { ok: false }>['code']) {
@@ -33,6 +50,18 @@ function minuteBucket(now = new Date()): Date {
       now.getUTCMinutes(),
     ),
   );
+}
+
+export async function workspaceAutomationsEnabled(
+  workspaceId: string,
+  database: typeof db = db,
+): Promise<boolean> {
+  const [policy] = await database
+    .select({ enabled: workspaceAutomationPolicies.enabled })
+    .from(workspaceAutomationPolicies)
+    .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId))
+    .limit(1);
+  return policy?.enabled ?? true;
 }
 
 /**
@@ -63,6 +92,23 @@ export async function reserveExternalActionPolicy(input: {
       .limit(1);
     if (!run) throw new ReservationRejected("WORKFLOW_POLICY_NOT_FOUND");
 
+    await tx
+      .insert(workspaceAutomationPolicies)
+      .values({ workspaceId: input.workspaceId })
+      .onConflictDoNothing();
+    const [workspacePolicy] = await tx
+      .select({
+        enabled: workspaceAutomationPolicies.enabled,
+        maxExternalActionsPerMinute:
+          workspaceAutomationPolicies.maxExternalActionsPerMinute,
+      })
+      .from(workspaceAutomationPolicies)
+      .where(eq(workspaceAutomationPolicies.workspaceId, input.workspaceId))
+      .for("update");
+    if (!workspacePolicy || !workspacePolicy.enabled) {
+      throw new ReservationRejected("WORKSPACE_PAUSED");
+    }
+
     const [definition] = await tx
       .select({
         maxExternalActionsPerMinute:
@@ -83,6 +129,27 @@ export async function reserveExternalActionPolicy(input: {
     }
 
     const bucketStart = minuteBucket(now);
+    const [workspaceBucket] = await tx
+      .insert(workspaceAutomationExternalActionBuckets)
+      .values({ workspaceId: input.workspaceId, bucketStart, reserved: 1 })
+      .onConflictDoUpdate({
+        target: [
+          workspaceAutomationExternalActionBuckets.workspaceId,
+          workspaceAutomationExternalActionBuckets.bucketStart,
+        ],
+        set: {
+          reserved: sql`${workspaceAutomationExternalActionBuckets.reserved} + 1`,
+          updatedAt: sql`clock_timestamp()`,
+        },
+        where: lt(
+          workspaceAutomationExternalActionBuckets.reserved,
+          workspacePolicy.maxExternalActionsPerMinute,
+        ),
+      })
+      .returning({ id: workspaceAutomationExternalActionBuckets.id });
+    if (!workspaceBucket)
+      throw new ReservationRejected("WORKSPACE_EXTERNAL_RATE_LIMITED");
+
     const [bucket] = await tx
       .insert(workflowExternalActionBuckets)
       .values({
@@ -131,7 +198,13 @@ export async function reserveExternalActionPolicy(input: {
     });
   } catch (error) {
     if (error instanceof ReservationRejected) {
-      return { ok: false, code: error.code };
+      recordAutomationGuardDecision(error.code);
+      const deferUntil =
+        error.code === "WORKSPACE_PAUSED" ||
+        error.code === "WORKSPACE_EXTERNAL_RATE_LIMITED"
+          ? new Date(minuteBucket(now).getTime() + 60_000)
+          : undefined;
+      return { ok: false, code: error.code, deferUntil };
     }
     throw error;
   }
@@ -202,7 +275,12 @@ export type RunAdmissionReservation =
   | { ok: true }
   | {
       ok: false;
-      code: "CIRCUIT_OPEN" | "RUN_RATE_LIMITED" | "WORKFLOW_POLICY_NOT_FOUND";
+      code:
+        | "CIRCUIT_OPEN"
+        | "RUN_RATE_LIMITED"
+        | "WORKSPACE_PAUSED"
+        | "WORKSPACE_RUN_RATE_LIMITED"
+        | "WORKFLOW_POLICY_NOT_FOUND";
       /** Earliest time the caller may retry admission. */
       deferUntil: Date;
     };
@@ -223,6 +301,7 @@ export async function reserveRunAdmissionPolicy(input: {
   const database = input.database ?? db;
   const now = input.now ?? new Date();
   if (input.circuitOpenUntil && input.circuitOpenUntil > now) {
+    recordAutomationGuardDecision("CIRCUIT_OPEN");
     return {
       ok: false,
       code: "CIRCUIT_OPEN",
@@ -231,39 +310,117 @@ export async function reserveRunAdmissionPolicy(input: {
   }
   const bucketStart = minuteBucket(now);
   const nextBucket = new Date(bucketStart.getTime() + 60_000);
+  const runAdmissionCodes = [
+    "CIRCUIT_OPEN",
+    "RUN_RATE_LIMITED",
+    "WORKSPACE_PAUSED",
+    "WORKSPACE_RUN_RATE_LIMITED",
+  ] as const;
   try {
-    const [bucket] = await database
-      .insert(workflowRunBuckets)
-      .values({
-        workspaceId: input.workspaceId,
-        workflowId: input.workflowId,
-        bucketStart,
-        reserved: 1,
-      })
-      .onConflictDoUpdate({
-        target: [
-          workflowRunBuckets.workspaceId,
-          workflowRunBuckets.workflowId,
-          workflowRunBuckets.bucketStart,
-        ],
-        set: {
-          reserved: sql`${workflowRunBuckets.reserved} + 1`,
-          updatedAt: sql`clock_timestamp()`,
-        },
-        where: lt(workflowRunBuckets.reserved, input.maxRunsPerMinute),
-      })
-      .returning({ id: workflowRunBuckets.id });
-    if (!bucket) {
+    return await database.transaction(async (tx) => {
+      await tx
+        .insert(workspaceAutomationPolicies)
+        .values({ workspaceId: input.workspaceId })
+        .onConflictDoNothing();
+      const [policy] = await tx
+        .select({
+          enabled: workspaceAutomationPolicies.enabled,
+          maxRunsPerMinute: workspaceAutomationPolicies.maxRunsPerMinute,
+        })
+        .from(workspaceAutomationPolicies)
+        .where(eq(workspaceAutomationPolicies.workspaceId, input.workspaceId))
+        .for("update");
+      if (!policy || !policy.enabled) {
+        throw new ReservationRejected("WORKSPACE_PAUSED");
+      }
+
+      const [workflowBucket] = await tx
+        .insert(workflowRunBuckets)
+        .values({
+          workspaceId: input.workspaceId,
+          workflowId: input.workflowId,
+          bucketStart,
+          reserved: 1,
+        })
+        .onConflictDoUpdate({
+          target: [
+            workflowRunBuckets.workspaceId,
+            workflowRunBuckets.workflowId,
+            workflowRunBuckets.bucketStart,
+          ],
+          set: {
+            reserved: sql`${workflowRunBuckets.reserved} + 1`,
+            updatedAt: sql`clock_timestamp()`,
+          },
+          where: lt(workflowRunBuckets.reserved, input.maxRunsPerMinute),
+        })
+        .returning({ id: workflowRunBuckets.id });
+      if (!workflowBucket) throw new ReservationRejected("RUN_RATE_LIMITED");
+
+      const [workspaceBucket] = await tx
+        .insert(workspaceAutomationRunBuckets)
+        .values({ workspaceId: input.workspaceId, bucketStart, reserved: 1 })
+        .onConflictDoUpdate({
+          target: [
+            workspaceAutomationRunBuckets.workspaceId,
+            workspaceAutomationRunBuckets.bucketStart,
+          ],
+          set: {
+            reserved: sql`${workspaceAutomationRunBuckets.reserved} + 1`,
+            updatedAt: sql`clock_timestamp()`,
+          },
+          where: lt(
+            workspaceAutomationRunBuckets.reserved,
+            policy.maxRunsPerMinute,
+          ),
+        })
+        .returning({ id: workspaceAutomationRunBuckets.id });
+      if (!workspaceBucket)
+        throw new ReservationRejected("WORKSPACE_RUN_RATE_LIMITED");
+      return { ok: true } as const;
+    }).catch((error) => {
+      if (!(error instanceof ReservationRejected)) throw error;
+      if (!(runAdmissionCodes as readonly string[]).includes(error.code)) {
+        throw error;
+      }
+      recordAutomationGuardDecision(error.code);
       return {
-        ok: false,
-        code: "RUN_RATE_LIMITED",
+        ok: false as const,
+        code: error.code as (typeof runAdmissionCodes)[number],
         deferUntil: nextBucket,
       };
-    }
-    return { ok: true };
+    });
   } catch (error) {
     // Surface infra failures to the caller (fail-closed at dispatch).
     throw error;
   }
 }
 
+/** Remove at most `limit` minute buckets per table, retaining a day for audit/debug. */
+export async function cleanupExpiredWorkspaceAutomationBuckets(input: {
+  limit?: number;
+  now?: Date;
+  database?: typeof db;
+} = {}): Promise<number> {
+  const database = input.database ?? db;
+  const limit = Math.min(2_000, Math.max(1, Math.floor(input.limit ?? 500)));
+  const cutoff = new Date((input.now ?? new Date()).getTime() - 24 * 60 * 60_000);
+  let deleted = 0;
+  for (const table of [
+    workspaceAutomationRunBuckets,
+    workspaceAutomationExternalActionBuckets,
+  ]) {
+    const expired = database
+      .select({ id: table.id })
+      .from(table)
+      .where(lt(table.bucketStart, cutoff))
+      .orderBy(table.bucketStart)
+      .limit(limit);
+    const rows = await database
+      .delete(table)
+      .where(inArray(table.id, expired))
+      .returning({ id: table.id });
+    deleted += rows.length;
+  }
+  return deleted;
+}

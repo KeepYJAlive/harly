@@ -199,6 +199,49 @@ export function graphNodeStore(database: Pick<typeof db, "transaction">) {
         return true;
       });
     },
+    /** Remove an action reservation only when no provider/internal effect ran. */
+    async releaseUnstarted(
+      lease: RunLease,
+      executionId: string,
+      attemptId: string,
+    ): Promise<boolean> {
+      return database.transaction(async (tx) => {
+        if (!(await graphRunLeases(tx).renew(lease))) return false;
+        const [attempt] = await tx
+          .select({ id: workflowNodeAttempts.id })
+          .from(workflowNodeAttempts)
+          .where(
+            and(
+              eq(workflowNodeAttempts.id, attemptId),
+              eq(workflowNodeAttempts.executionId, executionId),
+              eq(workflowNodeAttempts.workspaceId, lease.workspaceId),
+              eq(workflowNodeAttempts.status, "running"),
+              eq(workflowNodeAttempts.fenceToken, lease.fenceToken),
+            ),
+          )
+          .limit(1);
+        const [execution] = await tx
+          .select({ id: workflowNodeExecutions.id })
+          .from(workflowNodeExecutions)
+          .where(
+            and(
+              eq(workflowNodeExecutions.id, executionId),
+              eq(workflowNodeExecutions.runId, lease.runId),
+              eq(workflowNodeExecutions.workspaceId, lease.workspaceId),
+              eq(workflowNodeExecutions.status, "running"),
+            ),
+          )
+          .limit(1);
+        if (!attempt || !execution) return false;
+        await tx
+          .delete(workflowNodeAttempts)
+          .where(eq(workflowNodeAttempts.id, attempt.id));
+        await tx
+          .delete(workflowNodeExecutions)
+          .where(eq(workflowNodeExecutions.id, execution.id));
+        return true;
+      });
+    },
     /** Convert abandoned provider calls into explicit uncertainty. */
     async reconcileStale(lease: RunLease): Promise<number> {
       return database.transaction(async (tx) => {

@@ -23,6 +23,7 @@ import {
   workflowNodeExecutions,
   workflowRunSteps,
   workflowRuns,
+  workspaceAutomationPolicies,
   type WorkflowDefinition,
   type WorkflowRun,
   type WorkflowRunStep,
@@ -185,6 +186,77 @@ export async function listWorkflows(
   workspaceId: string,
 ): Promise<HydratedWorkflow[]> {
   return listHydratedWorkflows(workspaceId);
+}
+
+export type WorkspaceAutomationPolicySnapshot = {
+  enabled: boolean;
+  maxRunsPerMinute: number;
+  maxExternalActionsPerMinute: number;
+  maxConcurrentRuns: number;
+  pausedAt: string | null;
+  pausedById: string | null;
+  pauseReason: string | null;
+};
+
+function serializeWorkspaceAutomationPolicy(
+  policy: typeof workspaceAutomationPolicies.$inferSelect,
+): WorkspaceAutomationPolicySnapshot {
+  return {
+    enabled: policy.enabled,
+    maxRunsPerMinute: policy.maxRunsPerMinute,
+    maxExternalActionsPerMinute: policy.maxExternalActionsPerMinute,
+    maxConcurrentRuns: policy.maxConcurrentRuns,
+    pausedAt: policy.pausedAt?.toISOString() ?? null,
+    pausedById: policy.pausedById,
+    pauseReason: policy.pauseReason,
+  };
+}
+
+export async function getWorkspaceAutomationPolicy(
+  workspaceId: string,
+): Promise<WorkspaceAutomationPolicySnapshot> {
+  await db
+    .insert(workspaceAutomationPolicies)
+    .values({ workspaceId })
+    .onConflictDoNothing();
+  const [policy] = await db
+    .select()
+    .from(workspaceAutomationPolicies)
+    .where(eq(workspaceAutomationPolicies.workspaceId, workspaceId))
+    .limit(1);
+  if (!policy) throw ApiError.notFound("Workspace not found.");
+  return serializeWorkspaceAutomationPolicy(policy);
+}
+
+export async function setWorkspaceAutomationEnabled(input: {
+  workspaceId: string;
+  actorId: string;
+  enabled: boolean;
+  reason: string;
+}): Promise<WorkspaceAutomationPolicySnapshot> {
+  const reason = input.reason.trim();
+  if (!reason) throw ApiError.badRequest("A reason is required.");
+  if (reason.length > 500)
+    throw ApiError.badRequest("Reason must be 500 characters or fewer.");
+  await db
+    .insert(workspaceAutomationPolicies)
+    .values({ workspaceId: input.workspaceId })
+    .onConflictDoNothing();
+  const now = new Date();
+  const [policy] = await db
+    .update(workspaceAutomationPolicies)
+    .set({
+      enabled: input.enabled,
+      pausedAt: input.enabled ? null : now,
+      pausedById: input.enabled ? null : input.actorId,
+      pauseReason: input.enabled ? null : reason,
+      updatedById: input.actorId,
+      updatedAt: now,
+    })
+    .where(eq(workspaceAutomationPolicies.workspaceId, input.workspaceId))
+    .returning();
+  if (!policy) throw ApiError.notFound("Workspace not found.");
+  return serializeWorkspaceAutomationPolicy(policy);
 }
 
 export type PendingWorkflowApproval = {

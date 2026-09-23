@@ -92,6 +92,10 @@ export function recordWorkflowNodeAttempt(input: {
   );
   observe(state.workflowActionDuration, Math.max(0, input.durationMs) / 1000);
 }
+
+export function recordAutomationGuardDecision(code: string) {
+  increment(`automation_guard|${safeLabel(code)}`);
+}
 export function recordSseConnection(delta: 1 | -1) {
   state.sseConnections = Math.max(0, state.sseConnections + delta);
   increment(delta === 1 ? "sse_connection_opened" : "sse_connection_closed");
@@ -275,6 +279,13 @@ export async function renderPrometheusMetrics() {
       .map(([key, value]) => {
         const [, actionType, status] = key.split("|");
         return `harly_workflow_node_attempts_total{action_type="${actionType}",status="${status}"} ${value}`;
+      }),
+    "# TYPE harly_automation_guard_denials_total counter",
+    ...[...state.counters.entries()]
+      .filter(([key]) => key.startsWith("automation_guard|"))
+      .map(([key, value]) => {
+        const [, code] = key.split("|");
+        return `harly_automation_guard_denials_total{code="${code}"} ${value}`;
       }),
     "# TYPE harly_workflow_node_attempt_duration_seconds histogram",
     ...histogramLines(
