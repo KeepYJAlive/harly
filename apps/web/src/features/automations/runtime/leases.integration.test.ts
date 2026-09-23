@@ -570,6 +570,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       requestDraftApproval({
         workspaceId,
         id: draft.id,
+        requesterId: fixtureUserId,
         expectedRevision: draft.draftRevision,
         database: client!.db,
       }),
@@ -577,9 +578,19 @@ describe.skipIf(!url)("Postgres graph leases", () => {
     const requested = await requestDraftApproval({
       workspaceId,
       id: draft.id,
+      requesterId: fixtureUserId,
       expectedRevision: saved.draftRevision,
       database: client!.db,
     });
+    await expect(
+      approveDraft({
+        workspaceId,
+        id: draft.id,
+        approverId: fixtureUserId,
+        expectedRevision: requested.draftRevision,
+        database: client!.db,
+      }),
+    ).rejects.toThrow(/requester.*cannot approve/i);
     const approved = await approveDraft({
       workspaceId,
       id: draft.id,
@@ -680,6 +691,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
       requestDraftApproval({
         workspaceId,
         id: draft.id,
+        requesterId: fixtureUserId,
         expectedRevision: draft.draftRevision,
         database: client!.db,
       }),

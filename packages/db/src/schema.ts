@@ -4910,6 +4910,10 @@ export const workflowDefinitions = pgTable(
     approvalRequestedAt: timestamp("approval_requested_at", {
       withTimezone: true,
     }),
+    approvalRequestedById: text("approval_requested_by_id").references(
+      () => user.id,
+      { onDelete: "set null" },
+    ),
     approvedById: text("approved_by_id").references(() => user.id, {
       onDelete: "set null",
     }),

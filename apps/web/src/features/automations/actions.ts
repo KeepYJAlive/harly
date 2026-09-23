@@ -516,6 +516,7 @@ export async function requestWorkflowApprovalAction(
     await requestWorkflowApproval({
       workspaceId: organization.id,
       id,
+      requesterId: user.id,
       expectedRevision,
     });
     await logAuditEvent({

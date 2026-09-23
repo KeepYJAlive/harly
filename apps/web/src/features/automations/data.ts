@@ -362,6 +362,7 @@ export async function deleteWorkflow(input: {
 export async function requestWorkflowApproval(input: {
   workspaceId: string;
   id: string;
+  requesterId: string;
   expectedRevision: number;
 }): Promise<HydratedWorkflow> {
   return requestDraftApproval(input);

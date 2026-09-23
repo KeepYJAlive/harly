@@ -1030,6 +1030,13 @@
       "when": 1790050724852,
       "tag": "0146_wakeful_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1790124494555,
+      "tag": "0147_past_bucky",
+      "breakpoints": true
     }
   ]
 }

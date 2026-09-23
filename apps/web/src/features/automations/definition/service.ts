@@ -501,11 +501,13 @@ export async function saveWorkflowDraft(input: {
       definitionPatch.status = "draft";
       definitionPatch.enabled = false;
       definitionPatch.approvalRequestedAt = null;
+      definitionPatch.approvalRequestedById = null;
       definitionPatch.approvedById = null;
       definitionPatch.approvedAt = null;
     }
     if (hashChanged) {
       definitionPatch.approvalRequestedAt = null;
+      definitionPatch.approvalRequestedById = null;
       definitionPatch.approvedById = null;
       definitionPatch.approvedAt = null;
     }
@@ -537,6 +539,7 @@ export async function saveWorkflowDraft(input: {
 export async function requestDraftApproval(input: {
   workspaceId: string;
   id: string;
+  requesterId: string;
   expectedRevision: number;
   database?: typeof db;
 }): Promise<HydratedWorkflow> {
@@ -584,6 +587,7 @@ export async function requestDraftApproval(input: {
       .update(workflowDefinitions)
       .set({
         approvalRequestedAt: new Date(),
+        approvalRequestedById: input.requesterId,
         approvedAt: null,
         approvedById: null,
         updatedAt: new Date(),
@@ -619,6 +623,14 @@ export async function approveDraft(input: {
     }
     if (!def.approvalRequestedAt || !draft.reviewHash) {
       throw ApiError.conflict("This workflow has no approval request.");
+    }
+    if (!def.approvalRequestedById) {
+      throw ApiError.conflict("This approval request has no reviewer identity.");
+    }
+    if (def.approvalRequestedById === input.approverId) {
+      throw ApiError.conflict(
+        "The person who requested this review cannot approve it.",
+      );
     }
     if (draft.reviewHash !== draft.contentHash) {
       throw ApiError.conflict(
@@ -683,9 +695,12 @@ export async function publishDraft(input: {
         "Workflow needs approval from another member before publishing.",
       );
     }
-    if (def.approvedById === input.publisherId) {
+    if (
+      !def.approvalRequestedById ||
+      def.approvedById === def.approvalRequestedById
+    ) {
       throw ApiError.conflict(
-        "Workflow needs approval from another member before publishing.",
+        "Workflow needs independent approval from another member before publishing.",
       );
     }
     if (!draft.reviewHash || draft.reviewHash !== draft.contentHash) {
@@ -855,6 +870,7 @@ export async function rollbackVersionToDraft(input: {
       .update(workflowDefinitions)
       .set({
         approvalRequestedAt: null,
+        approvalRequestedById: null,
         approvedById: null,
         approvedAt: null,
         updatedAt: new Date(),
