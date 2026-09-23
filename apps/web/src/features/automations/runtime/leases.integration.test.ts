@@ -28,6 +28,7 @@ import {
   workflowDefinitions,
   workflowDefinitionVersions,
   workflowExternalActionBuckets,
+  workflowExternalActionRefunds,
   workflowNodeAttempts,
   workflowNodeExecutions,
   workflowRuns,
@@ -54,6 +55,7 @@ import {
 } from "./worker";
 import { findDueWorkflowRuns } from "./due-runs";
 import {
+  cleanupExpiredWorkspaceAutomationBuckets,
   releaseUnstartedExternalActionReservation,
   recordExternalActionOutcome,
   reserveExternalActionPolicy,
@@ -611,6 +613,96 @@ describe.skipIf(!url)("Postgres graph leases", () => {
     expect(admittedWorkspaceBucket?.reserved).toBe(1);
     expect(admittedWorkflowBucket?.reserved).toBe(1);
     expect(admittedRoot?.used).toBe(1);
+  });
+
+  it("prunes expired refund receipts without deleting fresh idempotency records", async () => {
+    const workflowId = randomUUID();
+    const rootRunId = randomUUID();
+    const now = new Date();
+    const oldRefundId = randomUUID();
+    const secondOldRefundId = randomUUID();
+    const freshRefundId = randomUUID();
+    await client!.db.insert(workflowDefinitions).values({
+      id: workflowId,
+      workspaceId,
+      name: "Refund cleanup test",
+      triggerEvent: "application.created",
+      trigger: { event: "application.created" },
+      conditions: [],
+      actions: [],
+    });
+    await client!.db.insert(workflowRuns).values({
+      id: rootRunId,
+      rootRunId,
+      workspaceId,
+      workflowId,
+      triggerEvent: "application.created",
+      engineVersion: 1,
+      status: "succeeded",
+      finishedAt: now,
+    });
+    await client!.db.insert(workflowExternalActionRefunds).values([
+      {
+        reservationId: oldRefundId,
+        workspaceId,
+        workflowId,
+        rootRunId,
+        bucketStart: now,
+        refundedAt: new Date(now.getTime() - 26 * 60 * 60_000),
+      },
+      {
+        reservationId: secondOldRefundId,
+        workspaceId,
+        workflowId,
+        rootRunId,
+        bucketStart: now,
+        refundedAt: new Date(now.getTime() - 25 * 60 * 60_000),
+      },
+      {
+        reservationId: freshRefundId,
+        workspaceId,
+        workflowId,
+        rootRunId,
+        bucketStart: now,
+        refundedAt: new Date(now.getTime() - 23 * 60 * 60_000),
+      },
+    ]);
+
+    expect(
+      await cleanupExpiredWorkspaceAutomationBuckets({
+        database: client!.db,
+        limit: 1,
+        now,
+      }),
+    ).toBeGreaterThanOrEqual(1);
+    let retained = await client!.db
+      .select({ reservationId: workflowExternalActionRefunds.reservationId })
+      .from(workflowExternalActionRefunds)
+      .where(
+        inArray(workflowExternalActionRefunds.reservationId, [
+          oldRefundId,
+          secondOldRefundId,
+          freshRefundId,
+        ]),
+      );
+    expect(retained.map((row) => row.reservationId).sort()).toEqual(
+      [secondOldRefundId, freshRefundId].sort(),
+    );
+
+    expect(
+      await cleanupExpiredWorkspaceAutomationBuckets({
+        database: client!.db,
+        limit: 1,
+        now,
+      }),
+    ).toBeGreaterThanOrEqual(1);
+    retained = await client!.db
+      .select({ reservationId: workflowExternalActionRefunds.reservationId })
+      .from(workflowExternalActionRefunds)
+      .where(
+        eq(workflowExternalActionRefunds.reservationId, freshRefundId),
+      );
+    expect(retained).toHaveLength(1);
   });
 
   it("enforces workspace run ceilings and pause status across workflows", async () => {

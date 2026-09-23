@@ -501,7 +501,7 @@ export async function reserveRunAdmissionPolicy(input: {
   }
 }
 
-/** Remove at most `limit` minute buckets per table, retaining a day for audit/debug. */
+/** Remove at most `limit` runtime receipts per table, retaining a day for audit/debug. */
 export async function cleanupExpiredWorkspaceAutomationBuckets(input: {
   limit?: number;
   now?: Date;
@@ -527,5 +527,20 @@ export async function cleanupExpiredWorkspaceAutomationBuckets(input: {
       .returning({ id: table.id });
     deleted += rows.length;
   }
-  return deleted;
+  const expiredRefunds = database
+    .select({ reservationId: workflowExternalActionRefunds.reservationId })
+    .from(workflowExternalActionRefunds)
+    .where(lt(workflowExternalActionRefunds.refundedAt, cutoff))
+    .orderBy(workflowExternalActionRefunds.refundedAt)
+    .limit(limit);
+  const refunds = await database
+    .delete(workflowExternalActionRefunds)
+    .where(
+      inArray(
+        workflowExternalActionRefunds.reservationId,
+        expiredRefunds,
+      ),
+    )
+    .returning({ reservationId: workflowExternalActionRefunds.reservationId });
+  return deleted + refunds.length;
 }
