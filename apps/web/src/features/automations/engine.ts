@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -18,6 +18,7 @@ import { createLogger } from "@/lib/logger";
 import { getRolePermissions } from "@/features/workspaces/permissions-server";
 import { roleIsAllPowerful } from "@/features/workspaces/permissions";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
+import { reserveExternalActionPolicy } from "./runtime/operational-policy";
 
 import {
   evaluateConditions,
@@ -197,23 +198,6 @@ function containsAutomatedEvaluationCondition(conditions: Conditions): boolean {
 const SENSITIVE_LOG_KEYS = /secret|token|password|authorization|cookie|credential|body/i;
 const EXTERNAL_ACTION_TYPES = ["send_slack", "send_email", "http_request"] as const;
 
-async function externalActionBudgetExceeded(actionCtx: ActionContext, actionType: string): Promise<boolean> {
-  if (!actionCtx.workflowId || !EXTERNAL_ACTION_TYPES.includes(actionType as (typeof EXTERNAL_ACTION_TYPES)[number])) return false;
-  const [recent] = await db
-    .select({ total: count() })
-    .from(workflowRunSteps)
-    .innerJoin(workflowRuns, eq(workflowRuns.id, workflowRunSteps.runId))
-    .where(
-      and(
-        eq(workflowRuns.workspaceId, actionCtx.workspaceId),
-        eq(workflowRuns.workflowId, actionCtx.workflowId),
-        gte(workflowRunSteps.startedAt, new Date(Date.now() - 60_000)),
-        inArray(workflowRunSteps.actionType, [...EXTERNAL_ACTION_TYPES]),
-      ),
-    );
-  return Number(recent?.total ?? 0) >= (actionCtx.maxExternalActionsPerMinute ?? 30);
-}
-
 function sanitizeLogValue(value: unknown, depth = 0): unknown {
   if (typeof value === "string") return value.length > 1_000 ? `${value.slice(0, 1_000)}…` : value;
   if (value === null || typeof value === "number" || typeof value === "boolean") return value;
@@ -366,15 +350,29 @@ async function executeAction(
     }
   }
 
-  if (await externalActionBudgetExceeded(actionCtx, action.type)) {
-    const result: ActionResult = {
-      success: false,
-      error: "External action rate limit exceeded; retrying later.",
-      errorCode: "external_rate_limited",
-      retryable: true,
-    };
-    await recordStep(result, "failed");
-    return result;
+  if (
+    actionCtx.workflowId &&
+    EXTERNAL_ACTION_TYPES.includes(action.type as (typeof EXTERNAL_ACTION_TYPES)[number])
+  ) {
+    const reservation = await reserveExternalActionPolicy({
+      workspaceId,
+      workflowId: actionCtx.workflowId,
+      runId,
+      database: actionCtx.database,
+    });
+    if (!reservation.ok) {
+      const rateLimited = reservation.code === "EXTERNAL_RATE_LIMITED";
+      const result: ActionResult = {
+        success: false,
+        error: rateLimited
+          ? "External action rate limit exceeded; retrying later."
+          : `External action blocked by workflow policy (${reservation.code}).`,
+        errorCode: reservation.code.toLowerCase(),
+        retryable: rateLimited,
+      };
+      await recordStep(result, "failed");
+      return result;
+    }
   }
 
   let result: ActionResult;

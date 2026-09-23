@@ -23,6 +23,7 @@ const { RUNS, DEFS, EFFECTS } = vi.hoisted(() => ({
   DEFS: { __table: "definitions" } as unknown,
   EFFECTS: { __table: "effects" } as unknown,
 }));
+const policyMocks = vi.hoisted(() => ({ reserveExternalActionPolicy: vi.fn() }));
 
 // Stable implementations so vi.clearAllMocks() doesn't wipe them between tests.
 // The engine calls db.select().from(table).where().limit() — the table marker
@@ -126,6 +127,9 @@ function getActionHandlerImpl(type: string) {
 vi.mock("./registry", () => ({
   getActionHandler: vi.fn(getActionHandlerImpl),
 }));
+vi.mock("./runtime/operational-policy", () => ({
+  reserveExternalActionPolicy: policyMocks.reserveExternalActionPolicy,
+}));
 
 vi.mock("@/features/workspaces/permissions-server", () => ({
   getRolePermissions: vi.fn().mockResolvedValue(["candidates:edit", "candidates:move"]),
@@ -195,6 +199,7 @@ describe("workflow engine — end-to-end", () => {
       ),
     }));
     (getActionHandler as ReturnType<typeof vi.fn>).mockImplementation(getActionHandlerImpl);
+    policyMocks.reserveExternalActionPolicy.mockResolvedValue({ ok: true });
     (getRolePermissions as ReturnType<typeof vi.fn>).mockResolvedValue([
       "candidates:edit",
       "candidates:move",
@@ -249,6 +254,39 @@ describe("workflow engine — end-to-end", () => {
       "add_note",
       "add_tag",
     ]);
+  });
+
+  it("does not run a legacy external action when the atomic policy reservation is denied", async () => {
+    dbState.runs = [{ ...baseRun, attemptCount: 0, maxAttempts: 3 }];
+    const handler = getActionHandlerImpl("http_request");
+    vi.mocked(getActionHandler).mockReturnValue(handler as never);
+    policyMocks.reserveExternalActionPolicy.mockResolvedValue({
+      ok: false,
+      code: "EXTERNAL_RATE_LIMITED",
+    });
+    setDefinition({
+      conditions: [],
+      maxExternalActionsPerMinute: 1,
+      actions: [{ type: "http_request", config: { body: "request" } }],
+    });
+    vi.mocked(loadConditionContext).mockResolvedValue(ctxWith({ experienceYears: 1 }));
+
+    const outcome = await runWorkflow("run-1");
+
+    expect(policyMocks.reserveExternalActionPolicy).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      workflowId: "wf-1",
+      runId: "run-1",
+      database: undefined,
+    });
+    expect(handler?.run).not.toHaveBeenCalled();
+    expect(dbState.steps[0]).toMatchObject({
+      actionType: "http_request",
+      status: "failed",
+      errorCode: "external_rate_limited",
+      retryable: true,
+    });
+    expect(outcome.status).toBe("running");
   });
 
   it("fails the run when an action fails and continueOnError is false", async () => {
