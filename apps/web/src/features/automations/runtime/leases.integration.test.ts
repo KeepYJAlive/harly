@@ -590,7 +590,7 @@ describe.skipIf(!url)("Postgres graph leases", () => {
         expectedRevision: requested.draftRevision,
         database: client!.db,
       }),
-    ).rejects.toThrow(/requester.*cannot approve/i);
+    ).rejects.toThrow(/requested this review cannot approve/i);
     const approved = await approveDraft({
       workspaceId,
       id: draft.id,
