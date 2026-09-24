@@ -29,6 +29,10 @@ export class S3Adapter implements StorageAdapter {
       region: config.region,
       endpoint: config.endpoint,
       forcePathStyle: false,
+
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
+
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
