@@ -28,7 +28,7 @@ export class S3Adapter implements StorageAdapter {
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint,
-      forcePathStyle: Boolean(config.endpoint),
+      forcePathStyle: false,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
