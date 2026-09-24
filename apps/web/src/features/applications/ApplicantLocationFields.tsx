@@ -23,6 +23,11 @@ import { getCities, getCountries, getRegions } from "./location-actions";
 
 type LocationOption = { code: string; name: string };
 
+const timeZoneOptions =
+  typeof Intl.supportedValuesOf === "function"
+    ? ["UTC", ...Intl.supportedValuesOf("timeZone")]
+    : ["UTC"];
+
 function SearchableLocationSelect({
   name,
   value,
@@ -128,6 +133,8 @@ export function ApplicantLocationFields({
   const [countryCode, setCountryCode] = useState("");
   const [region, setRegion] = useState("");
   const [city, setCity] = useState("");
+  const [timeZone, setTimeZone] = useState("");
+  const [timeZoneChanged, setTimeZoneChanged] = useState(false);
   const [regionsLoaded, setRegionsLoaded] = useState(false);
   const [citiesLoaded, setCitiesLoaded] = useState(false);
 
@@ -182,6 +189,18 @@ export function ApplicantLocationFields({
     };
   }, [countryCode, region, regions.length, regionsLoaded]);
 
+  useEffect(() => {
+    if (
+      !timeZoneChanged &&
+      countryCode &&
+      regionsLoaded &&
+      (regions.length === 0 || region) &&
+      citiesLoaded
+    ) {
+      setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+    }
+  }, [countryCode, region, regions.length, regionsLoaded, citiesLoaded, timeZoneChanged]);
+
   const countryName = countries.find(
     (country) => country.code === countryCode,
   )?.name;
@@ -209,6 +228,7 @@ export function ApplicantLocationFields({
               setCountryCode(value);
               setRegion("");
               setCity("");
+              setTimeZoneChanged(false);
             }}
           />
           {errors?.countryCode?.[0] ? (
@@ -234,6 +254,7 @@ export function ApplicantLocationFields({
             onChange={(value) => {
               setRegion(value);
               setCity("");
+              setTimeZoneChanged(false);
             }}
           />
           {errors?.region?.[0] ? (
@@ -278,6 +299,32 @@ export function ApplicantLocationFields({
               {errors.city[0]}
             </span>
           ) : null}
+        </label>
+
+        <label
+          hidden={
+            !countryCode ||
+            !regionsLoaded ||
+            (regions.length > 0 && !region) ||
+            !citiesLoaded
+          }
+        >
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            Preferred timezone location
+          </span>
+          <SearchableLocationSelect
+            name="timezone"
+            value={timeZone}
+            options={timeZoneOptions}
+            placeholder="Select preferred timezone"
+            inputClassName={inputClassName}
+            required
+            disabled={!countryCode || !regionsLoaded || !citiesLoaded}
+            onChange={(value) => {
+              setTimeZone(value);
+              setTimeZoneChanged(true);
+            }}
+          />
         </label>
       </div>
       <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">

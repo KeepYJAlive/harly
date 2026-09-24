@@ -1451,6 +1451,7 @@ export const candidates = pgTable(
     countryCode: text("country_code"),
     region: text("region"),
     city: text("city"),
+    timezone: text("timezone"),
     linkedinUrl: text("linkedin_url"),
     githubUrl: text("github_url"),
     websiteUrl: text("website_url"),

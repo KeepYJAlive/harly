@@ -302,6 +302,7 @@ export async function submitApplicationAction(
     countryCode: formData.get("countryCode"),
     region: formData.get("region"),
     city: formData.get("city"),
+    timezone: formData.get("timezone"),
     headline: formData.get("headline"),
     photoUrl: formData.get("photoUrl"),
     linkedinUrl: formData.get("linkedinUrl"),

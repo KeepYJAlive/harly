@@ -240,6 +240,11 @@ export function createApplicationFormSchema(
     ),
     region: optionalText,
     city: optionalText,
+    timezone: z
+      .string()
+      .trim()
+      .max(100, "Preferred timezone is too long.")
+      .optional(),
     headline: textFieldForConfig(
       isFieldEnabled(personal.headline),
       isFieldRequired(personal.headline),
