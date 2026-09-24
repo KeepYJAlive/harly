@@ -60,7 +60,15 @@ export const invitationSchema = z.object({
 
 // Public API v1 request contracts
 
-const employmentType = z.enum(["full_time", "part_time", "contract", "internship"]);
+const employmentType = z.enum([
+  "full_time",
+  "part_time",
+  "contract",
+  "temporary",
+  "internship",
+]);
+const opportunityType = z.enum(["employment", "volunteer"]);
+const commitmentPeriod = z.enum(["week", "month"]);
 const workplaceType = z.enum(["remote", "hybrid", "onsite"]);
 const jobStatus = z.enum(["draft", "open", "closed"]);
 const nullableString = z.string().trim().max(20_000).nullish();
@@ -88,13 +96,14 @@ const candidateExperienceEntrySchema = z.object({
   description: z.string().trim().max(20_000).nullable().default(null),
 });
 
-export const jobCreateSchema = z.object({
+const jobFieldsSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(50_000),
   slug: z.string().trim().max(200).optional(),
   department: nullableString,
   location: nullableString,
-  employmentType,
+  opportunityType,
+  employmentType: employmentType.nullish(),
   workplaceType,
   status: jobStatus.optional(),
   requirements: nullableString,
@@ -104,8 +113,58 @@ export const jobCreateSchema = z.object({
   salaryMax: z.number().int().nonnegative().nullish(),
   currency: z.string().trim().max(8).nullish(),
   salaryPeriod: z.enum(["annual", "monthly"]).nullish(),
+  minimumHours: z.number().int().positive().nullish(),
+  commitmentPeriod: commitmentPeriod.nullish(),
+  scheduleNotes: nullableString,
 });
-export const jobUpdateSchema = jobCreateSchema.partial();
+
+function validateOpportunityFields(
+  values: z.infer<typeof jobFieldsSchema>,
+  ctx: z.RefinementCtx,
+) {
+  if (values.opportunityType === "employment" && !values.employmentType) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["employmentType"],
+      message: "Employment type is required for employment opportunities.",
+    });
+  }
+
+  if (values.opportunityType === "volunteer") {
+    if (!values.minimumHours) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["minimumHours"],
+        message: "Minimum hours are required for volunteer opportunities.",
+      });
+    }
+    if (!values.commitmentPeriod) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["commitmentPeriod"],
+        message: "Commitment period is required for volunteer opportunities.",
+      });
+    }
+    if (
+      values.employmentType != null ||
+      values.salaryMin != null ||
+      values.salaryMax != null ||
+      values.currency != null ||
+      values.salaryPeriod != null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["opportunityType"],
+        message: "Volunteer opportunities cannot include employment or compensation fields.",
+      });
+    }
+  }
+}
+
+export const jobCreateSchema = jobFieldsSchema
+  .extend({ opportunityType: opportunityType.default("employment") })
+  .superRefine(validateOpportunityFields);
+export const jobUpdateSchema = jobFieldsSchema.partial();
 
 export const candidateCreateSchema = z.object({
   firstName: z.string().trim().min(1).max(120),

@@ -20,7 +20,8 @@ vi.mock("@/features/jobs/service", () => ({
     status: string;
     department?: string | null;
     location?: string | null;
-    employmentType: string;
+    opportunityType?: "employment" | "volunteer";
+    employmentType: string | null;
     workplaceType: string;
     description: string;
     requirements?: string | null;
@@ -30,6 +31,9 @@ vi.mock("@/features/jobs/service", () => ({
     salaryMax?: number | null;
     currency?: string | null;
     salaryPeriod?: string | null;
+    minimumHours?: number | null;
+    commitmentPeriod?: "week" | "month" | null;
+    scheduleNotes?: string | null;
     publishedAt?: string | null;
     createdAt?: string | Date;
     updatedAt?: string | Date;
@@ -40,6 +44,7 @@ vi.mock("@/features/jobs/service", () => ({
     status: job.status,
     department: job.department ?? null,
     location: job.location ?? null,
+    opportunityType: job.opportunityType ?? "employment",
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     description: job.description,
@@ -50,6 +55,9 @@ vi.mock("@/features/jobs/service", () => ({
     salaryMax: job.salaryMax ?? null,
     currency: job.currency ?? null,
     salaryPeriod: job.salaryPeriod ?? null,
+    minimumHours: job.minimumHours ?? null,
+    commitmentPeriod: job.commitmentPeriod ?? null,
+    scheduleNotes: job.scheduleNotes ?? null,
     publishedAt: job.publishedAt ?? null,
     createdAt: job.createdAt ?? "2026-01-10T14:00:00.000Z",
     updatedAt: job.updatedAt ?? "2026-01-10T14:00:00.000Z",
@@ -97,6 +105,7 @@ describe("Jobs Domain Contract & Route Tests", () => {
         status: "open",
         department: "Engineering",
         location: "Remote",
+        opportunityType: "employment",
         employmentType: "full_time",
         workplaceType: "remote",
         description: "Great role",
@@ -153,6 +162,7 @@ describe("Jobs Domain Contract & Route Tests", () => {
         status: "draft",
         department: "Engineering",
         location: "Santiago",
+        opportunityType: "employment",
         employmentType: "full_time",
         workplaceType: "onsite",
         description: "Role details",

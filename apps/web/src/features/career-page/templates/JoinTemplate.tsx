@@ -5,7 +5,12 @@ import Link from "next/link";
 import type { Route } from "next";
 import { ArrowUpRight, Check, ChevronRight, MapPin } from "lucide-react";
 
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 import type { WorkspaceBoardBranding } from "@/features/workspaces/board";
 import type { CareerPageConfig } from "@/features/career-page/config";
 import type { Job } from "@/features/career-page/types";
@@ -75,10 +80,15 @@ export function JoinTemplate({
   const [descOpen, setDescOpen] = useState(false);
   const [department, setDepartment] = useState(ALL);
   const [location, setLocation] = useState(ALL);
+  const [opportunityType, setOpportunityType] = useState(ALL);
 
   const departments = useMemo(() => facet(jobs, (j) => j.department), [jobs]);
   const locations = useMemo(
     () => facet(jobs, (j) => j.location ?? formatWorkplaceType(j.workplaceType)),
+    [jobs],
+  );
+  const opportunityTypes = useMemo(
+    () => facet(jobs, (j) => formatOpportunityType(j.opportunityType)),
     [jobs],
   );
 
@@ -89,9 +99,14 @@ export function JoinTemplate({
         const loc = j.location ?? formatWorkplaceType(j.workplaceType);
         if (loc !== location) return false;
       }
+      if (
+        opportunityType !== ALL &&
+        formatOpportunityType(j.opportunityType) !== opportunityType
+      )
+        return false;
       return true;
     });
-  }, [jobs, department, location]);
+  }, [jobs, department, location, opportunityType]);
 
   const stats = config.overview.enabled
     ? config.overview.stats.filter((st) => st.value.trim())
@@ -233,7 +248,7 @@ export function JoinTemplate({
 
         {/* Positions */}
         <section id="positions" className={`${reveal} scroll-mt-8 pt-10`}>
-          {enabled.length > 0 && (
+          {(enabled.length > 0 || opportunityTypes.length > 1) && (
             <div className="flex flex-wrap gap-3">
               {enabled.includes("department") && departments.length > 0 && (
                 <select
@@ -259,6 +274,21 @@ export function JoinTemplate({
                   {locations.map((l) => (
                     <option key={l} value={l}>
                       {l}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {opportunityTypes.length > 1 && (
+                <select
+                  value={opportunityType}
+                  onChange={(e) => setOpportunityType(e.target.value)}
+                  aria-label="Opportunity type"
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+                >
+                  <option value={ALL}>All opportunities</option>
+                  {opportunityTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
                     </option>
                   ))}
                 </select>
@@ -293,8 +323,21 @@ export function JoinTemplate({
                         <MapPin className="size-3.5 shrink-0" strokeWidth={1.8} />
                         {job.location ?? formatWorkplaceType(job.workplaceType)}
                         <span className="text-zinc-300 dark:text-zinc-600">·</span>
-                        {formatEmploymentType(job.employmentType)}
+                        {job.opportunityType === "volunteer"
+                          ? formatOpportunityType(job.opportunityType)
+                          : job.employmentType
+                            ? formatEmploymentType(job.employmentType)
+                            : formatOpportunityType(job.opportunityType)}
                       </span>
+                      {job.opportunityType === "volunteer" ? (
+                        <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                          Minimum Time Commitment:{" "}
+                          {formatMinimumTimeCommitment(
+                            job.minimumHours,
+                            job.commitmentPeriod,
+                          )}
+                        </span>
+                      ) : null}
                     </span>
                     <ChevronRight
                       className="size-4 shrink-0 text-zinc-300 transition-transform duration-150 group-hover:translate-x-0.5 dark:text-zinc-600"

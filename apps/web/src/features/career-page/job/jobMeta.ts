@@ -1,4 +1,9 @@
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 
 /** The job fields the public template chrome reads. Loose by design , the row
  *  from `getPublicJobDetail` is a superset. */
@@ -7,17 +12,22 @@ export type JobLike = {
   title: string;
   department: string | null;
   location: string | null;
-  employmentType: string;
+  opportunityType: "employment" | "volunteer";
+  employmentType: string | null;
   workplaceType: string;
   experienceLevel?: string | null;
   salaryMin?: number | null;
   salaryMax?: number | null;
   currency?: string | null;
   salaryPeriod?: string | null;
+  minimumHours?: number | null;
+  commitmentPeriod?: string | null;
+  scheduleNotes?: string | null;
 };
 
 /** Human compensation string, or null when no salary is set. */
 export function formatCompensation(job: JobLike): string | null {
+  if (job.opportunityType === "volunteer") return null;
   if (job.salaryMin == null && job.salaryMax == null) return null;
   const currency = job.currency || "USD";
   const fmt = (n: number) => {
@@ -46,7 +56,29 @@ export function buildJobMeta(job: JobLike): JobMetaItem[] {
   const items: JobMetaItem[] = [];
   if (job.location) items.push({ label: "Location", value: job.location });
   items.push({ label: "Workplace", value: formatWorkplaceType(job.workplaceType) });
-  items.push({ label: "Employment", value: formatEmploymentType(job.employmentType) });
+  items.push({
+    label: "Opportunity",
+    value:
+      job.opportunityType === "volunteer"
+        ? "Unpaid Volunteer Opportunity"
+        : formatOpportunityType(job.opportunityType),
+  });
+  if (job.opportunityType === "employment" && job.employmentType) {
+    items.push({
+      label: "Employment",
+      value: formatEmploymentType(job.employmentType),
+    });
+  }
+  if (job.opportunityType === "volunteer") {
+    const commitment = formatMinimumTimeCommitment(
+      job.minimumHours,
+      job.commitmentPeriod,
+    );
+    if (commitment) {
+      items.push({ label: "Minimum Time Commitment", value: commitment });
+    }
+    items.push({ label: "Compensation", value: "Unpaid" });
+  }
   if (job.department) items.push({ label: "Department", value: job.department });
   if (job.experienceLevel)
     items.push({ label: "Experience", value: job.experienceLevel });

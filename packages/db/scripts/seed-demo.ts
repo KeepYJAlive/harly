@@ -34,6 +34,14 @@ const DEFAULT_STAGES = [
   { name: "Rejected", color: "#FEE2E2" },
 ];
 
+const VOLUNTEER_STAGES = [
+  { name: "Applied", color: "#E0F2FE" },
+  { name: "Screening", color: "#F5F3FF" },
+  { name: "Interview", color: "#FEF3C7" },
+  { name: "Accepted", color: "#CCFBF1" },
+  { name: "Not Selected", color: "#FEE2E2" },
+];
+
 type StageName = (typeof DEFAULT_STAGES)[number]["name"];
 
 // Demo teammates — real `user` + `member` rows (no auth) so the dashboard can
@@ -196,10 +204,32 @@ const JOBS = [
     description:
       "<p>Generate and qualify pipeline for our account executives. Hungry, coachable, and resilient — prior SaaS outbound a plus.</p>",
   },
+  {
+    title: "Digital Artist",
+    department: "Creative",
+    sector: "Community",
+    location: "Remote",
+    opportunityType: "volunteer",
+    employmentType: null,
+    workplaceType: "remote",
+    experienceLevel: "Portfolio or equivalent experience",
+    education: "Any",
+    keywords: ["Digital art", "Illustration", "Community"],
+    salaryMin: null,
+    salaryMax: null,
+    currency: null,
+    salaryPeriod: null,
+    minimumHours: 5,
+    commitmentPeriod: "month",
+    scheduleNotes: "Flexible schedule with one monthly planning call.",
+    status: "open",
+    description:
+      "<p>Create welcoming digital artwork for our community education campaigns and social channels.</p>",
+  },
 ];
 
 // Hiring manager (teammate key) per job index — drives the ownership labels.
-const JOB_HM = ["sarah", "james", "emma", "sarah", "james", "diego", "emma"];
+const JOB_HM = ["sarah", "james", "emma", "sarah", "james", "diego", "emma", "sofia"];
 // Extra interviewers assigned to each job's hiring team.
 const JOB_INTERVIEWERS = [
   ["sofia", "diego"],
@@ -209,6 +239,7 @@ const JOB_INTERVIEWERS = [
   ["sofia"],
   ["diego"],
   ["emma"],
+  ["sarah"],
 ];
 
 const CANDIDATES = [

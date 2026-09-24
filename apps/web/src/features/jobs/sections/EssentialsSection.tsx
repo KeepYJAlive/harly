@@ -15,6 +15,7 @@ const employmentTypes = [
   { value: "full_time", label: "Full-time" },
   { value: "part_time", label: "Part-time" },
   { value: "contract", label: "Contract" },
+  { value: "temporary", label: "Temporary" },
   { value: "internship", label: "Internship" },
 ];
 
@@ -31,6 +32,8 @@ export function EssentialsSection({
   setTitle,
   titleError,
   setTitleError,
+  opportunityType,
+  setOpportunityType,
   workplace,
   setWorkplace,
 }: {
@@ -40,6 +43,8 @@ export function EssentialsSection({
   setTitle: (value: string) => void;
   titleError: boolean;
   setTitleError: (value: boolean) => void;
+  opportunityType: "employment" | "volunteer";
+  setOpportunityType: (value: "employment" | "volunteer") => void;
   workplace: string;
   setWorkplace: (value: string) => void;
 }) {
@@ -48,7 +53,7 @@ export function EssentialsSection({
       <div className="grid gap-4 sm:grid-cols-2">
         <FieldBox
           className="sm:col-span-2"
-          label="Job name"
+          label="Opportunity title"
           htmlFor="title"
           required
           error={titleError ? "Add a job title (at least 3 characters) to continue." : undefined}
@@ -62,7 +67,11 @@ export function EssentialsSection({
               if (titleError) setTitleError(false);
             }}
             aria-invalid={titleError}
-            placeholder="Senior Full Stack Engineer"
+            placeholder={
+              opportunityType === "volunteer"
+                ? "Digital Artist"
+                : "Senior Full Stack Engineer"
+            }
             className={fieldBoxControlClassName}
           />
         </FieldBox>
@@ -107,20 +116,49 @@ export function EssentialsSection({
           />
         </FieldBox>
 
-        <FieldBox label="Employment type" htmlFor="employmentType">
-          <Select name="employmentType" defaultValue={job?.employmentType ?? "full_time"}>
-            <SelectTrigger id="employmentType" className={fieldBoxSelectTriggerClassName}>
+        <FieldBox label="Opportunity type" htmlFor="opportunityType">
+          <Select
+            name="opportunityType"
+            value={opportunityType}
+            onValueChange={(value) =>
+              setOpportunityType(value as "employment" | "volunteer")
+            }
+          >
+            <SelectTrigger
+              id="opportunityType"
+              className={fieldBoxSelectTriggerClassName}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {employmentTypes.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
+              <SelectItem value="employment">Employment</SelectItem>
+              <SelectItem value="volunteer">Volunteer</SelectItem>
             </SelectContent>
           </Select>
         </FieldBox>
+
+        {opportunityType === "employment" ? (
+          <FieldBox label="Employment type" htmlFor="employmentType">
+            <Select
+              name="employmentType"
+              defaultValue={job?.employmentType ?? "full_time"}
+            >
+              <SelectTrigger
+                id="employmentType"
+                className={fieldBoxSelectTriggerClassName}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {employmentTypes.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldBox>
+        ) : null}
 
         <FieldBox label="Workplace type" htmlFor="workplaceType">
           <Select name="workplaceType" value={workplace} onValueChange={setWorkplace}>

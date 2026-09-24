@@ -128,6 +128,7 @@ const FIELD_TO_SECTION: Record<string, SectionKey> = {
   department: "essentials",
   location: "essentials",
   workplaceType: "essentials",
+  opportunityType: "essentials",
   employmentType: "essentials",
   description: "description",
   contentSectionsJson: "description",
@@ -135,6 +136,9 @@ const FIELD_TO_SECTION: Record<string, SectionKey> = {
   salaryMax: "compensation",
   currency: "compensation",
   salaryPeriod: "compensation",
+  minimumHours: "compensation",
+  commitmentPeriod: "compensation",
+  scheduleNotes: "compensation",
   resumeRequired: "application",
   applicationPhoneVisibility: "application",
   applicationAddressVisibility: "application",
@@ -171,6 +175,9 @@ type ExtraPreviewFields = {
   salaryMax?: number;
   currency: string;
   salaryPeriod: string;
+  minimumHours?: number;
+  commitmentPeriod?: string;
+  scheduleNotes?: string;
   officeAddress: string;
 };
 
@@ -198,6 +205,9 @@ export function JobForm({
 
   const [title, setTitle] = useState(job?.title ?? "");
   const [titleError, setTitleError] = useState(false);
+  const [opportunityType, setOpportunityType] = useState<
+    "employment" | "volunteer"
+  >(job?.opportunityType ?? "employment");
   const [workplace, setWorkplace] = useState<string>(
     job?.workplaceType ?? "remote",
   );
@@ -256,6 +266,9 @@ export function JobForm({
     salaryMax: job?.salaryMax ?? undefined,
     currency: job?.currency ?? "USD",
     salaryPeriod: job?.salaryPeriod ?? "annual",
+    minimumHours: job?.minimumHours ?? undefined,
+    commitmentPeriod: job?.commitmentPeriod ?? "month",
+    scheduleNotes: job?.scheduleNotes ?? "",
     officeAddress: job?.officeAddress ?? "",
   });
 
@@ -270,6 +283,7 @@ export function JobForm({
         const fd = new FormData(form);
         const minRaw = fd.get("salaryMin");
         const maxRaw = fd.get("salaryMax");
+        const minimumHoursRaw = fd.get("minimumHours");
         setExtraFields({
           department: String(fd.get("department") ?? ""),
           location: String(fd.get("location") ?? ""),
@@ -279,6 +293,13 @@ export function JobForm({
           salaryMax: maxRaw ? Number(maxRaw) : undefined,
           currency: String(fd.get("currency") ?? "USD"),
           salaryPeriod: String(fd.get("salaryPeriod") ?? "annual"),
+          minimumHours: minimumHoursRaw
+            ? Number(minimumHoursRaw)
+            : undefined,
+          commitmentPeriod: String(
+            fd.get("commitmentPeriod") ?? "month",
+          ),
+          scheduleNotes: String(fd.get("scheduleNotes") ?? ""),
           officeAddress: String(fd.get("officeAddress") ?? ""),
         });
       });
@@ -303,6 +324,7 @@ export function JobForm({
     description,
     department: extraFields.department,
     location: extraFields.location,
+    opportunityType,
     employmentType: extraFields.employmentType,
     workplaceType: workplace,
     experienceLevel: extraFields.experienceLevel || undefined,
@@ -310,6 +332,9 @@ export function JobForm({
     salaryMax: extraFields.salaryMax,
     currency: extraFields.currency,
     salaryPeriod: extraFields.salaryPeriod,
+    minimumHours: extraFields.minimumHours,
+    commitmentPeriod: extraFields.commitmentPeriod,
+    scheduleNotes: extraFields.scheduleNotes,
     officeAddress: extraFields.officeAddress || undefined,
     contentSections: sections,
     officePhotos: photos,
@@ -343,6 +368,7 @@ export function JobForm({
       slug: fd.get("slug"),
       department: fd.get("department"),
       location: fd.get("location"),
+      opportunityType: fd.get("opportunityType"),
       employmentType: fd.get("employmentType"),
       workplaceType: fd.get("workplaceType"),
       experienceLevel: fd.get("experienceLevel"),
@@ -355,6 +381,9 @@ export function JobForm({
       salaryMax: fd.get("salaryMax"),
       currency: fd.get("currency"),
       salaryPeriod: fd.get("salaryPeriod"),
+      minimumHours: fd.get("minimumHours"),
+      commitmentPeriod: fd.get("commitmentPeriod"),
+      scheduleNotes: fd.get("scheduleNotes"),
       officeAddress: fd.get("officeAddress"),
       officePhotosJson: fd.get("officePhotosJson"),
       applicationPhoneVisibility: fd.get("applicationPhoneVisibility"),
@@ -449,7 +478,11 @@ export function JobForm({
         }
       >
         <JobEditorRail
-          sections={RAIL_SECTIONS}
+          sections={RAIL_SECTIONS.map((section) =>
+            section.key === "compensation" && opportunityType === "volunteer"
+              ? { ...section, label: "Commitment" }
+              : section,
+          )}
           scrollRootRef={scrollRef}
           secondaryActions={railActions}
         />
@@ -482,10 +515,16 @@ export function JobForm({
                 >
                   <header className="mb-4 px-1">
                     <h2 className="font-display text-lg font-semibold tracking-tight text-foreground">
-                      {s.label}
+                      {s.key === "compensation" &&
+                      opportunityType === "volunteer"
+                        ? "Volunteer commitment"
+                        : s.label}
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {s.blurb}
+                      {s.key === "compensation" &&
+                      opportunityType === "volunteer"
+                        ? "Set a clear, structured minimum time commitment and availability expectations."
+                        : s.blurb}
                     </p>
                   </header>
 
@@ -498,6 +537,8 @@ export function JobForm({
                         setTitle={setTitle}
                         titleError={titleError}
                         setTitleError={setTitleError}
+                        opportunityType={opportunityType}
+                        setOpportunityType={setOpportunityType}
                         workplace={workplace}
                         setWorkplace={setWorkplace}
                       />
@@ -514,6 +555,7 @@ export function JobForm({
                       sections={sections}
                       setSections={setSections}
                       title={title}
+                      opportunityType={opportunityType}
                       keywords={keywords}
                       aiPending={aiPending}
                       startAi={startAi}
@@ -522,7 +564,10 @@ export function JobForm({
 
                   {s.key === "compensation" ? (
                     <div className="rounded-2xl border border-border/70 bg-card p-5">
-                      <CompensationSection job={job} />
+                      <CompensationSection
+                        job={job}
+                        opportunityType={opportunityType}
+                      />
                     </div>
                   ) : null}
 
@@ -554,6 +599,7 @@ export function JobForm({
                         job={job}
                         title={title}
                         workplace={workplace}
+                        opportunityType={opportunityType}
                         submitLabel={submitLabel}
                         reviewVisited={reviewInView}
                         hiringTeam={hiringTeam}

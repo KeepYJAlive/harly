@@ -1140,7 +1140,9 @@ export async function updateApplicationStatus(
                   and(
                     eq(jobStages.workspaceId, input.workspaceId),
                     eq(jobStages.jobId, application.jobId),
-                    eq(jobStages.name, terminalStageName),
+                    input.status === "hired"
+                      ? inArray(jobStages.name, ["Hired", "Accepted"])
+                      : eq(jobStages.name, terminalStageName),
                   ),
                 )
                 .limit(1);

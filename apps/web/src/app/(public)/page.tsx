@@ -45,8 +45,11 @@ export default async function HomePage() {
         title: job.title,
         department: job.department,
         location: job.location,
+        opportunityType: job.opportunityType,
         employmentType: job.employmentType,
         workplaceType: job.workplaceType,
+        minimumHours: job.minimumHours,
+        commitmentPeriod: job.commitmentPeriod,
       }))}
       config={data.config}
       boardRoot=""

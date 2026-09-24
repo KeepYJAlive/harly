@@ -141,6 +141,45 @@ describe("jobFormSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("accepts a structured volunteer opportunity and clears employment fields", () => {
+    const result = jobFormSchema.safeParse({
+      title: "Digital Artist",
+      opportunityType: "volunteer",
+      workplaceType: "remote",
+      description:
+        "Create digital artwork for our community education campaigns.",
+      minimumHours: 5,
+      commitmentPeriod: "month",
+      scheduleNotes: "Flexible, with one monthly planning call.",
+      salaryMin: 0,
+      employmentType: "part_time",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.opportunityType).toBe("volunteer");
+      expect(result.data.minimumHours).toBe(5);
+      expect(result.data.commitmentPeriod).toBe("month");
+      expect(result.data.employmentType).toBeUndefined();
+      expect(result.data.salaryMin).toBeUndefined();
+    }
+  });
+
+  it("requires a structured time commitment for volunteer opportunities", () => {
+    const result = jobFormSchema.safeParse({
+      title: "Community Mentor",
+      opportunityType: "volunteer",
+      workplaceType: "hybrid",
+      description: "Mentor program participants and support weekly workshops.",
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.minimumHours).toBeDefined();
+      expect(result.error.flatten().fieldErrors.commitmentPeriod).toBeDefined();
+    }
+  });
 });
 
 describe("jobStatusSchema", () => {

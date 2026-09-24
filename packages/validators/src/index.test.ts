@@ -6,6 +6,7 @@ import {
   imageUploadRequestSchema,
   invitationSchema,
   inviteEmailSchema,
+  jobCreateSchema,
   maxImageFileSize,
   maxResumeFileSize,
   optionalHttpsUrlSchema,
@@ -13,6 +14,50 @@ import {
   optionalTrimmedString,
   resumeUploadRequestSchema,
 } from "./index";
+
+describe("jobCreateSchema opportunities", () => {
+  it("keeps legacy employment payloads compatible", () => {
+    const result = jobCreateSchema.safeParse({
+      title: "Engineer",
+      description: "Build and maintain the platform.",
+      employmentType: "full_time",
+      workplaceType: "remote",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.opportunityType).toBe("employment");
+    }
+  });
+
+  it("accepts volunteer opportunities without an employment type", () => {
+    expect(
+      jobCreateSchema.safeParse({
+        title: "Digital Artist",
+        description: "Create artwork for community campaigns.",
+        opportunityType: "volunteer",
+        workplaceType: "remote",
+        minimumHours: 5,
+        commitmentPeriod: "month",
+        scheduleNotes: "Flexible schedule.",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects compensation on volunteer opportunities", () => {
+    expect(
+      jobCreateSchema.safeParse({
+        title: "Digital Artist",
+        description: "Create artwork for community campaigns.",
+        opportunityType: "volunteer",
+        workplaceType: "remote",
+        minimumHours: 5,
+        commitmentPeriod: "month",
+        salaryMin: 0,
+      }).success,
+    ).toBe(false);
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resumeUploadRequestSchema

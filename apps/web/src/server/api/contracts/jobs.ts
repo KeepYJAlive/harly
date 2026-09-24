@@ -15,7 +15,10 @@ const jobSchema = z.object({
   status: z.enum(["draft", "open", "closed"]),
   department: z.string().nullable(),
   location: z.string().nullable(),
-  employmentType: z.string(),
+  opportunityType: z.enum(["employment", "volunteer"]),
+  employmentType: z
+    .enum(["full_time", "part_time", "contract", "temporary", "internship"])
+    .nullable(),
   workplaceType: z.string(),
   description: z.string(),
   requirements: z.string().nullable(),
@@ -25,6 +28,9 @@ const jobSchema = z.object({
   salaryMax: z.number().nullable(),
   currency: z.string().nullable(),
   salaryPeriod: z.string().nullable(),
+  minimumHours: z.number().nullable(),
+  commitmentPeriod: z.enum(["week", "month"]).nullable(),
+  scheduleNotes: z.string().nullable(),
   publishedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -50,14 +56,16 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().optional(),
   status: z.enum(["draft", "open", "closed"]).optional(),
+  opportunityType: z.enum(["employment", "volunteer"]).optional(),
 });
 
 export const listJobsContract = defineContract({
   method: "GET",
   path: "/api/v1/jobs",
   operationId: "listJobs",
-  summary: "List jobs",
-  description: "Retrieve a cursor-paginated list of jobs for the workspace.",
+  summary: "List opportunities",
+  description:
+    "Retrieve a cursor-paginated list of employment and volunteer opportunities for the workspace.",
   tags: ["Jobs"],
   auth: { scopes: ["jobs:read"] },
   parameters: { query: listQuery },
@@ -73,8 +81,8 @@ export const createJobContract = defineContract({
   method: "POST",
   path: "/api/v1/jobs",
   operationId: "createJob",
-  summary: "Create job",
-  description: "Create a new job posting in the workspace.",
+  summary: "Create opportunity",
+  description: "Create a new employment or volunteer opportunity in the workspace.",
   tags: ["Jobs"],
   auth: { scopes: ["jobs:write"] },
   idempotent: true,

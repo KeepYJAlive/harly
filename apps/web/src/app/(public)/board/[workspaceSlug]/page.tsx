@@ -23,5 +23,5 @@ export default async function BoardPage({ params }: Props) {
   ]);
   if (!data) notFound();
   const boardRoot = `/board/${workspaceSlug}`;
-  return <PublicCareerPage workspace={data.workspace} jobs={data.jobs.map(({ id, slug, title, department, location, employmentType, workplaceType }) => ({ id, slug, title, department, location, employmentType, workplaceType }))} config={data.config} boardRoot={boardRoot} portalEnabled={portalEnabled} />;
+  return <PublicCareerPage workspace={data.workspace} jobs={data.jobs.map(({ id, slug, title, department, location, opportunityType, employmentType, workplaceType, minimumHours, commitmentPeriod }) => ({ id, slug, title, department, location, opportunityType, employmentType, workplaceType, minimumHours, commitmentPeriod }))} config={data.config} boardRoot={boardRoot} portalEnabled={portalEnabled} />;
 }

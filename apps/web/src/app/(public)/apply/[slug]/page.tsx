@@ -44,6 +44,7 @@ export default async function ApplyPage({ params }: ApplyPageProps) {
       <ApplyForm
         jobSlug={job.slug}
         workspaceSlug={workspace.slug}
+        opportunityType={job.opportunityType}
         applicationConfig={applicationConfig}
         variant={
           config.template === "ashby"

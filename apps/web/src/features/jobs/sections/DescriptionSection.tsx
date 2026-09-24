@@ -66,6 +66,7 @@ export function DescriptionSection({
   sections,
   setSections,
   title,
+  opportunityType,
   keywords,
   aiPending,
   startAi,
@@ -78,6 +79,7 @@ export function DescriptionSection({
   sections: JobContentSection[];
   setSections: React.Dispatch<React.SetStateAction<JobContentSection[]>>;
   title: string;
+  opportunityType: "employment" | "volunteer";
   keywords: string[];
   aiPending: boolean;
   startAi: React.TransitionStartFunction;
@@ -99,22 +101,36 @@ export function DescriptionSection({
   }
 
   function scaffoldDraft() {
-    const base = SECTION_TEMPLATES[pickTemplateKey(title)].map((s) => ({
-      ...s,
-      id: newSectionId(),
-    }));
+    const template =
+      opportunityType === "volunteer"
+        ? [
+            { title: "Responsibilities", body: "" },
+            { title: "Qualifications / skills", body: "" },
+          ]
+        : SECTION_TEMPLATES[pickTemplateKey(title)];
+    const base = template.map((s) => ({ ...s, id: newSectionId() }));
 
     if (keywords.length > 0) {
       const list = `<ul>${keywords.map((kw) => `<li>${escapeHtml(kw)}</li>`).join("")}</ul>`;
-      const ri = base.findIndex((s) => /require/i.test(s.title));
+      const ri = base.findIndex((s) => /require|qualification|skill/i.test(s.title));
       if (ri >= 0) base[ri] = { ...base[ri], body: list };
-      else base.push({ id: newSectionId(), title: "Requirements", body: list });
+      else
+        base.push({
+          id: newSectionId(),
+          title:
+            opportunityType === "volunteer"
+              ? "Qualifications / skills"
+              : "Requirements",
+          body: list,
+        });
     }
 
     const roleName = title.trim() || "this role";
     setSections(base);
     setDescription(
-      `<p>We're hiring a <strong>${escapeHtml(roleName)}</strong> to join our team. Outline the mission, the team, and the impact of this role.</p>`,
+      opportunityType === "volunteer"
+        ? `<p>We're looking for a <strong>${escapeHtml(roleName)}</strong> volunteer to join our team. Outline the mission, the team, and the impact of this opportunity.</p>`
+        : `<p>We're hiring a <strong>${escapeHtml(roleName)}</strong> to join our team. Outline the mission, the team, and the impact of this role.</p>`,
     );
     setDescriptionVersion((v) => v + 1);
   }
@@ -194,12 +210,20 @@ export function DescriptionSection({
 
         <div className="space-y-5 p-5">
           <div className="space-y-2">
-            <Label>About the role</Label>
+            <Label>
+              {opportunityType === "volunteer"
+                ? "About the volunteer opportunity"
+                : "About the role"}
+            </Label>
             <input type="hidden" name="description" value={description} />
             <RichTextEditor
               key={`description-${descriptionVersion}`}
               defaultValue={descriptionVersion === 0 ? job?.description : description}
-              placeholder="Describe the role, team, and impact."
+              placeholder={
+                opportunityType === "volunteer"
+                  ? "Describe the volunteer opportunity, team, and impact."
+                  : "Describe the role, team, and impact."
+              }
               minHeight="11rem"
               onChange={setDescription}
             />

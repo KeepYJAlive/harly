@@ -67,7 +67,11 @@ export function publicJobMetadata(
   const base = options?.path !== undefined ? pathUrl(options.path) : boardUrl(workspace.slug);
   const url = `${base.replace(/\/$/, "")}/jobs/${job.slug}`;
   const title = `${job.title} at ${workspace.name}`;
-  const description = plainText(job.description).slice(0, 180) || `Apply for ${job.title} at ${workspace.name}.`;
+  const description =
+    plainText(job.description).slice(0, 180) ||
+    (job.opportunityType === "volunteer"
+      ? `Apply to volunteer as ${job.title} at ${workspace.name}.`
+      : `Apply for ${job.title} at ${workspace.name}.`);
   const image = config.seo.socialImageUrl ?? config.hero.imageUrl ?? workspace.heroImageUrl ?? workspace.logoUrl ?? undefined;
   const favicon = config.seo.faviconUrl ?? workspace.logoUrl ?? HARLY_FAVICON;
   return {
@@ -82,8 +86,10 @@ export function publicJobMetadata(
 }
 
 export function jobPostingJsonLd(workspace: WorkspaceBoardBranding, job: Job) {
-  const employmentType: Record<Job["employmentType"], string> = {
-    full_time: "FULL_TIME", part_time: "PART_TIME", contract: "CONTRACTOR", internship: "INTERN",
+  if (job.opportunityType === "volunteer" || !job.employmentType) return null;
+
+  const employmentType: Record<NonNullable<Job["employmentType"]>, string> = {
+    full_time: "FULL_TIME", part_time: "PART_TIME", contract: "CONTRACTOR", temporary: "TEMPORARY", internship: "INTERN",
   };
   const posting: Record<string, unknown> = {
     "@context": "https://schema.org",

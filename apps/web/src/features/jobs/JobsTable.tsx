@@ -14,6 +14,7 @@ import { FilterPill, FILTER_ALL } from "@/components/ui/FilterPill";
 import { JobIdentity } from "@/features/jobs/JobIdentity";
 import {
   formatEmploymentType,
+  formatOpportunityType,
   formatWorkplaceType,
 } from "@/lib/format";
 
@@ -23,7 +24,8 @@ export type JobRow = {
   slug: string;
   department: string | null;
   location: string | null;
-  employmentType: string;
+  opportunityType: "employment" | "volunteer";
+  employmentType: string | null;
   workplaceType: string;
   status: "draft" | "open" | "closed";
   applicants: number;
@@ -47,7 +49,14 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "Closed",
 };
 
-const EMPLOYMENT_OPTIONS = ["full_time", "part_time", "contract", "internship"];
+const EMPLOYMENT_OPTIONS = [
+  "full_time",
+  "part_time",
+  "contract",
+  "temporary",
+  "internship",
+];
+const OPPORTUNITY_OPTIONS = ["employment", "volunteer"];
 const WORKPLACE_OPTIONS = ["remote", "hybrid", "onsite"];
 
 const SORT_OPTIONS = ["recent", "oldest", "applicants", "title"];
@@ -62,6 +71,7 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState(FILTER_ALL);
   const [dept, setDept] = useState(FILTER_ALL);
+  const [opportunity, setOpportunity] = useState(FILTER_ALL);
   const [employment, setEmployment] = useState(FILTER_ALL);
   const [workplace, setWorkplace] = useState(FILTER_ALL);
   const [sortKey, setSortKey] = useState<SortKey>("recent");
@@ -83,6 +93,8 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
       }
       if (status !== FILTER_ALL && j.status !== status) return false;
       if (dept !== FILTER_ALL && j.department !== dept) return false;
+      if (opportunity !== FILTER_ALL && j.opportunityType !== opportunity)
+        return false;
       if (employment !== FILTER_ALL && j.employmentType !== employment)
         return false;
       if (workplace !== FILTER_ALL && j.workplaceType !== workplace) return false;
@@ -96,13 +108,14 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
         return a.createdAt.getTime() - b.createdAt.getTime();
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [jobs, query, status, dept, employment, workplace, sortKey]);
+  }, [jobs, query, status, dept, opportunity, employment, workplace, sortKey]);
 
   const maxApplicants = Math.max(1, ...filtered.map((j) => j.applicants));
 
   const filtersActive =
     status !== FILTER_ALL ||
     dept !== FILTER_ALL ||
+    opportunity !== FILTER_ALL ||
     employment !== FILTER_ALL ||
     workplace !== FILTER_ALL ||
     query.trim() !== "";
@@ -111,6 +124,7 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
     setQuery("");
     setStatus(FILTER_ALL);
     setDept(FILTER_ALL);
+    setOpportunity(FILTER_ALL);
     setEmployment(FILTER_ALL);
     setWorkplace(FILTER_ALL);
   }
@@ -123,7 +137,7 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search jobs by title, department or location…"
+          placeholder="Search opportunities by title, department or location…"
           className="h-11 rounded-full pl-11"
         />
       </div>
@@ -142,6 +156,15 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
           value={dept}
           onChange={setDept}
           options={departments}
+        />
+        <FilterPill
+          label="Opportunity"
+          value={opportunity}
+          onChange={setOpportunity}
+          options={OPPORTUNITY_OPTIONS}
+          labelMap={Object.fromEntries(
+            OPPORTUNITY_OPTIONS.map((o) => [o, formatOpportunityType(o)]),
+          )}
         />
         <FilterPill
           label="Type"
@@ -206,7 +229,11 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
             </Link>
 
             <div className="hidden text-xs text-muted-foreground sm:block">
-              {formatEmploymentType(job.employmentType)}
+              {job.opportunityType === "volunteer"
+                ? formatOpportunityType(job.opportunityType)
+                : job.employmentType
+                  ? formatEmploymentType(job.employmentType)
+                  : formatOpportunityType(job.opportunityType)}
               <span className="mx-1 text-border">·</span>
               {formatWorkplaceType(job.workplaceType)}
             </div>
@@ -248,7 +275,7 @@ export function JobsTable({ jobs }: { jobs: JobRow[] }) {
           <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
             <Search className="size-5 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              No jobs match your filters.
+              No opportunities match your filters.
             </p>
             {filtersActive ? (
               <Button variant="outline" size="sm" onClick={clearFilters}>

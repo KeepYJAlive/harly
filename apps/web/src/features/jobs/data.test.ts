@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
   formatWorkplaceType,
   formatJobStatus,
 } from "@/lib/format";
@@ -21,6 +23,26 @@ describe("formatEmploymentType", () => {
 
   it("formats internship", () => {
     expect(formatEmploymentType("internship")).toBe("Internship");
+  });
+
+  it("formats temporary", () => {
+    expect(formatEmploymentType("temporary")).toBe("Temporary");
+  });
+});
+
+describe("opportunity formatting", () => {
+  it("labels volunteer and employment opportunities", () => {
+    expect(formatOpportunityType("volunteer")).toBe("Volunteer Opportunity");
+    expect(formatOpportunityType("employment")).toBe("Career Opportunity");
+  });
+
+  it("formats structured volunteer commitment", () => {
+    expect(formatMinimumTimeCommitment(5, "month")).toBe(
+      "5 hours per month",
+    );
+    expect(
+      formatMinimumTimeCommitment(5, "month", { compact: true }),
+    ).toBe("5 hours/month");
   });
 });
 

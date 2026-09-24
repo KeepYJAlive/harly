@@ -65,6 +65,7 @@ type ApplyFormVariant = "ashby" | "join" | "default";
 type ApplyFormProps = {
   jobSlug: string;
   workspaceSlug?: string;
+  opportunityType?: "employment" | "volunteer";
   applicationConfig: JobApplicationConfig;
   variant?: ApplyFormVariant;
   /** Resolved server-side (workspace key → env fallback). Null hides the widget. */
@@ -669,6 +670,7 @@ function formReducer(state: FormState, action: FormAction): FormState {
 export function ApplyForm({
   jobSlug,
   workspaceSlug,
+  opportunityType = "employment",
   applicationConfig,
   variant = "default",
   captchaProvider = null,
@@ -680,6 +682,7 @@ export function ApplyForm({
 }: ApplyFormProps) {
   const isAshby = variant === "ashby";
   const isJoin = variant === "join";
+  const isVolunteer = opportunityType === "volunteer";
   const flatVariant = isAshby || isJoin;
   const input = flatVariant ? inputClassAshby : inputClass;
   const textarea = flatVariant ? textareaClassAshby : textareaClass;
@@ -1313,10 +1316,10 @@ export function ApplyForm({
           <Check className="size-6" strokeWidth={2.5} />
         </span>
         <p className="mt-4 text-xs font-medium uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
-          Application submitted
+          {isVolunteer ? "Volunteer application submitted" : "Application submitted"}
         </p>
         <h2 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-          Thank you for applying
+          {isVolunteer ? "Thank you for volunteering" : "Thank you for applying"}
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           {state.message}
@@ -2550,7 +2553,9 @@ export function ApplyForm({
               ? "Uploading..."
               : isPending
                 ? "Submitting..."
-                : "Submit Application"}
+                : isVolunteer
+                  ? "Apply to Volunteer"
+                  : "Submit Application"}
             {!isSubmittingForm && !isPending ? (
               <Send className="size-4" strokeWidth={2} />
             ) : null}
@@ -3136,7 +3141,9 @@ export function ApplyForm({
               ? "Uploading…"
               : isPending
                 ? "Submitting…"
-                : "Submit application"}
+                : isVolunteer
+                  ? "Apply to Volunteer"
+                  : "Submit application"}
           </Button>
         </>
       )}

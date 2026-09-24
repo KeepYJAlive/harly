@@ -5,6 +5,24 @@ export function formatEmploymentType(value: string) {
     .join(" ");
 }
 
+export function formatOpportunityType(value: string) {
+  return value === "volunteer"
+    ? "Volunteer Opportunity"
+    : "Career Opportunity";
+}
+
+export function formatMinimumTimeCommitment(
+  minimumHours: number | null | undefined,
+  commitmentPeriod: string | null | undefined,
+  options?: { compact?: boolean },
+) {
+  if (!minimumHours || !commitmentPeriod) return null;
+  const period = commitmentPeriod === "week" ? "week" : "month";
+  return options?.compact
+    ? `${minimumHours} hours/${period}`
+    : `${minimumHours} hours per ${period}`;
+}
+
 export function formatWorkplaceType(value: string) {
   return value[0]?.toUpperCase() + value.slice(1);
 }

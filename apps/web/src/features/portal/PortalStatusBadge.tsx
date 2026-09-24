@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 type PortalStatusBadgeProps = {
   status: "active" | "hired" | "rejected" | "withdrawn";
+  opportunityType?: "employment" | "volunteer";
   size?: "sm" | "default";
 };
 
@@ -21,7 +22,11 @@ const BADGE_LABELS = {
   withdrawn: "Withdrawn",
 } as const;
 
-export function PortalStatusBadge({ status, size = "default" }: PortalStatusBadgeProps) {
+export function PortalStatusBadge({
+  status,
+  opportunityType = "employment",
+  size = "default",
+}: PortalStatusBadgeProps) {
   return (
     <span
       className={cn(
@@ -30,7 +35,9 @@ export function PortalStatusBadge({ status, size = "default" }: PortalStatusBadg
         size === "default" ? "px-2.5 py-0.5 text-xs" : "px-2 py-px text-[11px]",
       )}
     >
-      {BADGE_LABELS[status]}
+      {status === "hired" && opportunityType === "volunteer"
+        ? "Accepted"
+        : BADGE_LABELS[status]}
     </span>
   );
 }
