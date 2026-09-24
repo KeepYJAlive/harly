@@ -149,8 +149,10 @@ export default async function PortalJobsPage() {
                               job.employmentType) && (
                               <span>
                                 {job.opportunityType === "volunteer"
-                                  ? "Volunteer Opportunity"
-                                  : EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType}
+                                ? "Volunteer Opportunity"
+                                : job.employmentType
+                                  ? EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType
+                                  : "Employment Opportunity"}
                               </span>
                             )}
                             {job.opportunityType === "volunteer" && (

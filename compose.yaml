@@ -7,12 +7,13 @@ x-logging: &harly-logging
     max-size: ${HARLY_LOG_MAX_SIZE:-10m}
     max-file: ${HARLY_LOG_MAX_FILES:-3}
 x-harly-env: &harly-env
-  NODE_ENV: production
+  NODE_ENV: ${NODE_ENV:-production}
   HARLY_URL: ${HARLY_URL:?Set HARLY_URL}
   NEXT_PUBLIC_APP_URL: ${HARLY_URL:?Set HARLY_URL}
   BETTER_AUTH_URL: ${HARLY_URL:?Set HARLY_URL}
   HARLY_VERSION: ${HARLY_VERSION:?Set HARLY_VERSION}
-  DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB}
+  HARLY_ALLOW_LOCAL_URL: ${HARLY_ALLOW_LOCAL_URL:-false}
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
   AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:?Set AI_ENCRYPTION_KEY}
   STORAGE_UPLOAD_SECRET: ${STORAGE_UPLOAD_SECRET:?Set STORAGE_UPLOAD_SECRET}
@@ -42,32 +43,14 @@ x-harly-env: &harly-env
   DOCUSEAL_API_TOKEN: ${DOCUSEAL_API_TOKEN:-}
 
 services:
-  postgres:
-    image: postgres:16-bookworm
-    restart: unless-stopped
-    mem_limit: ${HARLY_POSTGRES_MEMORY:-768m}
-    cpus: ${HARLY_POSTGRES_CPUS:-1.0}
-    shm_size: 128m
-    logging: *harly-logging
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
 
   migrate:
     image: *harly-image
     command: ["migrate"]
-    environment: *harly-env
-    depends_on:
-      postgres:
-        condition: service_healthy
+    environment: 
+      <<: *harly-env
+    networks:
+      - harly-db
     restart: "no"
     mem_limit: ${HARLY_MIGRATE_MEMORY:-768m}
     cpus: ${HARLY_MIGRATE_CPUS:-1.0}
@@ -100,6 +83,8 @@ services:
       interval: 10s
       timeout: 4s
       retries: 12
+    networks:
+      - harly-db
 
   scheduler:
     image: *harly-image
@@ -125,6 +110,8 @@ services:
       timeout: 10s
       start_period: 45s
       retries: 3
+    networks:
+      - harly-db
 
   caddy:
     image: caddy:2.10-alpine
@@ -183,3 +170,7 @@ volumes:
   caddy-data:
   caddy-config:
   docuseal-data:
+
+networks:
+  harly-db:
+    external: true
