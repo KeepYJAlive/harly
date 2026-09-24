@@ -163,8 +163,10 @@ describe("jobFormSchema", () => {
       expect(result.data.commitmentPeriod).toBe("month");
       expect(result.data.employmentType).toBeUndefined();
       expect(result.data.salaryMin).toBeUndefined();
+      expect(result.data.location).toBeUndefined();
     }
   });
+
 
   it("requires a structured time commitment for volunteer opportunities", () => {
     const result = jobFormSchema.safeParse({

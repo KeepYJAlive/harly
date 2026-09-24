@@ -27,7 +27,7 @@ import { normalizeCareerPageConfig } from "@/features/career-page/config";
 import { getPendingJobApproval } from "./approval";
 
 function parseJobFormData(formData: FormData) {
-  return jobFormSchema.parse({
+  const values = jobFormSchema.parse({
     title: formData.get("title"),
     slug: formData.get("slug"),
     department: formData.get("department"),
@@ -77,6 +77,7 @@ function parseJobFormData(formData: FormData) {
     ),
     applicationQuestionsJson: formData.get("applicationQuestionsJson"),
   });
+  return values;
 }
 
 export type JobActionState = {
@@ -140,7 +141,7 @@ export async function updateJobStatusAction(formData: FormData) {
   const jobId = String(formData.get("jobId") ?? "");
   const context = await requireJobPermission("jobs:edit", jobId);
   const status = jobStatusSchema.parse(formData.get("status"));
-  if (status === "open" && await getPendingJobApproval(jobId)) {
+  if (status === "open" && (await getPendingJobApproval(jobId))) {
     throw new Error("Job has a pending approval request.");
   }
   const job = await updateJobStatus(jobId, status);

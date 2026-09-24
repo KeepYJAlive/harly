@@ -51,6 +51,7 @@ import { PhoneInput } from "@/components/ui/PhoneInput";
 import { Button } from "@/components/ui/button";
 import { CaptchaWidget } from "@/components/CaptchaWidget";
 import type { CaptchaProvider } from "@/lib/captcha";
+import { ApplicantLocationFields } from "./ApplicantLocationFields";
 
 const initialState: ApplyJobActionState = {
   status: "idle",
@@ -731,9 +732,9 @@ export function ApplyForm({
     consentCheckboxText ||
     "I agree to the privacy policy and consent to the processing of my personal data.";
   const showPhone = isFieldEnabled(applicationConfig.sections.personal.phone);
-  const showAddress = isFieldEnabled(
-    applicationConfig.sections.personal.address,
-  );
+  const showAddress =
+    !isVolunteer &&
+    isFieldEnabled(applicationConfig.sections.personal.address);
   const showPhoto = isFieldEnabled(applicationConfig.sections.personal.photo);
   const showHeadline = isFieldEnabled(
     applicationConfig.sections.personal.headline,
@@ -2127,6 +2128,17 @@ export function ApplyForm({
               </label>
             ) : null}
 
+            {isVolunteer ? (
+              <ApplicantLocationFields
+                inputClassName={input}
+                errors={{
+                  countryCode: fieldErrorsFor(state, "countryCode"),
+                  region: fieldErrorsFor(state, "region"),
+                  city: fieldErrorsFor(state, "city"),
+                }}
+              />
+            ) : null}
+
             {showHeadline ? (
               <label className="block">
                 <FieldLabel
@@ -2776,6 +2788,18 @@ export function ApplyForm({
                 </p>
                 <FieldError errors={fieldErrorsFor(state, "address")} />
               </label>
+            ) : null}
+
+            {isVolunteer ? (
+              <ApplicantLocationFields
+                className="mt-4"
+                inputClassName={input}
+                errors={{
+                  countryCode: fieldErrorsFor(state, "countryCode"),
+                  region: fieldErrorsFor(state, "region"),
+                  city: fieldErrorsFor(state, "city"),
+                }}
+              />
             ) : null}
 
             {showHeadline ? (

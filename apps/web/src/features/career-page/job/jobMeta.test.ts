@@ -18,19 +18,22 @@ const volunteer: JobLike = {
 
 describe("volunteer opportunity metadata", () => {
   it("never formats volunteer compensation as a salary", () => {
-    expect(formatCompensation({ ...volunteer, salaryMin: 0, salaryMax: 0 })).toBeNull();
+    expect(
+      formatCompensation({ ...volunteer, salaryMin: 0, salaryMax: 0 }),
+    ).toBeNull();
   });
 
-  it("shows unpaid status and a structured minimum time commitment", () => {
-    expect(buildJobMeta(volunteer)).toEqual(
+  it("shows volunteer status and a structured minimum time commitment", () => {
+    const metadata = buildJobMeta(volunteer);
+    expect(metadata).toEqual(
       expect.arrayContaining([
-        { label: "Opportunity", value: "Unpaid Volunteer Opportunity" },
+        { label: "Opportunity", value: "Volunteer Opportunity" },
         {
           label: "Minimum Time Commitment",
           value: "5 hours per month",
         },
-        { label: "Compensation", value: "Unpaid" },
       ]),
     );
+    expect(metadata.some((item) => item.label === "Compensation")).toBe(false);
   });
 });

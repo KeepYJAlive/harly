@@ -293,12 +293,8 @@ export function JobForm({
           salaryMax: maxRaw ? Number(maxRaw) : undefined,
           currency: String(fd.get("currency") ?? "USD"),
           salaryPeriod: String(fd.get("salaryPeriod") ?? "annual"),
-          minimumHours: minimumHoursRaw
-            ? Number(minimumHoursRaw)
-            : undefined,
-          commitmentPeriod: String(
-            fd.get("commitmentPeriod") ?? "month",
-          ),
+          minimumHours: minimumHoursRaw ? Number(minimumHoursRaw) : undefined,
+          commitmentPeriod: String(fd.get("commitmentPeriod") ?? "month"),
           scheduleNotes: String(fd.get("scheduleNotes") ?? ""),
           officeAddress: String(fd.get("officeAddress") ?? ""),
         });
@@ -464,8 +460,8 @@ export function JobForm({
         value={JSON.stringify(photos)}
       />
 
-        <FocusModeShell
-          topBar={
+      <FocusModeShell
+        topBar={
           <JobEditorTopBar
             onExit={handleExit}
             title={title}

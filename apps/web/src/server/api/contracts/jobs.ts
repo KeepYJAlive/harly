@@ -82,7 +82,8 @@ export const createJobContract = defineContract({
   path: "/api/v1/jobs",
   operationId: "createJob",
   summary: "Create opportunity",
-  description: "Create a new employment or volunteer opportunity in the workspace.",
+  description:
+    "Create a new employment or volunteer opportunity in the workspace.",
   tags: ["Jobs"],
   auth: { scopes: ["jobs:write"] },
   idempotent: true,

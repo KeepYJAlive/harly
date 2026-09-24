@@ -38,6 +38,7 @@ import {
 } from "@/features/applications/resume-autofill";
 import { scheduleAutoScore } from "@/features/applications/auto-score";
 import { scheduleAutoDuplicateCheck } from "@/features/applications/auto-duplicates";
+import { validateApplicantLocation } from "@/features/applications/applicant-location";
 
 const PARSE_LIMIT = 5;
 const PARSE_WINDOW_MS = 60_000;
@@ -289,6 +290,7 @@ export async function submitApplicationAction(
 
   const applicationFormSchema = createApplicationFormSchema(
     jobContext.applicationConfig,
+    { opportunityType: jobContext.opportunityType },
   );
   const values = {
     firstName: formData.get("firstName"),
@@ -297,6 +299,9 @@ export async function submitApplicationAction(
     phone: formData.get("phone"),
     address: formData.get("address"),
     location: formData.get("location"),
+    countryCode: formData.get("countryCode"),
+    region: formData.get("region"),
+    city: formData.get("city"),
     headline: formData.get("headline"),
     photoUrl: formData.get("photoUrl"),
     linkedinUrl: formData.get("linkedinUrl"),
@@ -351,6 +356,17 @@ export async function submitApplicationAction(
       educationErrors: split.educationErrors,
       experienceErrors: split.experienceErrors,
     };
+  }
+
+  if (jobContext.opportunityType === "volunteer") {
+    const issue = validateApplicantLocation(parsed.data);
+    if (issue) {
+      return {
+        status: "error",
+        message: "Review the highlighted fields and try again.",
+        fieldErrors: { [issue.field]: [issue.message] },
+      };
+    }
   }
 
   const questionErrors = validateApplicationQuestionAnswers(

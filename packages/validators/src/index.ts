@@ -34,7 +34,10 @@ export const optionalNonNegativeIntSchema = z
     if (value === null || value === undefined || value === "") return undefined;
     const number = typeof value === "number" ? value : Number(value);
     if (!Number.isInteger(number) || number < 0) {
-      ctx.addIssue({ code: "custom", message: "Expected a non-negative integer." });
+      ctx.addIssue({
+        code: "custom",
+        message: "Expected a non-negative integer.",
+      });
       return z.NEVER;
     }
     return number;
@@ -155,7 +158,8 @@ function validateOpportunityFields(
       ctx.addIssue({
         code: "custom",
         path: ["opportunityType"],
-        message: "Volunteer opportunities cannot include employment or compensation fields.",
+        message:
+          "Volunteer opportunities cannot include employment or compensation fields.",
       });
     }
   }
@@ -173,6 +177,9 @@ export const candidateCreateSchema = z.object({
   phone: nullableString,
   address: nullableString,
   location: nullableString,
+  countryCode: z.string().trim().length(2).toUpperCase().nullish(),
+  region: nullableString,
+  city: nullableString,
   headline: nullableString,
   summary: nullableString,
   linkedinUrl: z.url().nullish(),
@@ -217,7 +224,10 @@ export const apiKeyCreateSchema = z.object({
 
 export const candidateNoteCreateSchema = z.object({
   body: z.string().trim().min(1).max(5_000),
-  mentions: z.array(z.object({ userId: z.string().trim().min(1).max(120) })).max(20).optional(),
+  mentions: z
+    .array(z.object({ userId: z.string().trim().min(1).max(120) }))
+    .max(20)
+    .optional(),
 });
 export const candidateTagCreateSchema = z.object({
   label: z.string().trim().min(1).max(40),
@@ -226,7 +236,10 @@ export const candidateTagCreateSchema = z.object({
 export const candidateFileUploadIntentSchema = resumeUploadRequestSchema;
 export const candidateFileConfirmSchema = z.object({
   key: z.string().trim().min(1).max(1_024),
-  contentHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  contentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i)
+    .optional(),
 });
 
 export const interviewCreateSchema = z.object({
@@ -255,7 +268,9 @@ const offerFieldsSchema = z.object({
   expiresAt: nullableIsoDateTime,
   notes: z.string().trim().max(5_000).nullable(),
 });
-export const offerCreateSchema = offerFieldsSchema.extend({ applicationId: z.uuid() });
+export const offerCreateSchema = offerFieldsSchema.extend({
+  applicationId: z.uuid(),
+});
 export const offerUpdateSchema = offerFieldsSchema.partial();
 export const offerDecisionSchema = z.object({
   decision: z.enum(["accepted", "declined"]),
@@ -268,15 +283,27 @@ export const scorecardCreateSchema = z.object({
   stageName: nullableString,
   rating: z.enum(["strong", "mixed", "weak"]),
   comment: nullableString,
-  criteria: z.array(z.object({ label: z.string().trim().min(1).max(200), score: z.number().finite().optional() })).max(50).optional(),
+  criteria: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(200),
+        score: z.number().finite().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
-export const scorecardUpdateSchema = scorecardCreateSchema.partial().omit({ candidateId: true });
+export const scorecardUpdateSchema = scorecardCreateSchema
+  .partial()
+  .omit({ candidateId: true });
 
 export const taskCreateSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2_000).nullish(),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  status: z.enum(["pending", "in_progress", "completed", "canceled"]).default("pending"),
+  status: z
+    .enum(["pending", "in_progress", "completed", "canceled"])
+    .default("pending"),
   dueDate: nullableIsoDateTime,
   ownerId: z.string().trim().min(1).max(120),
   candidateId: nullableUuid,
@@ -300,6 +327,8 @@ export const jobStageReorderSchema = z.object({
 export const poolEntryCreateSchema = z.object({
   candidateId: z.uuid(),
   jobId: nullableUuid,
-  source: z.enum(["applied", "imported", "sourced", "referred"]).default("sourced"),
+  source: z
+    .enum(["applied", "imported", "sourced", "referred"])
+    .default("sourced"),
   reason: z.string().trim().max(500).nullish(),
 });

@@ -55,12 +55,15 @@ export type JobMetaItem = { label: string; value: string };
 export function buildJobMeta(job: JobLike): JobMetaItem[] {
   const items: JobMetaItem[] = [];
   if (job.location) items.push({ label: "Location", value: job.location });
-  items.push({ label: "Workplace", value: formatWorkplaceType(job.workplaceType) });
+  items.push({
+    label: "Workplace",
+    value: formatWorkplaceType(job.workplaceType),
+  });
   items.push({
     label: "Opportunity",
     value:
       job.opportunityType === "volunteer"
-        ? "Unpaid Volunteer Opportunity"
+        ? "Volunteer Opportunity"
         : formatOpportunityType(job.opportunityType),
   });
   if (job.opportunityType === "employment" && job.employmentType) {
@@ -77,9 +80,9 @@ export function buildJobMeta(job: JobLike): JobMetaItem[] {
     if (commitment) {
       items.push({ label: "Minimum Time Commitment", value: commitment });
     }
-    items.push({ label: "Compensation", value: "Unpaid" });
   }
-  if (job.department) items.push({ label: "Department", value: job.department });
+  if (job.department)
+    items.push({ label: "Department", value: job.department });
   if (job.experienceLevel)
     items.push({ label: "Experience", value: job.experienceLevel });
   const comp = formatCompensation(job);

@@ -1,7 +1,11 @@
 import type { Job } from "@harly/db";
 
 import { DepartmentCombobox } from "../DepartmentCombobox";
-import { FieldBox, fieldBoxControlClassName, fieldBoxSelectTriggerClassName } from "@/components/ui/field-box";
+import {
+  FieldBox,
+  fieldBoxControlClassName,
+  fieldBoxSelectTriggerClassName,
+} from "@/components/ui/field-box";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -56,7 +60,11 @@ export function EssentialsSection({
           label="Opportunity title"
           htmlFor="title"
           required
-          error={titleError ? "Add a job title (at least 3 characters) to continue." : undefined}
+          error={
+            titleError
+              ? "Add a job title (at least 3 characters) to continue."
+              : undefined
+          }
         >
           <Input
             id="title"
@@ -106,7 +114,11 @@ export function EssentialsSection({
           />
         </FieldBox>
 
-        <FieldBox label="Location" htmlFor="location" hint="Shown on your public posting.">
+        <FieldBox
+          label="Location"
+          htmlFor="location"
+          hint="Shown on your public posting."
+        >
           <Input
             id="location"
             name="location"
@@ -161,8 +173,15 @@ export function EssentialsSection({
         ) : null}
 
         <FieldBox label="Workplace type" htmlFor="workplaceType">
-          <Select name="workplaceType" value={workplace} onValueChange={setWorkplace}>
-            <SelectTrigger id="workplaceType" className={fieldBoxSelectTriggerClassName}>
+          <Select
+            name="workplaceType"
+            value={workplace}
+            onValueChange={setWorkplace}
+          >
+            <SelectTrigger
+              id="workplaceType"
+              className={fieldBoxSelectTriggerClassName}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -185,7 +204,11 @@ export function EssentialsSection({
           <Input
             id="remoteEligibleCountries"
             name="remoteEligibleCountries"
-            defaultValue={(job?.remoteEligibleCountries as string[] | undefined)?.join(", ") ?? ""}
+            defaultValue={
+              (job?.remoteEligibleCountries as string[] | undefined)?.join(
+                ", ",
+              ) ?? ""
+            }
             placeholder="US, CA, CL"
             className={fieldBoxControlClassName}
           />
@@ -197,7 +220,9 @@ export function EssentialsSection({
           id="validThrough"
           name="validThrough"
           type="date"
-          defaultValue={job?.validThrough ? job.validThrough.toISOString().slice(0, 10) : ""}
+          defaultValue={
+            job?.validThrough ? job.validThrough.toISOString().slice(0, 10) : ""
+          }
           className={fieldBoxControlClassName}
         />
       </FieldBox>

@@ -203,6 +203,7 @@ function collectionFieldForConfig<T extends z.ZodTypeAny>(
 
 export function createApplicationFormSchema(
   applicationConfig: JobApplicationConfig,
+  options?: { opportunityType?: "employment" | "volunteer" },
 ) {
   const personal = applicationConfig.sections.personal;
   const profile = applicationConfig.sections.profile;
@@ -230,6 +231,15 @@ export function createApplicationFormSchema(
     ),
     // Legacy client compatibility: older custom forms still submit `location`.
     location: optionalText,
+    countryCode: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim()
+          ? value.trim().toUpperCase()
+          : undefined,
+      z.string().length(2, "Choose a valid country.").optional(),
+    ),
+    region: optionalText,
+    city: optionalText,
     headline: textFieldForConfig(
       isFieldEnabled(personal.headline),
       isFieldRequired(personal.headline),
@@ -275,6 +285,22 @@ export function createApplicationFormSchema(
       isFieldRequired(profile.resume),
     ),
     questionAnswers: z.record(z.string(), z.string()).default({}),
+  }).superRefine((values, ctx) => {
+    if (options?.opportunityType !== "volunteer") return;
+    if (!values.countryCode) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["countryCode"],
+        message: "Choose your country.",
+      });
+    }
+    if (!values.city) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["city"],
+        message: "Choose your city.",
+      });
+    }
   });
 }
 
@@ -314,6 +340,9 @@ export type ApplicationFormValues = {
   phone?: string;
   address?: string;
   location?: string;
+  countryCode?: string;
+  region?: string;
+  city?: string;
   headline?: string;
   photoUrl?: string;
   linkedinUrl?: string;

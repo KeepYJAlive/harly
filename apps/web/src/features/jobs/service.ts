@@ -3,7 +3,14 @@ import "server-only";
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { ApiError, type Cursor } from "@harly/api";
-import { db, jobApprovalRequests, jobHiringTeam, jobs, jobStages, type Job } from "@harly/db";
+import {
+  db,
+  jobApprovalRequests,
+  jobHiringTeam,
+  jobs,
+  jobStages,
+  type Job,
+} from "@harly/db";
 
 import { emitWebhookEvent } from "@/server/webhooks/emit";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
@@ -222,21 +229,23 @@ export async function createJobForApi(input: {
         benefits: values.benefits ?? null,
         keywords: values.keywords ?? [],
         salaryMin:
-          opportunityType === "employment" ? values.salaryMin ?? null : null,
+          opportunityType === "employment" ? (values.salaryMin ?? null) : null,
         salaryMax:
-          opportunityType === "employment" ? values.salaryMax ?? null : null,
+          opportunityType === "employment" ? (values.salaryMax ?? null) : null,
         currency:
-          opportunityType === "employment" ? values.currency ?? null : null,
+          opportunityType === "employment" ? (values.currency ?? null) : null,
         salaryPeriod:
           opportunityType === "employment"
-            ? values.salaryPeriod ?? null
+            ? (values.salaryPeriod ?? null)
             : null,
         minimumHours:
           opportunityType === "volunteer" ? values.minimumHours : null,
         commitmentPeriod:
           opportunityType === "volunteer" ? values.commitmentPeriod : null,
         scheduleNotes:
-          opportunityType === "volunteer" ? values.scheduleNotes ?? null : null,
+          opportunityType === "volunteer"
+            ? (values.scheduleNotes ?? null)
+            : null,
         status,
         publishedAt: status === "open" ? new Date() : null,
         createdById: actorUserId,
@@ -281,9 +290,14 @@ export async function createJobForApi(input: {
 
   if (event) {
     await publishPersistedDomainEvents([event]);
-    await emitWebhookEvent(workspaceId, "job.published", {
-      job: serializeJob(job),
-    }, { actorId: actorUserId, skipDomainEvent: true });
+    await emitWebhookEvent(
+      workspaceId,
+      "job.published",
+      {
+        job: serializeJob(job),
+      },
+      { actorId: actorUserId, skipDomainEvent: true },
+    );
   }
   return job;
 }
@@ -303,15 +317,15 @@ export async function updateJobForApi(input: {
     input.values.opportunityType ?? existing.opportunityType;
   const nextEmploymentType =
     nextOpportunityType === "employment"
-      ? input.values.employmentType ?? existing.employmentType
+      ? (input.values.employmentType ?? existing.employmentType)
       : null;
   const nextMinimumHours =
     nextOpportunityType === "volunteer"
-      ? input.values.minimumHours ?? existing.minimumHours
+      ? (input.values.minimumHours ?? existing.minimumHours)
       : null;
   const nextCommitmentPeriod =
     nextOpportunityType === "volunteer"
-      ? input.values.commitmentPeriod ?? existing.commitmentPeriod
+      ? (input.values.commitmentPeriod ?? existing.commitmentPeriod)
       : null;
   if (nextOpportunityType === "employment" && !nextEmploymentType) {
     throw ApiError.unprocessable(
@@ -327,7 +341,17 @@ export async function updateJobForApi(input: {
     );
   }
   if (nextStatus === "open") {
-    const [pending] = await db.select({ id: jobApprovalRequests.id }).from(jobApprovalRequests).where(and(eq(jobApprovalRequests.workspaceId, input.workspaceId), eq(jobApprovalRequests.jobId, input.jobId), eq(jobApprovalRequests.status, "pending"))).limit(1);
+    const [pending] = await db
+      .select({ id: jobApprovalRequests.id })
+      .from(jobApprovalRequests)
+      .where(
+        and(
+          eq(jobApprovalRequests.workspaceId, input.workspaceId),
+          eq(jobApprovalRequests.jobId, input.jobId),
+          eq(jobApprovalRequests.status, "pending"),
+        ),
+      )
+      .limit(1);
     if (pending) throw ApiError.conflict("Job has a pending approval request.");
   }
   const becomesPublished =
@@ -338,46 +362,46 @@ export async function updateJobForApi(input: {
     const [next] = await tx
       .update(jobs)
       .set({
-      title: input.values.title ?? existing.title,
-      description: input.values.description ?? existing.description,
-      department: input.values.department ?? existing.department,
-      location: input.values.location ?? existing.location,
-      opportunityType: nextOpportunityType,
-      employmentType: nextEmploymentType,
-      workplaceType: input.values.workplaceType ?? existing.workplaceType,
-      requirements: input.values.requirements ?? existing.requirements,
-      benefits: input.values.benefits ?? existing.benefits,
-      keywords: input.values.keywords ?? (existing.keywords as string[]),
-      salaryMin:
-        nextOpportunityType === "employment"
-          ? input.values.salaryMin ?? existing.salaryMin
-          : null,
-      salaryMax:
-        nextOpportunityType === "employment"
-          ? input.values.salaryMax ?? existing.salaryMax
-          : null,
-      currency:
-        nextOpportunityType === "employment"
-          ? input.values.currency ?? existing.currency
-          : null,
-      salaryPeriod:
-        nextOpportunityType === "employment"
-          ? input.values.salaryPeriod ?? existing.salaryPeriod
-          : null,
-      minimumHours: nextMinimumHours,
-      commitmentPeriod: nextCommitmentPeriod,
-      scheduleNotes:
-        nextOpportunityType === "volunteer"
-          ? input.values.scheduleNotes ?? existing.scheduleNotes
-          : null,
-      status: nextStatus,
-      publishedAt:
-        nextStatus === "open"
-          ? becomesPublished
-            ? new Date()
-            : existing.publishedAt
-          : null,
-      updatedAt: new Date(),
+        title: input.values.title ?? existing.title,
+        description: input.values.description ?? existing.description,
+        department: input.values.department ?? existing.department,
+        location: input.values.location ?? existing.location,
+        opportunityType: nextOpportunityType,
+        employmentType: nextEmploymentType,
+        workplaceType: input.values.workplaceType ?? existing.workplaceType,
+        requirements: input.values.requirements ?? existing.requirements,
+        benefits: input.values.benefits ?? existing.benefits,
+        keywords: input.values.keywords ?? (existing.keywords as string[]),
+        salaryMin:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryMin ?? existing.salaryMin)
+            : null,
+        salaryMax:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryMax ?? existing.salaryMax)
+            : null,
+        currency:
+          nextOpportunityType === "employment"
+            ? (input.values.currency ?? existing.currency)
+            : null,
+        salaryPeriod:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryPeriod ?? existing.salaryPeriod)
+            : null,
+        minimumHours: nextMinimumHours,
+        commitmentPeriod: nextCommitmentPeriod,
+        scheduleNotes:
+          nextOpportunityType === "volunteer"
+            ? (input.values.scheduleNotes ?? existing.scheduleNotes)
+            : null,
+        status: nextStatus,
+        publishedAt:
+          nextStatus === "open"
+            ? becomesPublished
+              ? new Date()
+              : existing.publishedAt
+            : null,
+        updatedAt: new Date(),
       })
       .where(
         and(eq(jobs.id, input.jobId), eq(jobs.workspaceId, input.workspaceId)),
@@ -423,9 +447,14 @@ export async function updateJobForApi(input: {
 
   if (event) {
     await publishPersistedDomainEvents([event]);
-    await emitWebhookEvent(input.workspaceId, "job.published", {
-      job: serializeJob(updated),
-    }, { skipDomainEvent: true });
+    await emitWebhookEvent(
+      input.workspaceId,
+      "job.published",
+      {
+        job: serializeJob(updated),
+      },
+      { skipDomainEvent: true },
+    );
   }
   return updated;
 }

@@ -163,6 +163,52 @@ describe("applicationFormSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("requires structured location for volunteer applications", () => {
+    const schema = createApplicationFormSchema(
+      {
+        resumeRequired: false,
+        profileLinks: {},
+        sections: {
+          personal: {
+            phone: { visibility: "optional" },
+            address: { visibility: "optional" },
+            photo: { visibility: "disabled" },
+            headline: { visibility: "optional" },
+          },
+          profile: {
+            resume: { visibility: "optional" },
+            education: { visibility: "optional" },
+            experience: { visibility: "optional" },
+            linkedinUrl: { visibility: "optional" },
+            githubUrl: { visibility: "optional" },
+            websiteUrl: { visibility: "optional" },
+          },
+          details: { coverLetter: { visibility: "optional" } },
+        },
+        questions: [],
+      },
+      { opportunityType: "volunteer" },
+    );
+
+    const missing = schema.safeParse({
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+    });
+    expect(missing.success).toBe(false);
+
+    const valid = schema.safeParse({
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+      countryCode: "us",
+      region: "California",
+      city: "San Francisco",
+    });
+    expect(valid.success).toBe(true);
+    if (valid.success) expect(valid.data.countryCode).toBe("US");
+  });
+
   it("requires configured address and cover letter fields", () => {
     const schema = createApplicationFormSchema({
       resumeRequired: false,

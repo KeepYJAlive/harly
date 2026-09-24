@@ -336,10 +336,7 @@ export async function listOpenJobsForWorkspaceSlug(workspaceSlug: string) {
     .select()
     .from(jobs)
     .where(
-      and(
-        eq(jobs.workspaceId, workspace.id),
-        publicJobVisibilityConditions(),
-      ),
+      and(eq(jobs.workspaceId, workspace.id), publicJobVisibilityConditions()),
     )
     .orderBy(desc(jobs.publishedAt), desc(jobs.createdAt));
 
@@ -674,7 +671,10 @@ export async function permanentlyDeleteJob(jobId: string) {
     // with the same event/webhook/audit trail a standalone delete gets, so by
     // the time the job row is deleted below zero referrals are left to cascade.
     const jobReferrals = await tx
-      .select({ id: candidateReferrals.id, candidateId: candidateReferrals.candidateId })
+      .select({
+        id: candidateReferrals.id,
+        candidateId: candidateReferrals.candidateId,
+      })
       .from(candidateReferrals)
       .where(
         and(
@@ -689,7 +689,12 @@ export async function permanentlyDeleteJob(jobId: string) {
         { id: r.id, workspaceId: workspace.id, candidateId: r.candidateId },
         user.id,
       );
-      if (event) referralDeletions.push({ event, referralId: r.id, candidateId: r.candidateId });
+      if (event)
+        referralDeletions.push({
+          event,
+          referralId: r.id,
+          candidateId: r.candidateId,
+        });
     }
 
     await tx

@@ -1,6 +1,10 @@
 import type { Job } from "@harly/db";
 
-import { FieldBox, fieldBoxControlClassName, fieldBoxSelectTriggerClassName } from "@/components/ui/field-box";
+import {
+  FieldBox,
+  fieldBoxControlClassName,
+  fieldBoxSelectTriggerClassName,
+} from "@/components/ui/field-box";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -24,8 +28,8 @@ export function CompensationSection({
     return (
       <div className="space-y-4">
         <div className="rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          This is an unpaid volunteer opportunity. Salary and compensation
-          fields are not collected or displayed.
+          Volunteer opportunities use a time commitment instead of salary or
+          compensation fields.
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <FieldBox
@@ -109,7 +113,10 @@ export function CompensationSection({
         </FieldBox>
         <FieldBox label="Currency" htmlFor="currency">
           <Select name="currency" defaultValue={job?.currency ?? "USD"}>
-            <SelectTrigger id="currency" className={fieldBoxSelectTriggerClassName}>
+            <SelectTrigger
+              id="currency"
+              className={fieldBoxSelectTriggerClassName}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -122,8 +129,14 @@ export function CompensationSection({
           </Select>
         </FieldBox>
         <FieldBox label="Period" htmlFor="salaryPeriod">
-          <Select name="salaryPeriod" defaultValue={job?.salaryPeriod ?? "annual"}>
-            <SelectTrigger id="salaryPeriod" className={fieldBoxSelectTriggerClassName}>
+          <Select
+            name="salaryPeriod"
+            defaultValue={job?.salaryPeriod ?? "annual"}
+          >
+            <SelectTrigger
+              id="salaryPeriod"
+              className={fieldBoxSelectTriggerClassName}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

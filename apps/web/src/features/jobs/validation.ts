@@ -54,10 +54,7 @@ const optionalDate = z.preprocess(
 
 const fieldVisibility = (defaultValue: ApplicationFieldVisibility) =>
   z.preprocess(
-    (value) =>
-      value == null || value === ""
-        ? defaultValue
-        : value,
+    (value) => (value == null || value === "" ? defaultValue : value),
     z.enum(["required", "optional", "disabled"]),
   );
 
@@ -68,19 +65,11 @@ export const jobFormSchema = z
     department: optionalText,
     sector: optionalText,
     location: optionalText,
-    opportunityType: z
-      .enum(["employment", "volunteer"])
-      .default("employment"),
+    opportunityType: z.enum(["employment", "volunteer"]).default("employment"),
     employmentType: z.preprocess(
       (value) => (value === "" || value == null ? undefined : value),
       z
-        .enum([
-          "full_time",
-          "part_time",
-          "contract",
-          "temporary",
-          "internship",
-        ])
+        .enum(["full_time", "part_time", "contract", "temporary", "internship"])
         .optional(),
     ),
     workplaceType: z.enum(["remote", "hybrid", "onsite"]),
@@ -272,7 +261,10 @@ export const jobFormSchema = z
       officeAddress: values.officeAddress,
       jobLocationCountry: values.jobLocationCountry?.toUpperCase(),
       jobLocationRegion: values.jobLocationRegion,
-      remoteEligibleCountries: (values.remoteEligibleCountries ?? "").split(",").map((value) => value.trim().toUpperCase()).filter((value) => /^[A-Z]{2}$/.test(value)),
+      remoteEligibleCountries: (values.remoteEligibleCountries ?? "")
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter((value) => /^[A-Z]{2}$/.test(value)),
       validThrough: values.validThrough,
       officePhotos: parseOfficePhotos(values.officePhotosJson),
       applicationConfig,
