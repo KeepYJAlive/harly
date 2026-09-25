@@ -92,9 +92,10 @@ before you start.
   `ghcr.io/vytral/harly:latest` to that same digest. Prerelease tags publish
   only their own version tag.
 - Pushes to `main` no longer publish an image.
-- `:latest` only ever moves forward. Tagging a support patch on an older line
-  after a newer version is published leaves `:latest` where it is, so a release
-  can never downgrade the installs that follow the stable channel.
+- `:latest` only ever moves forward, and so does the release manifest that
+  `harly update` reads. Tagging a support patch on an older line after a newer
+  version is published leaves both where they are, so a release can never
+  downgrade the installs that follow the stable channel.
 - The container image is built and scanned before it is pushed. A blocking
   vulnerability now keeps the image out of the registry instead of only
   skipping the release that announces it.
@@ -118,6 +119,17 @@ before you start.
   a rolling deploy, an init container per replica, or an overlapping redeploy —
   previously ran the same DDL concurrently with no coordination. The second
   process now waits, applies nothing, and exits cleanly.
+- Passkey login issues a usable session. The route wrote the raw session token
+  into the cookie, but Better Auth only accepts a signed one, so a successful
+  WebAuthn assertion still landed back on the login page.
+- `db:verify-migrations` accepts migrations that have not been applied yet. It
+  required the journal and the database to match exactly, which made the
+  prescribed pre-upgrade check fail precisely when there was something to
+  upgrade. The applied history is still verified hash by hash, and a database
+  ahead of the checkout is still an error.
+- Magic-link login is only offered when it can actually deliver. An SMTP host
+  without a port advertised the method while the mail transport refused to
+  build, leaving a workspace that allows only magic link with no way in.
 - The release workflow can publish its GitHub Release at all. It ran `gh`
   without a checkout and without `GH_REPO`, so every release would have failed
   to resolve the repository.

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +41,7 @@ vi.mock("@/lib/auth", () => ({
         },
       },
       sessionConfig: { expiresIn: 3600 },
+      secret: "test-secret",
       options: { session: { cookieCache: { enabled: false } } },
     }),
   },
@@ -114,7 +117,16 @@ describe("passkey login", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ verified: true });
-    expect(response.headers.get("set-cookie")).toContain("session_token=session-secret");
-    expect(response.headers.get("set-cookie")).not.toMatch(/(?:^|;\s*)token=/);
+    // better-auth only accepts a signed session cookie. A raw token here would
+    // leave the visitor anonymous after a successful WebAuthn assertion.
+    const expectedSignature = createHmac("sha256", "test-secret")
+      .update("session-secret")
+      .digest("base64");
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain(
+      `session_token=${encodeURIComponent(`session-secret.${expectedSignature}`)}`,
+    );
+    expect(setCookie).not.toMatch(/session_token=session-secret[;,]/);
+    expect(setCookie).not.toMatch(/(?:^|;\s*)token=/);
   });
 });

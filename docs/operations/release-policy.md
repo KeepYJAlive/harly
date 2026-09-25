@@ -79,10 +79,14 @@ release can never downgrade the installs that follow the stable channel. After
 floating on `latest`. The command reads `release-manifest.json` on `main`.
 `--to latest` selects the same stable version.
 
-A stable tag also updates the manifest, `fly.toml`, `render.yaml`, the
+The newest stable tag updates the manifest, `fly.toml`, `render.yaml`, the
 DigitalOcean specs, and the release metadata embedded in the CLI, then commits
 those files to `main`. A beta or release candidate publishes the image and a
-GitHub prerelease, and leaves the stable manifest alone.
+GitHub prerelease, and leaves the stable manifest alone. So does a stable patch
+on an older line: it publishes its image and release, but it does not touch the
+manifest or `latest`, because doing so would hand every stable installation a
+version older than the one it already runs. Install one of those deliberately
+with `--to`.
 
 Images already published as `edge` or `sha-*` stay in GHCR until they are
 deleted from the package settings. New commits do not add more of them.

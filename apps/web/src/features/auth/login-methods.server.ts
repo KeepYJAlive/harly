@@ -93,6 +93,7 @@ async function resolveLoginMethodState(): Promise<{
       emailFrom: workspaceSettings.emailFrom,
       emailApiKeyCiphertext: workspaceSettings.emailApiKeyCiphertext,
       emailSmtpHost: workspaceSettings.emailSmtpHost,
+      emailSmtpPort: workspaceSettings.emailSmtpPort,
     })
     .from(workspaceSettings)
     .limit(1);
@@ -126,6 +127,7 @@ function isStaffEmailDeliverable(
         emailFrom: string | null;
         emailApiKeyCiphertext: string | null;
         emailSmtpHost: string | null;
+        emailSmtpPort: number | null;
       }
     | undefined,
 ): boolean {
@@ -144,8 +146,11 @@ function isStaffEmailDeliverable(
   }
 
   if (settings.emailProvider === "smtp") {
-    // SMTP can send without a password (open relay / local), so host is enough.
-    return Boolean(settings.emailSmtpHost);
+    // Must match what the sender requires, or a method is advertised that
+    // cannot deliver. Both packages/auth/src/auth.ts and
+    // apps/web/src/lib/email/config.ts build no transport at all without a host
+    // *and* a port. A password is genuinely optional (open relay / local).
+    return Boolean(settings.emailSmtpHost) && Boolean(settings.emailSmtpPort);
   }
 
   return false;

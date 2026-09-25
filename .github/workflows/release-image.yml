@@ -151,9 +151,16 @@ jobs:
           provenance: mode=max
 
   release-manifest:
-    # Betas and release candidates stay opt-in. Only a stable tag moves the
-    # version that `harly update` installs.
-    if: needs.image.outputs.prerelease == 'false'
+    # Only the release that owns the stable channel may move the manifest.
+    #
+    # `prerelease == 'false'` is not enough: tagging a support patch on an older
+    # line (v0.1.6 after v0.2.0 is out) is a stable tag, so it would rewrite the
+    # manifest and the deployment assets to the older version. `:latest` would
+    # correctly stay on 0.2.0 while fresh installs and the default update
+    # channel went backwards to 0.1.6 — and every 0.2.0 install would fail the
+    # CLI's downgrade guard. `latest` is true only for the highest stable tag,
+    # which is exactly the condition for owning the channel.
+    if: needs.image.outputs.latest == 'true'
     needs: image
     runs-on: ubuntu-latest
     permissions:
@@ -260,19 +267,23 @@ jobs:
               echo '```bash'
               echo "npx @harly/cli update --to ${VERSION}"
               echo '```'
-            else
+            elif [ "$LATEST" = "true" ]; then
               echo "Self-hosted installs move to this version with:"
               echo
               echo '```bash'
               echo "npx @harly/cli update"
               echo '```'
-              if [ "$LATEST" = "true" ]; then
-                echo
-                echo "\`ghcr.io/vytral/harly:latest\` points at this same image."
-              else
-                echo
-                echo "This is an older release line, so \`ghcr.io/vytral/harly:latest\` is unchanged."
-              fi
+              echo
+              echo "\`ghcr.io/vytral/harly:latest\` points at this same image."
+            else
+              echo "This is a patch on an older release line, so it does not become the default."
+              echo "\`ghcr.io/vytral/harly:latest\` and \`npx @harly/cli update\` stay on the newest stable version."
+              echo
+              echo "Install it deliberately:"
+              echo
+              echo '```bash'
+              echo "npx @harly/cli update --to ${VERSION}"
+              echo '```'
             fi
             echo
             echo "Image: \`ghcr.io/vytral/harly:${VERSION}\`"

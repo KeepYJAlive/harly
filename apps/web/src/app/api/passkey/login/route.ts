@@ -8,6 +8,7 @@ import { db, passkeys } from "@harly/db";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { RP_ID, ORIGIN } from "@/lib/passkey";
+import { signSessionCookieValue } from "@/lib/session-cookie";
 import { clientIp, enforceRateLimit } from "@/server/api/ratelimit";
 
 const log = createLogger("api-passkey-login");
@@ -171,7 +172,10 @@ export async function POST(req: NextRequest) {
   const cookieAttributes = ctx.authCookies.sessionToken.attributes;
 
   // Set the session token cookie.
-  response.cookies.set(cookieName, session.token, {
+  // better-auth stores this as a SIGNED cookie. Writing the raw token would
+  // make getSession reject it, so a successful WebAuthn assertion would still
+  // land on the login page.
+  response.cookies.set(cookieName, signSessionCookieValue(session.token, ctx.secret), {
     maxAge: ctx.sessionConfig.expiresIn,
     path: cookieAttributes.path || "/",
     httpOnly: (cookieAttributes as Record<string, unknown>).httponly as boolean || cookieAttributes.httpOnly,

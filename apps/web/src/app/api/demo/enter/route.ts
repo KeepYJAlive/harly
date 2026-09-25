@@ -4,28 +4,15 @@ import { demoLoginEmail, demoWorkspaceId, isDemoMode } from "@harly/config";
 import { db, member, user as userTable } from "@harly/db";
 import { eq, sql as dsql } from "drizzle-orm";
 
-import { createHmac } from "node:crypto";
-
 import { auth } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/server/api/ratelimit";
 import { createLogger } from "@/lib/logger";
+import { signSessionCookieValue } from "@/lib/session-cookie";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const log = createLogger("demo-enter");
-
-/**
- * Sign a cookie value the way better-auth (via better-call) does:
- * `<value>.<base64(HMAC-SHA256(value, secret))>`. better-call URL-encodes the
- * result itself, but Next.js's `cookies.set()` also encodes the value, so we
- * return the RAW signed string and let Next apply the single encode (encoding
- * here too would double-encode `/` `+` `=` and break verification).
- */
-function signCookieValue(value: string, secret: string): string {
-  const signature = createHmac("sha256", secret).update(value).digest("base64");
-  return `${value}.${signature}`;
-}
 
 /**
  * Public demo entry. Only mounted when DEMO_MODE=true. Verifies a Cloudflare
@@ -139,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const cookieAttributes = ctx.authCookies.sessionToken.attributes;
   // better-auth stores the session token as a SIGNED cookie; setting the raw
   // token would make getSession reject it. Sign it the same way here.
-  const signedValue = signCookieValue(session.token, ctx.secret);
+  const signedValue = signSessionCookieValue(session.token, ctx.secret);
   response.cookies.set(cookieName, signedValue, {
     maxAge: ctx.sessionConfig.expiresIn,
     path: cookieAttributes.path || "/",

@@ -30,6 +30,8 @@ export type MigrationVerificationResult = {
   files: number;
   journal: number;
   database: number;
+  /** Journal entries not yet applied. A normal pre-upgrade state, not an error. */
+  pending: string[];
   errors: string[];
 };
 
@@ -89,9 +91,16 @@ export function compareMigrationChain(
     );
   }
 
-  if (journal.length !== applied.length) {
+  // The applied set must be a PREFIX of the journal, not an exact match.
+  //
+  // Before an upgrade the checkout legitimately carries migrations the database
+  // has not seen yet — that is the state this check is meant to be run in.
+  // Requiring equality made the prescribed pre-migration verification fail
+  // exactly when it mattered. What must never happen is the database being
+  // ahead of the code, which means the wrong checkout or a rolled-back branch.
+  if (applied.length > journal.length) {
     errors.push(
-      `Journal/database count mismatch: ${journal.length} journal entries vs ${applied.length} database rows.`,
+      `The database is ahead of this checkout: ${applied.length} applied migrations vs ${journal.length} journal entries. This checkout is missing migrations that have already run.`,
     );
   }
 
@@ -141,10 +150,19 @@ export function compareMigrationChain(
     }
   }
 
+  // Everything past the applied prefix is pending. It is contiguous by
+  // construction: the loop above validated every position the database covers,
+  // and drizzle applies the journal in order.
+  const pending =
+    applied.length < journal.length
+      ? journal.slice(applied.length).map((entry) => entry.tag)
+      : [];
+
   return {
     files: files.length,
     journal: journal.length,
     database: applied.length,
+    pending,
     errors,
   };
 }
@@ -187,8 +205,14 @@ async function main() {
     }
 
     console.log(
-      `Migration verification passed: ${result.files} files, ${result.journal} journal entries, ${result.database} database rows.`,
+      `Migration verification passed: ${result.files} files, ${result.journal} journal entries, ${result.database} applied.`,
     );
+    if (result.pending.length > 0) {
+      console.log(
+        `${result.pending.length} migration(s) pending, in order: ${result.pending.join(", ")}.`,
+      );
+      console.log("The applied history matches this checkout. Run db:migrate to apply them.");
+    }
   } finally {
     await sql.end();
   }

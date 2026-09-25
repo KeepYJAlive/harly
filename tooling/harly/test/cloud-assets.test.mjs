@@ -103,6 +103,17 @@ test("version tags are the only published images", async () => {
   assert.match(workflow, /uses: \.\/\.github\/workflows\/ci\.yml/);
   // The notes are published only once the manifest they point at is live.
   assert.match(workflow, /needs: \[image, release-manifest\]/);
+  // The manifest moves only for the release that owns the stable channel. A
+  // stable patch on an older line must not rewrite it, or `harly update` would
+  // hand every stable installation an older version than it already runs.
+  assert.match(
+    workflow,
+    /if: needs\.image\.outputs\.latest == 'true'/,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /if: needs\.image\.outputs\.prerelease == 'false'/,
+  );
   for (const file of [
     "release-manifest.json",
     "fly.toml",
