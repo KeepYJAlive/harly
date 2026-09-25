@@ -9,7 +9,11 @@ export type StorageAdapter = {
     key: string;
     contentType: string;
     contentLength: number;
-  }): Promise<{ uploadUrl: string; fileUrl: string }>;
+  }): Promise<{
+    uploadUrl: string;
+    fileUrl: string;
+    uploadHeaders?: Record<string, string>;
+  }>;
 
   /**
    * Read a file's bytes by key. Used for server-side processing (e.g. CV parsing).

@@ -45,13 +45,14 @@ export class S3Adapter implements StorageAdapter {
     contentType: string;
     contentLength: number;
   }) {
+    const isPublicImage = params.key.includes("/images/");
+
     const command = new PutObjectCommand({
       Bucket: this.config.bucket,
       Key: params.key,
       ContentType: params.contentType,
-      // Signing the exact length makes S3 reject a larger PUT even if the
-      // caller bypasses the application's request schema.
       ContentLength: params.contentLength,
+      ...(isPublicImage ? { ACL: "public-read" } : {}),
     });
 
     const uploadUrl = await getSignedUrl(this.client, command, {
@@ -62,7 +63,13 @@ export class S3Adapter implements StorageAdapter {
       ? `${trimTrailingSlash(this.config.publicUrl)}/${encodeKey(params.key)}`
       : `https://${this.config.bucket}.s3.${this.config.region}.amazonaws.com/${encodeKey(params.key)}`;
 
-    return { uploadUrl, fileUrl };
+    return {
+      uploadUrl,
+      fileUrl,
+      uploadHeaders: isPublicImage
+        ? { "x-amz-acl": "public-read" }
+        : undefined,
+    };
   }
 
   async read(key: string) {

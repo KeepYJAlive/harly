@@ -1130,10 +1130,13 @@ export function ApplyForm({
 
     const uploadResponse = await fetch(presignPayload.uploadUrl, {
       method: "PUT",
-      headers: { "Content-Type": file.type },
+      headers: {
+        "Content-Type": file.type,
+        ...presignPayload.uploadHeaders,
+      },
       body: file,
     });
-
+    
     if (!uploadResponse.ok) {
       throw new Error("Unable to upload photo.");
     }

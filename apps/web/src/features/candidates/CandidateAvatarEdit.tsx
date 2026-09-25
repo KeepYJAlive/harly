@@ -35,11 +35,15 @@ async function uploadImage(file: Blob): Promise<string> {
     uploadUrl: string;
     fileUrl: string;
     key: string;
+    uploadHeaders?: Record<string, string>;
   };
 
   const put = await fetch(data.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type || "image/jpeg" },
+    headers: {
+      "Content-Type": file.type || "image/jpeg",
+      ...data.uploadHeaders,
+    },
     body: file,
   });
 

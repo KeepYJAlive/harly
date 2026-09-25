@@ -35,11 +35,15 @@ async function portalUploadImage(file: Blob): Promise<{ fileUrl: string; key: st
     uploadUrl: string;
     fileUrl: string;
     key: string;
+    uploadHeaders?: Record<string, string>;
   };
 
   const put = await fetch(data.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type || "image/jpeg" },
+    headers: {
+      "Content-Type": file.type || "image/jpeg",
+      ...data.uploadHeaders,
+    },
     body: file,
   });
 

@@ -7,7 +7,12 @@ import { toast } from "@/lib/notification-island/toast";
 import { getImageFileValidationError } from "@/lib/storage-validation";
 import { cn } from "@/lib/utils";
 
-type PresignResponse = { uploadUrl: string; fileUrl: string; key: string };
+type PresignResponse = { 
+  uploadUrl: string; 
+  fileUrl: string;
+  key: string; 
+  uploadHeaders?: Record<string, string> 
+};
 
 async function uploadImage(file: File): Promise<string> {
   const presign = await fetch("/api/storage/presign", {
@@ -29,7 +34,10 @@ async function uploadImage(file: File): Promise<string> {
 
   const put = await fetch(data.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
+    headers: {
+      "Content-Type": file.type,
+      ...data.uploadHeaders,
+    },
     body: file,
   });
 

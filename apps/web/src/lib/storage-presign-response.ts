@@ -2,12 +2,19 @@ export type StoragePresignResponse = {
   uploadUrl: string;
   fileUrl: string;
   key: string;
+  uploadHeaders?: Record<string, string>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
 function isStoragePresignResponse(
   value: unknown,
 ): value is StoragePresignResponse {
@@ -15,7 +22,8 @@ function isStoragePresignResponse(
     isRecord(value) &&
     typeof value.uploadUrl === "string" &&
     typeof value.fileUrl === "string" &&
-    typeof value.key === "string"
+    typeof value.key === "string" &&
+    (value.uploadHeaders === undefined || isStringRecord(value.uploadHeaders))
   );
 }
 
