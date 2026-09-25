@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generateAuthenticationOptions: vi.fn(),
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   enforceRateLimit: vi.fn(),
   storeChallenge: vi.fn(),
   consumeChallenge: vi.fn(),
+  eq: vi.fn((field, value) => ({ field, value })),
 }));
 
 vi.mock("@simplewebauthn/server", () => ({
@@ -20,10 +21,11 @@ vi.mock("@simplewebauthn/server", () => ({
 }));
 vi.mock("@harly/db", () => ({
   db: { select: mocks.select, update: mocks.update },
-  passkeys: { credentialId: "credentialId", id: "id" },
+  passkeys: { credentialId: "credentialId", transports: "transports", userId: "userId", id: "id" },
+  user: { email: "email", id: "userId" },
 }));
 vi.mock("drizzle-orm", () => ({
-  eq: () => ({ operator: "eq" }),
+  eq: mocks.eq,
 }));
 vi.mock("@/lib/auth", () => ({
   auth: {
@@ -73,6 +75,8 @@ function selectChain(result: unknown[]) {
 }
 
 describe("passkey login", () => {
+  beforeEach(() => vi.clearAllMocks());
+
   it("sets the session cookie without returning the bearer token in JSON", async () => {
     mocks.enforceRateLimit.mockResolvedValue(undefined);
     mocks.storeChallenge.mockResolvedValue({ id: "challenge-id" });
@@ -145,5 +149,44 @@ describe("passkey login", () => {
     );
     expect(setCookie).not.toMatch(/session_token=session-secret[;,]/);
     expect(setCookie).not.toMatch(/(?:^|;\s*)token=/);
+  });
+
+  it("offers a legacy credential fallback scoped to the supplied account", async () => {
+    mocks.enforceRateLimit.mockResolvedValue(undefined);
+    mocks.select.mockReturnValueOnce({
+      from: () => ({
+        innerJoin: () => ({
+          where: async () => [{ credentialId: "legacy-credential", transports: '["usb"]' }],
+        }),
+      }),
+    });
+    mocks.generateAuthenticationOptions.mockResolvedValue({
+      challenge: "legacy-challenge",
+      allowCredentials: [{ id: "legacy-credential", transports: ["usb"] }],
+    });
+    mocks.storeChallenge.mockResolvedValue({ id: "legacy-challenge-id" });
+
+    const response = await POST(new Request("https://harly.test/api/passkey/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "legacy-options", email: "  Person@Example.com " }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      challengeId: "legacy-challenge-id",
+      allowCredentials: [{ id: "legacy-credential", transports: ["usb"] }],
+    });
+    expect(mocks.select).toHaveBeenCalledWith({
+      credentialId: "credentialId",
+      transports: "transports",
+    });
+    expect(mocks.eq).toHaveBeenCalledWith("email", "person@example.com");
+    expect(mocks.generateAuthenticationOptions).toHaveBeenCalledWith({
+      rpID: "harly.test",
+      userVerification: "preferred",
+      allowCredentials: [{ id: "legacy-credential", transports: ["usb"] }],
+    });
+    expect(mocks.storeChallenge).toHaveBeenCalledWith(null, "legacy-challenge", "login");
   });
 });

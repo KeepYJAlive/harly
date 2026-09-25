@@ -82,8 +82,9 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState<PendingAction>(null);
-  const [hasPasskey, setHasPasskey] = useState(false);
   const [isPasskeySupported, setIsPasskeySupported] = useState(false);
+  const [showLegacyPasskey, setShowLegacyPasskey] = useState(false);
+  const [legacyPasskeyEmail, setLegacyPasskeyEmail] = useState("");
 
   const callbackURL = redirect || "/dashboard";
   const isBusy = pending !== null;
@@ -91,7 +92,7 @@ export function LoginForm({
   const ssoOnly = isSsoOnly(methods);
   const showPasswordForm = methods.password && !ssoOnly;
   const showPasskey =
-    methods.passkey && isPasskeySupported && hasPasskey && !ssoOnly;
+    methods.passkey && isPasskeySupported && !ssoOnly;
 
   useEffect(() => {
     if (!methods.passkey) return;
@@ -101,13 +102,6 @@ export function LoginForm({
         return;
       }
       setIsPasskeySupported(true);
-      try {
-        setHasPasskey(
-          await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
-        );
-      } catch {
-        setHasPasskey(false);
-      }
     }
     check();
   }, [methods.passkey]);
@@ -218,12 +212,18 @@ export function LoginForm({
     }
   }
 
-  async function signInWithPasskey() {
+  async function signInWithPasskey(email?: string) {
     setError(null);
     setSent(false);
     setPending("passkey");
     try {
-      const optionsRes = await fetch("/api/passkey/login", { method: "GET" });
+      const optionsRes = email
+        ? await fetch("/api/passkey/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "legacy-options", email }),
+          })
+        : await fetch("/api/passkey/login", { method: "GET" });
       if (!optionsRes.ok) {
         setError("Unable to start passkey authentication.");
         return;
@@ -299,13 +299,23 @@ export function LoginForm({
       window.location.href = callbackURL;
     } catch (err) {
       if (err instanceof Error && err.name === "NotAllowedError") {
-        setError("No passkey was selected or the request was cancelled. If your passkey was added before discoverable sign-in was required, sign in another way and add it again.");
+        setError("No passkey was selected or the request was cancelled. For an older passkey, choose ‘Use an older passkey’ and enter your email.");
       } else {
         setError("Passkey authentication failed.");
       }
     } finally {
       setPending(null);
     }
+  }
+
+  function signInWithLegacyPasskey(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedEmail = legacyPasskeyEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError("Enter your email to use an older passkey.");
+      return;
+    }
+    void signInWithPasskey(normalizedEmail);
   }
 
   // Build the ordered alternative-methods list (social + SSO + magic link).
@@ -469,15 +479,52 @@ export function LoginForm({
           ) : null}
 
           {showPasskey ? (
-            <button
-              type="button"
-              onClick={signInWithPasskey}
-              disabled={isBusy}
-              className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-mist-border bg-white py-3 text-sm font-medium text-foreground transition-colors hover:bg-soft-kraft disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {pending === "passkey" ? <AuthSpinner /> : <PasskeyIcon />}
-              Continue with passkey
-            </button>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => signInWithPasskey()}
+                disabled={isBusy}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-mist-border bg-white py-3 text-sm font-medium text-foreground transition-colors hover:bg-soft-kraft disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pending === "passkey" ? <AuthSpinner /> : <PasskeyIcon />}
+                Continue with passkey
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLegacyPasskey((visible) => !visible)}
+                disabled={isBusy}
+                className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+              >
+                Use an older passkey
+              </button>
+              {showLegacyPasskey ? (
+                <form className="space-y-3 rounded-xl border border-mist-border bg-white p-4" onSubmit={signInWithLegacyPasskey}>
+                  <label htmlFor="legacy-passkey-email" className="block text-xs font-medium text-foreground">
+                    Email used with your account
+                  </label>
+                  <input
+                    id="legacy-passkey-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={legacyPasskeyEmail}
+                    onChange={(event) => setLegacyPasskeyEmail(event.target.value)}
+                    className="auth-field w-full border-0 border-b border-input bg-transparent pb-2 text-sm text-foreground outline-none focus:border-ring"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This is for passkeys registered before discoverable sign-in was required.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isBusy}
+                    className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  >
+                    {pending === "passkey" ? <AuthSpinner /> : null}
+                    Continue with older passkey
+                  </button>
+                </form>
+              ) : null}
+            </div>
           ) : null}
 
           <AuthMethodsRow methods={altMethods} disabled={isBusy} />

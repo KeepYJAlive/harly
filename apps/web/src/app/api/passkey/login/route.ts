@@ -4,7 +4,7 @@ import {
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
-import { db, passkeys } from "@harly/db";
+import { db, passkeys, user } from "@harly/db";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { RP_ID, ORIGIN, storeChallenge, consumeChallenge } from "@/lib/passkey";
@@ -12,6 +12,33 @@ import { signSessionCookieValue } from "@/lib/session-cookie";
 import { clientIp, enforceRateLimit } from "@/server/api/ratelimit";
 
 const log = createLogger("api-passkey-login");
+
+async function createAuthenticationOptions(email?: string) {
+  const legacyPasskeys = email
+    ? await db
+        .select({ credentialId: passkeys.credentialId, transports: passkeys.transports })
+        .from(passkeys)
+        .innerJoin(user, eq(passkeys.userId, user.id))
+        .where(eq(user.email, email))
+    : [];
+
+  const options = await generateAuthenticationOptions({
+    rpID: RP_ID,
+    userVerification: "preferred",
+    // No email means username-less/discoverable login. The email-scoped path
+    // exists only to let credentials created before residentKey was required
+    // authenticate; it never enumerates credentials belonging to other users.
+    allowCredentials: legacyPasskeys.map((passkey) => ({
+      id: passkey.credentialId,
+      transports: passkey.transports
+        ? (JSON.parse(passkey.transports) as AuthenticatorTransport[])
+        : undefined,
+    })),
+  });
+
+  const storedChallenge = await storeChallenge(null, options.challenge, "login");
+  return { ...options, challengeId: storedChallenge.id };
+}
 
 // GET , generate authentication options for passkey login (no session required).
 export async function GET(req: NextRequest) {
@@ -24,18 +51,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Too many attempts." }, { status: 429 });
   }
 
-  const options = await generateAuthenticationOptions({
-    rpID: RP_ID,
-    userVerification: "preferred",
-    // Empty allowCredentials requests a discoverable credential and avoids
-    // exposing credential IDs before the user has authenticated.
-    allowCredentials: [],
-  });
-
-  const storedChallenge = await storeChallenge(null, options.challenge, "login");
-
-  // Return options with the challenge ID for the client to send back.
-  return NextResponse.json({ ...options, challengeId: storedChallenge.id });
+  return NextResponse.json(await createAuthenticationOptions());
 }
 
 // POST , verify authentication response and create session for passkey login.
@@ -50,6 +66,13 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
+
+  // Explicit compatibility path for pre-discoverable credentials. Keep the
+  // email in the POST body (not the URL) and return only this user's IDs.
+  if (body.mode === "legacy-options") {
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    return NextResponse.json(await createAuthenticationOptions(email));
+  }
 
   // Atomically consume the anonymous login challenge by its unique ID.
   const expectedChallenge = typeof body.challengeId === "string"
