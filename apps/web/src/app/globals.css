@@ -530,6 +530,25 @@
   animation: auth-card-in 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Exit before a hard navigation (setup → signup → onboarding). A quiet rise +
+   fade + soft blur so the leaving surface hands off instead of snapping to a
+   blank reload. Pairs with the arriving page's entrance. */
+@keyframes auth-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+    filter: blur(3px);
+  }
+}
+.auth-leaving {
+  animation: auth-leave 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Button loading spinner. */
 @keyframes auth-spin {
   to {
@@ -540,9 +559,28 @@
   animation: auth-spin 700ms linear infinite;
 }
 
+/* Harly Sign — contextual field toolbar. Pops from the field with a small
+   scale + fade (dropdown-open token: 250ms, smooth-out, 0.97 pre-scale). */
+@keyframes t-field-toolbar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+.t-field-toolbar {
+  animation: t-field-toolbar-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-stagger > *,
-  .auth-card-enter {
+  .auth-card-enter,
+  .auth-leaving,
+  .t-field-toolbar {
     animation: none;
   }
   .auth-spinner {
