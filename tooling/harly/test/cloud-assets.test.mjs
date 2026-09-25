@@ -168,6 +168,20 @@ test("failed higher stable tags do not block the newest published stable release
   assert.deepEqual(newerCandidate, { owns: true, highest: "0.3.0" });
 });
 
+test("a stable manifest published under the lock blocks older queued releases", async () => {
+  const workflow = await readFile(
+    path.join(repositoryRoot, ".github/workflows/release-image.yml"),
+    "utf8",
+  );
+  const channelDecision = workflow.slice(
+    workflow.indexOf("name: Recompute which stable version owns the channel"),
+    workflow.indexOf("- name: Require the tag to be on main"),
+  );
+
+  assert.match(channelDecision, /manifest_version="\$\(jq -r '\.version' release-manifest\.json\)"/);
+  assert.match(channelDecision, /printf 'v%s\\n' "\$manifest_version"[\s\S]*\| node tooling\/harly\/scripts\/stable-channel\.mjs/);
+});
+
 test("cloud documentation links and provider instructions resolve", async () => {
   const [guide, readme, selfHosting, source] = await Promise.all([
     readFile(path.join(repositoryRoot, "docs/cloud-deployments.md"), "utf8"),

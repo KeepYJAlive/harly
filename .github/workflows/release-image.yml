@@ -141,9 +141,9 @@ jobs:
   # neither run re-checked.
   #
   # Recomputing here, after the concurrency gate, makes overlapping runs
-  # converge: the run that finds a newer tag stands down instead of overwriting
-  # it. The worst case is a channel that is briefly behind, never one that moves
-  # backwards.
+  # converge: a run that finds a newer published release or stable manifest
+  # stands down instead of overwriting it. The worst case is a channel that is
+  # briefly behind, never one that moves backwards.
   release-channel:
     # A beta or release candidate never touches the stable channel.
     if: needs.image.outputs.prerelease == 'false'
@@ -161,8 +161,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          # Fetched now, inside the gate, so the tag list reflects anything
-          # published while this release was building.
+          # Checkout now, inside the gate, so the manifest includes any stable
+          # channel update that completed while this release was building.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -176,12 +176,20 @@ jobs:
           # Published GitHub Releases are the success record for this workflow:
           # failed validation/scanning/build tags have no release and cannot
           # block an older successful release from taking the stable channel.
-          # Include this run's image, which is built and pushed before this job
-          # but is not published as a GitHub Release until the final job.
-          decision="$(
+          # Include the manifest version too. The channel owner writes it to
+          # main before releasing this lock, while the GitHub Release is created
+          # by a later job. That in-lock record prevents an older queued run
+          # from regressing :latest during the gap.
+          published_releases="$(
             gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
-              | node tooling/harly/scripts/stable-channel.mjs "$RELEASE_VERSION"
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          )"
+          manifest_version="$(jq -r '.version' release-manifest.json)"
+          decision="$(
+            {
+              printf '%s\n' "$published_releases"
+              printf 'v%s\n' "$manifest_version"
+            } | node tooling/harly/scripts/stable-channel.mjs "$RELEASE_VERSION"
           )"
           IFS=$'\t' read -r owns highest <<< "$decision"
           if [ "$owns" = "true" ]; then
