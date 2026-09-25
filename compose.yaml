@@ -49,8 +49,6 @@ services:
     command: ["migrate"]
     environment: 
       <<: *harly-env
-    networks:
-      - harly-db
     restart: "no"
     mem_limit: ${HARLY_MIGRATE_MEMORY:-768m}
     cpus: ${HARLY_MIGRATE_CPUS:-1.0}
