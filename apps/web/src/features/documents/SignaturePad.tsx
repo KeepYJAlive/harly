@@ -144,7 +144,6 @@ export function SignaturePad({
       const mark = await rebuildVectorMark(next.compressed);
       if (!mark || token !== generationRef.current) return;
       emitVector({ ...next, outlinePath: mark.outlinePath, areContours: mark.areContours, viewBox: mark.viewBox, strokeWidth: mark.strokeWidth }, token);
-      emitPreview(vectorMarkDataUrl(mark), token);
     } catch {
       if (token === generationRef.current) toast.error("That signature could not be read. Draw it again.");
     }
@@ -195,8 +194,9 @@ export function SignaturePad({
     drawingRef.current = false;
     captureStrokeRef.current = false;
     if (!shouldCommit) return;
-    const token = generationRef.current;
-    void publishDraw(token);
+    const canvas = canvasRef.current;
+    if (canvas) onChange(canvas.toDataURL("image/png"));
+    void publishDraw(generationRef.current);
   }
 
   function clear() {
@@ -507,7 +507,7 @@ export function SignaturePad({
             </p>
           ) : null}
           {uploadError ? <p className="text-xs text-destructive" role="alert">{uploadError}</p> : null}
-          {vector?.outlinePath ? (
+          {mode !== "draw" && vector?.outlinePath ? (
             <VectorSignaturePreview d={vector.outlinePath} areContours={vector.areContours} viewBox={vector.viewBox} strokeWidth={vector.strokeWidth} />
           ) : null}
           {allowSaved && vector?.compressed ? (

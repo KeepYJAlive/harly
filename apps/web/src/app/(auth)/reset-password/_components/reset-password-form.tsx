@@ -125,7 +125,8 @@ export function ResetPasswordForm({
 
       <button
         type="submit"
-        disabled={isPending || !password || !confirm || undefined}
+        autoComplete="off"
+        disabled={isPending || !password || !confirm ? true : undefined}
         className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-[var(--pine-strong)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
       >
         {isPending ? (

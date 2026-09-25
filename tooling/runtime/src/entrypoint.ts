@@ -91,14 +91,50 @@ async function serve() {
   process.exitCode = exitCode;
 }
 
+/**
+ * Advisory lock key for schema migrations. Arbitrary but fixed: every Harly
+ * process that migrates has to agree on it.
+ */
+const MIGRATION_LOCK_KEY = 0x48524c59;
+const MIGRATION_LOCK_WAIT_MS = 10 * 60 * 1000;
+
 async function runMigrations() {
   const config = await runtimeConfig({ validateFilesystem: false });
   const client = postgres(config.DATABASE_URL!, { max: 1, prepare: false });
   try {
-    await migrate(drizzle(client), {
-      migrationsFolder: process.env.HARLY_MIGRATIONS_DIR ?? "/app/migrations",
-    });
-    jsonLog("info", "migrations.complete", { version: config.HARLY_VERSION });
+    // Nothing else serialises this. A rolling deploy, a replica set where every
+    // pod runs an init container, or a redeploy that overlaps the previous one
+    // all start two migrate processes against one database, and drizzle takes
+    // no lock of its own. The pool is max: 1, so the lock is held by the same
+    // session that then applies the migrations.
+    //
+    // Waiting is deliberate: the second process should apply nothing and exit
+    // cleanly rather than fail the deployment. The wait is bounded so a stuck
+    // migration surfaces as an error instead of hanging forever.
+    const deadline = Date.now() + MIGRATION_LOCK_WAIT_MS;
+    for (;;) {
+      const [row] = await client`
+        select pg_try_advisory_lock(${MIGRATION_LOCK_KEY}) as acquired
+      `;
+      if (row?.acquired) break;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          "Timed out waiting for the migration lock. Another Harly instance has been migrating for more than 10 minutes, or a previous migration left a session open.",
+        );
+      }
+      jsonLog("info", "migrations.waiting", {
+        reason: "another instance holds the migration lock",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    try {
+      await migrate(drizzle(client), {
+        migrationsFolder: process.env.HARLY_MIGRATIONS_DIR ?? "/app/migrations",
+      });
+      jsonLog("info", "migrations.complete", { version: config.HARLY_VERSION });
+    } finally {
+      await client`select pg_advisory_unlock(${MIGRATION_LOCK_KEY})`;
+    }
   } finally {
     await client.end();
   }

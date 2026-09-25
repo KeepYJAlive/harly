@@ -20,6 +20,7 @@ export function SignupForm({ googleEnabled = false }: { googleEnabled?: boolean 
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<null | "email" | "google">(null);
+  const [leaving, setLeaving] = useState(false);
 
   const canSubmit =
     name.trim() && email.trim() && password.length >= 8 && confirmPassword;
@@ -48,7 +49,10 @@ export function SignupForm({ googleEnabled = false }: { googleEnabled?: boolean 
         setError(result.error.message ?? "Unable to create account.");
         return;
       }
-      window.location.replace("/onboarding");
+      // Play a brief exit before the hard navigation to onboarding so the
+      // handoff feels continuous instead of snapping to a blank reload.
+      setLeaving(true);
+      setTimeout(() => window.location.replace("/onboarding"), 300);
     } finally {
       setPending(null);
     }
@@ -73,7 +77,7 @@ export function SignupForm({ googleEnabled = false }: { googleEnabled?: boolean 
   }
 
   return (
-    <div className="auth-stagger space-y-7">
+    <div className={`auth-stagger space-y-7 ${leaving ? "auth-leaving" : ""}`}>
       <form className="space-y-6" onSubmit={handleSubmit}>
         <Field
           id="name"
@@ -158,7 +162,8 @@ export function SignupForm({ googleEnabled = false }: { googleEnabled?: boolean 
 
         <button
           type="submit"
-          disabled={isBusy || !canSubmit || undefined}
+          autoComplete="off"
+          disabled={isBusy || !canSubmit ? true : undefined}
           className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-[var(--pine-strong)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
         >
           {pending === "email" ? (

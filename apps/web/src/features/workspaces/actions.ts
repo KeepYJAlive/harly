@@ -38,6 +38,7 @@ import {
 } from "@/features/workspaces/context";
 import {
   assignRolePrivilegeError,
+  manageMemberRolePrivilegeError,
   requirePermission,
 } from "@/features/workspaces/permissions-server";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
@@ -686,6 +687,7 @@ export async function updateWorkspaceMemberRoleAction(
     const [targetMember] = await db
       .select({
         id: authMembers.id,
+        userId: authMembers.userId,
         role: authMembers.role,
       })
       .from(authMembers)
@@ -701,16 +703,13 @@ export async function updateWorkspaceMemberRoleAction(
       return { success: false, error: "Member not found." };
     }
 
-    // Only an owner may modify another owner's role , stops a non-owner from
-    // demoting or hijacking the workspace's keyholders.
-    if (
-      isOwnerRole(targetMember.role) &&
-      !isOwnerRole(context.roleKey)
-    ) {
-      return {
-        success: false,
-        error: "Only an owner can change an owner's role.",
-      };
+    const targetPrivilegeError = await manageMemberRolePrivilegeError(
+      context,
+      targetMember.role,
+      targetMember.userId,
+    );
+    if (targetPrivilegeError) {
+      return { success: false, error: targetPrivilegeError };
     }
 
     // Consistent with the bulk action: you can't strip your own Owner role.
@@ -799,7 +798,7 @@ export async function updateMemberRolesAction(input: {
 
     const ids = parsed.data.changes.map((c) => c.memberId);
     const targets = await db
-      .select({ id: authMembers.id, role: authMembers.role })
+      .select({ id: authMembers.id, userId: authMembers.userId, role: authMembers.role })
       .from(authMembers)
       .where(
         and(
@@ -817,12 +816,15 @@ export async function updateMemberRolesAction(input: {
       }
       const wasOwner = target.role === "owner";
       const willOwner = change.role === "owner";
-      // Only an owner may modify another owner's role.
-      if (wasOwner && !isOwnerRole(context.roleKey)) {
-        return {
-          success: false,
-          error: "Only an owner can change an owner's role.",
-        };
+      if (target.id !== context.membership.id) {
+        const targetPrivilegeError = await manageMemberRolePrivilegeError(
+          context,
+          target.role,
+          target.userId,
+        );
+        if (targetPrivilegeError) {
+          return { success: false, error: targetPrivilegeError };
+        }
       }
       if (target.id === context.membership.id && wasOwner && !willOwner) {
         return { success: false, error: "You can't remove your own Owner role." };
@@ -871,6 +873,8 @@ export async function updateMemberAccessAction(input: {
     if (!parsed.success) return { success: false, error: "Invalid member access profile." };
     const [target] = await db.select({ id: authMembers.id, userId: authMembers.userId, role: authMembers.role }).from(authMembers).where(and(eq(authMembers.id, parsed.data.memberId), eq(authMembers.organizationId, context.organization.id))).limit(1);
     if (!target) return { success: false, error: "Member not found." };
+    const targetPrivilegeError = await manageMemberRolePrivilegeError(context, target.role, target.userId);
+    if (targetPrivilegeError) return { success: false, error: targetPrivilegeError };
     if (target.userId === context.user.id && parsed.data.status !== "active") return { success: false, error: "You cannot deactivate your own membership." };
     if (isOwnerRole(target.role) && parsed.data.status !== "active" && !isOwnerRole(context.roleKey)) return { success: false, error: "Only an owner can suspend an owner." };
     const managerMemberId = parsed.data.managerMemberId ?? null;
@@ -922,6 +926,15 @@ export async function removeWorkspaceMemberAction(
 
     if (!targetMember) {
       return { success: false, error: "Member not found." };
+    }
+
+    const targetPrivilegeError = await manageMemberRolePrivilegeError(
+      context,
+      targetMember.role,
+      targetMember.userId,
+    );
+    if (targetPrivilegeError) {
+      return { success: false, error: targetPrivilegeError };
     }
 
     if (targetMember.userId === context.user.id) {
@@ -1122,27 +1135,31 @@ export async function acceptWorkspaceInvitationAction(
         return { success: false, error: "This invitation points to a role that no longer exists." };
       }
 
-      const memberId = crypto.randomUUID();
-      await tx
-        .insert(authMembers)
-        .values({
-          id: memberId,
-          organizationId: targetInvitation.organizationId,
-          userId: session.user.id,
-          role,
-          createdAt: new Date(),
-        })
-        .onConflictDoNothing();
-
-      await tx
-        .update(authMembers)
-        .set({ role })
+      // Already a member: keep the current role. Role changes for existing
+      // members belong to the members UI (last-owner / self-demote guards),
+      // not to invitation accept — still consume the invitation and land in
+      // the workspace so the flow completes.
+      const [existingMembership] = await tx
+        .select({ id: authMembers.id })
+        .from(authMembers)
         .where(
           and(
             eq(authMembers.organizationId, targetInvitation.organizationId),
             eq(authMembers.userId, session.user.id),
           ),
-        );
+        )
+        .limit(1);
+
+      const memberId = existingMembership?.id ?? crypto.randomUUID();
+      if (!existingMembership) {
+        await tx.insert(authMembers).values({
+          id: memberId,
+          organizationId: targetInvitation.organizationId,
+          userId: session.user.id,
+          role,
+          createdAt: new Date(),
+        });
+      }
 
       const [acceptedMember] = await tx
         .select({ id: authMembers.id })
@@ -1511,6 +1528,13 @@ async function requireOwnerActingOnMember(
     .limit(1);
 
   if (!target) return { ok: false, error: "Member not found." };
+
+  const targetPrivilegeError = await manageMemberRolePrivilegeError(
+    context,
+    target.role,
+    target.userId,
+  );
+  if (targetPrivilegeError) return { ok: false, error: targetPrivilegeError };
 
   return {
     ok: true,

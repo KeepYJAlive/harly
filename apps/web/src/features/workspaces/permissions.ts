@@ -101,6 +101,25 @@ export function scopeExceedsPrivilege(actor: RoleScope, target: RoleScope) {
   );
 }
 
+/** True when the target role has strictly less effective access than the actor. */
+export function rolePolicyIsStrictlyBelow(
+  actor: { permissions: readonly string[]; scope: RoleScope },
+  target: { permissions: readonly string[]; scope: RoleScope },
+): boolean {
+  if (exceedsPrivilege(actor.permissions, target.permissions)) return false;
+  if (scopeExceedsPrivilege(actor.scope, target.scope)) return false;
+
+  const permissionsAreStrictlyNarrower = actor.permissions.some(
+    (permission) => !target.permissions.includes(permission),
+  );
+  const scopeIsStrictlyNarrower = scopeExceedsPrivilege(
+    target.scope,
+    actor.scope,
+  );
+
+  return permissionsAreStrictlyNarrower || scopeIsStrictlyNarrower;
+}
+
 export type PermissionGroup = {
   label: string;
   permissions: { key: Permission; label: string; hint?: string }[];

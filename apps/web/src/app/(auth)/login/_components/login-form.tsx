@@ -505,7 +505,10 @@ function ContinueButton({
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled || pending || undefined}
+      // Firefox persists a button's disabled state across loads. Without this,
+      // a reload hydrates `disabled={null}` against the client's `true`.
+      autoComplete="off"
+      disabled={disabled || pending ? true : undefined}
       className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-[var(--pine-strong)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
     >
       {pending ? (

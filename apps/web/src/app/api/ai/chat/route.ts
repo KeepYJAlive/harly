@@ -15,6 +15,7 @@ import {
 } from "@/features/workspaces/permissions-server";
 import { getWorkspaceAiConfig } from "@/lib/ai/config";
 import { getModel } from "@/lib/ai/registry";
+import { toolsForProvider } from "@/lib/ai/provider-tools";
 import { buildHarlyTools } from "@/lib/ai/agent";
 import { buildHarlySystemPrompt } from "@/lib/ai/agent/system-prompt";
 import { getWorkspaceKnowledge } from "@/lib/ai/agent/workspace-knowledge";
@@ -301,14 +302,17 @@ export async function POST(req: Request) {
     workspaceId,
     context.organization.name,
   );
-  const tools = buildHarlyTools({
-    workspaceId,
-    userId,
-    permissions: userPermissions,
-    activeCandidateId: candidateId,
-    mentionedCandidateIds,
-    activeAutomation: automationContext,
-  });
+  const tools = toolsForProvider(
+    buildHarlyTools({
+      workspaceId,
+      userId,
+      permissions: userPermissions,
+      activeCandidateId: candidateId,
+      mentionedCandidateIds,
+      activeAutomation: automationContext,
+    }),
+    config.provider,
+  );
 
   if (process.env.NODE_ENV !== "production") {
     // Fails loudly in dev/CI, never in prod, if a newly added tool forgot to

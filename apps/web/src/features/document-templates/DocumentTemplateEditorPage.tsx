@@ -40,7 +40,7 @@ export function DocumentTemplateEditorPage({ template }: { template: WorkflowDoc
         return;
       }
       toast.success(template ? "Document template updated." : "Document template created.");
-      router.push("/dashboard/document-templates" as Route);
+      router.push("/dashboard/documents?view=templates" as Route);
       router.refresh();
     });
   }
@@ -48,12 +48,12 @@ export function DocumentTemplateEditorPage({ template }: { template: WorkflowDoc
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 sm:px-8">
-        <Link href={"/dashboard/document-templates" as Route} className="text-sm font-medium text-muted-foreground hover:text-foreground">← Document templates</Link>
-        <div className="flex gap-2"><Button variant="ghost" asChild><Link href={"/dashboard/document-templates" as Route}>Cancel</Link></Button><Button disabled={pending || !name.trim() || !title.trim() || !body.trim()} onClick={save}>{pending ? "Saving…" : "Save template"}</Button></div>
+        <Link href={"/dashboard/documents?view=templates" as Route} className="text-sm font-medium text-muted-foreground hover:text-foreground">← Documents / Workflow templates</Link>
+        <div className="flex gap-2"><Button variant="ghost" asChild><Link href={"/dashboard/documents?view=templates" as Route}>Cancel</Link></Button><Button disabled={pending || !name.trim() || !title.trim() || !body.trim()} onClick={save}>{pending ? "Saving…" : "Save template"}</Button></div>
       </header>
       <main className="mx-auto grid w-full max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_22rem] sm:px-8">
         <section className="space-y-6">
-          <div><h1 className="text-xl font-semibold">{template ? "Edit document template" : "New document template"}</h1><p className="mt-1 text-sm text-muted-foreground">The generated PDF is deterministic and can be used by any published v2 workflow.</p></div>
+          <div><h1 className="text-xl font-semibold">{template ? "Edit workflow document template" : "New workflow document template"}</h1><p className="mt-1 text-sm text-muted-foreground">The generated PDF is deterministic and can be used by any published v2 workflow.</p></div>
           <div className="grid gap-4 md:grid-cols-2"><div className="space-y-2"><Label htmlFor="document-template-name">Library name</Label><Input id="document-template-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Employment agreement" /></div><div className="space-y-2"><Label htmlFor="document-template-title">PDF title</Label><Input id="document-template-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Employment agreement for {{candidate_full_name}}" /></div></div>
           <div className="flex items-center justify-between gap-3"><div><Label>Content</Label><p className="mt-1 text-xs text-muted-foreground">Formatting is sanitized before storage. Variables are resolved when the workflow runs.</p></div><div className="flex rounded-lg border bg-muted/40 p-1"><button type="button" onClick={() => setMode("edit")} className={mode === "edit" ? "rounded-md bg-background px-3 py-1.5 text-xs font-medium shadow-sm" : "rounded-md px-3 py-1.5 text-xs text-muted-foreground"}>Edit</button><button type="button" onClick={() => setMode("preview")} className={mode === "preview" ? "rounded-md bg-background px-3 py-1.5 text-xs font-medium shadow-sm" : "rounded-md px-3 py-1.5 text-xs text-muted-foreground"}>Preview</button></div></div>
           {mode === "edit" ? <RichTextEditor defaultValue={body} onChange={setBody} editorRef={editorRef} placeholder="Dear {{candidate_full_name}}," minHeight="30rem" /> : <article className="prose prose-sm min-h-[30rem] max-w-none rounded-xl border bg-background p-7 dark:prose-invert" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body || "<p>Start writing your document.</p>", allowedPreviewTags) }} />}

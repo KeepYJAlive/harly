@@ -32,10 +32,8 @@ test("DigitalOcean assets keep the database secret app-wide and run all runtime 
   assert.match(source, /validate: validateDatabaseUrl/);
   assert.match(source, /secretEnv\("DATABASE_URL", databaseUrl!\)/);
   assert.match(source, /DATABASE_URL=\$\{envLine\(databaseUrl\)\}/);
-  assert.match(
-    source,
-    /import \{ embeddedRelease, releaseImage, type HarlyRelease \} from "\.\/release\.js"/,
-  );
+  assert.match(source, /releaseTagImage/);
+  assert.match(source, /from "\.\/release\.js"/);
   assert.match(
     source,
     /https:\/\/raw\.githubusercontent\.com\/Vytral\/harly\/main\/release-manifest\.json/,
@@ -75,6 +73,47 @@ test("release manifest is the single source of truth for deployment assets", asy
   assert.match(releaseModule, new RegExp(`version: "${manifest.version}"`));
   assert.match(releaseModule, new RegExp(`digest: "${manifest.digest}"`));
   assert.match(ci, /release-manifest\.json/);
+});
+
+test("version tags are the only published images", async () => {
+  const workflow = await readFile(
+    path.join(repositoryRoot, ".github/workflows/release-image.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /tags:\n\s+- "v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+"/);
+  assert.doesNotMatch(workflow, /branches:\s*\[main\]/);
+  assert.doesNotMatch(workflow, /value=edge/);
+  assert.doesNotMatch(workflow, /prefix=sha-/);
+  assert.match(
+    workflow,
+    /flavor: latest=\$\{\{ steps\.version\.outputs\.latest \}\}/,
+  );
+  assert.doesNotMatch(workflow, /flavor: latest=true/);
+  // A prerelease never moves latest, and neither does a stable tag that is not
+  // the highest one published, so latest cannot move backwards.
+  assert.match(workflow, /echo "latest=false" >> "\$GITHUB_OUTPUT"/);
+  assert.match(workflow, /sort -V/);
+  // The image is scanned before it is pushed, so a blocking finding keeps it
+  // out of the registry instead of only skipping the release.
+  assert.match(workflow, /image-ref: harly:candidate/);
+  assert.match(workflow, /Block fixed CRITICAL vulnerabilities before publishing/);
+  // gh has no checkout in the release job, so it needs GH_REPO to find the repo.
+  assert.match(workflow, /GH_REPO: \$\{\{ github\.repository \}\}/);
+  // The tagged commit is validated before anything is published.
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/ci\.yml/);
+  // The notes are published only once the manifest they point at is live.
+  assert.match(workflow, /needs: \[image, release-manifest\]/);
+  for (const file of [
+    "release-manifest.json",
+    "fly.toml",
+    "render.yaml",
+    ".do/app.yaml",
+    "deploy/digitalocean/app.template.yaml",
+    "tooling/harly/src/release.ts",
+  ]) {
+    assert.match(workflow, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.doesNotMatch(workflow, /deploy\/railway\/README\.md/);
 });
 
 test("cloud documentation links and provider instructions resolve", async () => {

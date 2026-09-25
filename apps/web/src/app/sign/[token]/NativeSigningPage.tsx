@@ -161,18 +161,23 @@ export function NativeSigningPage({ token }: { token: string }) {
     );
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 p-4 md:p-8">
-      <header className="flex flex-col items-center border-b border-border/70 pb-5 text-center duration-500 animate-in fade-in slide-in-from-bottom-1">
-        <div className="mb-1.5 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-primary">
-          <PenLine className="size-3.5" />
-          Harly Signature
+    <main className="mx-auto max-w-[1600px] space-y-5 p-4 md:p-6">
+      <header className="flex items-center gap-3 border-b border-border/70 pb-3 duration-500 animate-in fade-in slide-in-from-top-1">
+        <div className="flex items-center gap-2">
+          <PenLine className="size-4 shrink-0 text-primary" />
+          <h1 className="shrink-0 font-display text-base font-semibold tracking-tight">
+            Review and sign
+          </h1>
+          <span className="text-muted-foreground/50" aria-hidden>
+            /
+          </span>
+          <p className="min-w-0 truncate text-sm text-muted-foreground">
+            {meta.documentName}
+          </p>
         </div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
-          Review and sign
-        </h1>
-        <p className="mx-auto mt-1 max-w-2xl truncate text-sm text-muted-foreground">
-          {meta.documentName} · signer {meta.routingOrder} of {meta.signerCount} · for {meta.recipientName}
-        </p>
+        <span className="ml-auto hidden shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground sm:block">
+          Signer {meta.routingOrder} of {meta.signerCount}
+        </span>
       </header>
 
       {meta.requiresOtp && !verified ? (
@@ -201,14 +206,15 @@ export function NativeSigningPage({ token }: { token: string }) {
           )}
         </section>
       ) : (
-        <div className="grid gap-5 duration-500 animate-in fade-in slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-h-0 rounded-2xl border border-border/70 bg-muted/30 p-3 shadow-xs sm:p-5">
+        <div className="grid gap-5 duration-500 animate-in fade-in slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-h-0 rounded-2xl border border-border/70 bg-muted/30 p-3 shadow-xs sm:p-4">
             <PdfFieldFiller
               fileUrl={`/api/native-sign/${token}/document`}
               fields={fields ?? []}
               signatureDataUrl={signature || emptyPng}
               hasSignature={Boolean(signature)}
               textValues={textValues}
+              maxPageWidth={960}
               onTextValueChange={(fieldId, value) =>
                 setTextValues((prev) => ({ ...prev, [fieldId]: value }))
               }

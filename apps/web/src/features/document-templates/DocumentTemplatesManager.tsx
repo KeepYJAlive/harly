@@ -9,6 +9,7 @@ import { FileText, Plus, Archive, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/notification-island/toast";
+import { DocumentsWorkspaceTabs } from "@/features/documents/DocumentsWorkspaceTabs";
 
 import { archiveWorkflowDocumentTemplate } from "./actions";
 import type { WorkflowDocumentTemplateItem } from "./shared";
@@ -24,8 +25,10 @@ function previewBody(value: string) {
 
 export function DocumentTemplatesManager({
   templates,
+  canReadDocuments,
 }: {
   templates: WorkflowDocumentTemplateItem[];
+  canReadDocuments: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -47,18 +50,20 @@ export function DocumentTemplatesManager({
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-8 px-5 py-8 sm:px-8 lg:px-10">
+      <DocumentsWorkspaceTabs
+        active="templates"
+        canReadDocuments={canReadDocuments}
+        canManageTemplates
+      />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link href={"/dashboard/templates" as Route} className="text-xs font-medium text-muted-foreground hover:text-foreground">
-            ← All templates
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Document templates</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Workflow document templates</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Reusable, variable-filled documents for automation workflows. Selecting one snapshots its content into the workflow so published runs stay predictable.
+            Reusable, variable-filled documents for automation workflows. Published workflows keep their own content snapshot, while generated PDFs appear in your document library.
           </p>
         </div>
         <Button asChild>
-          <Link href={"/dashboard/document-templates/new" as Route}><Plus className="size-4" /> New document template</Link>
+          <Link href={"/dashboard/documents/templates/new" as Route}><Plus className="size-4" /> New workflow template</Link>
         </Button>
       </div>
 
@@ -67,7 +72,7 @@ export function DocumentTemplatesManager({
           <span className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground"><FileText className="size-6" /></span>
           <h2 className="mt-4 text-base font-semibold">Create your first reusable document</h2>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">Use it for offers, agreements, onboarding packets or any PDF you want Harly to generate and send for signature.</p>
-          <Button asChild className="mt-5"><Link href={"/dashboard/document-templates/new" as Route}><Plus className="size-4" /> Create template</Link></Button>
+          <Button asChild className="mt-5"><Link href={"/dashboard/documents/templates/new" as Route}><Plus className="size-4" /> Create template</Link></Button>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -81,7 +86,7 @@ export function DocumentTemplatesManager({
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <Button size="icon" variant="ghost" asChild aria-label={`Edit ${template.name}`}>
-                      <Link href={`/dashboard/document-templates/${template.id}` as Route}><Pencil className="size-4" /></Link>
+                      <Link href={`/dashboard/documents/templates/${template.id}` as Route}><Pencil className="size-4" /></Link>
                     </Button>
                     <Button size="icon" variant="ghost" disabled={pending} onClick={() => archive(template)} aria-label={`Archive ${template.name}`}>
                       <Archive className="size-4" />

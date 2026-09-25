@@ -178,7 +178,7 @@ TypeScript toolchain are build-time only.
 ```bash
 # Works everywhere: a private local rollback point (mode 0600).
 npx @harly/cli backup
-npx @harly/cli update --to <release-version> --yes
+npx @harly/cli update
 npx @harly/cli restore backups/harly-2026-...tar.gz --force
 
 # Optional advanced encryption for a portable backup.

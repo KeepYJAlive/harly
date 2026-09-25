@@ -35,12 +35,14 @@ describe.skipIf(!live)("live Harly AI automation smoke test", () => {
       { buildReadTools },
       { buildHarlySystemPrompt },
       { getModel },
+      { toolsForProvider },
       { generateText, stepCountIs },
     ] = await Promise.all([
       import("@/lib/ai/config"),
       import("@/lib/ai/agent/tools"),
       import("@/lib/ai/agent/system-prompt"),
       import("@/lib/ai/registry"),
+      import("@/lib/ai/provider-tools"),
       import("ai"),
     ]);
 
@@ -139,14 +141,17 @@ describe.skipIf(!live)("live Harly AI automation smoke test", () => {
           }).format(new Date()),
           intent: "automation_build",
         }),
-        tools: buildReadTools({
-          workspaceId,
-          userId: actorId,
-          // The live smoke calls the tool loop outside a Next request scope;
-          // pass the already-authorized owner permission snapshot explicitly
-          // instead of making a tool reach for request headers.
-          permissions: ["automations:manage"],
-        }),
+        tools: toolsForProvider(
+          buildReadTools({
+            workspaceId,
+            userId: actorId,
+            // The live smoke calls the tool loop outside a Next request scope;
+            // pass the already-authorized owner permission snapshot explicitly
+            // instead of making a tool reach for request headers.
+            permissions: ["automations:manage"],
+          }),
+          config!.provider,
+        ),
         prompt:
           "Crea una propuesta de automatización nueva. Cuando se cree una postulación, ejecuta ai_score. Si ai.score es menor que 50, rechaza la postulación, envía un correo de rechazo con asunto Rechazo por puntaje y cuerpo Hemos decidido no continuar con tu postulación, y encola el borrado durable de sus datos. Si es 50 o más, agrega la etiqueta Revisar manualmente. Ya tienes suficiente contexto: llama ahora una sola vez a prepareAutomationPlan con toda la rama, y después llama inmediatamente a simulateAutomationProposal con todos los escenarios. No apliques el cambio ni envíes ningún correo real.",
         stopWhen: stepCountIs(16),

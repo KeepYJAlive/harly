@@ -32,7 +32,7 @@ import {
   roleIsAllPowerful,
   roleLabel,
   normalizeRoleScope,
-  scopeExceedsPrivilege,
+  rolePolicyIsStrictlyBelow,
   unrestrictedRoleScope,
   type BuiltinRole,
   type Permission,
@@ -421,8 +421,8 @@ export async function requirePagePermission(permission: Permission) {
  * link, role change). Returns a user-facing error string, or `null` when the
  * assignment is allowed. Rules for anyone who is not the owner:
  *   - may never grant the all-powerful `owner` role, and
- *   - may only assign a role whose permission set is a subset of their own,
- *     so no one can mint a role more powerful than themselves.
+ *   - may only assign a role with strictly less effective access, so they
+ *     cannot create a peer role or mint one more powerful than themselves.
  */
 export async function assignRolePrivilegeError(
   context: WorkspaceContext,
@@ -436,13 +436,33 @@ export async function assignRolePrivilegeError(
     getRolePolicy(context.organization.id, context.roleKey),
     getRolePolicy(context.organization.id, targetRoleKey),
   ]);
-  if (exceedsPrivilege(actorPolicy.permissions, targetPolicy.permissions)) {
-    return "You can't assign a role with more access than your own.";
-  }
-  if (scopeExceedsPrivilege(actorPolicy.scope, targetPolicy.scope)) {
-    return "You can't assign a role with a broader scope than your own.";
+  if (!rolePolicyIsStrictlyBelow(actorPolicy, targetPolicy)) {
+    return "You can only assign a role with lower privileges than your own.";
   }
   return null;
+}
+
+/** A member-management action may only target a strictly lower role. */
+export async function manageMemberRolePrivilegeError(
+  context: WorkspaceContext,
+  targetRoleKey: string,
+  targetUserId?: string,
+): Promise<string | null> {
+  if (
+    roleIsAllPowerful(targetRoleKey) &&
+    targetUserId !== context.user.id
+  ) {
+    return "Owners cannot modify another owner's account or role.";
+  }
+  if (roleIsAllPowerful(context.roleKey)) return null;
+
+  const [actorPolicy, targetPolicy] = await Promise.all([
+    getRolePolicy(context.organization.id, context.roleKey),
+    getRolePolicy(context.organization.id, targetRoleKey),
+  ]);
+  return rolePolicyIsStrictlyBelow(actorPolicy, targetPolicy)
+    ? null
+    : "You can only manage members with a lower-privilege role.";
 }
 
 /**
@@ -475,9 +495,9 @@ export async function grantRolePolicyPrivilegeError(
   if (permissionError) return permissionError;
   if (roleIsAllPowerful(context.roleKey)) return null;
   const actorPolicy = await getRolePolicy(context.organization.id, context.roleKey);
-  return scopeExceedsPrivilege(actorPolicy.scope, scope)
-    ? "You can't grant a role with a broader scope than your own."
-    : null;
+  return rolePolicyIsStrictlyBelow(actorPolicy, { permissions, scope })
+    ? null
+    : "You can only grant a role with lower privileges than your own.";
 }
 
 export type WorkspaceRoleMember = {

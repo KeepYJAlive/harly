@@ -55,6 +55,7 @@ vi.mock("@/lib/portal-auth", () => ({
 vi.mock("@/features/jobs/config", () => ({
   normalizeJobApplicationConfig: () => ({
     sections: { profile: { resume: { visibility: "optional" } } },
+    questions: [],
   }),
 }));
 vi.mock("@/features/portal/application-validation", () => ({

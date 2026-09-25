@@ -56,7 +56,7 @@ export function PdfFieldFiller({
     );
 
   return (
-    <div ref={rootRef} className="space-y-5 rounded-xl bg-muted/40 p-3">
+    <div ref={rootRef} className="space-y-5">
       {pages.map((page) => (
         <div
           key={page.number}

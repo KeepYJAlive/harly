@@ -112,7 +112,10 @@ async function defaultExtractor(): Promise<VectorExtractor> {
  * never import the default build on the server.
  */
 export async function serverVectorExtractor(): Promise<VectorExtractor> {
-  const m = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // Non-literal specifier so the client bundle does not pull this Node build.
+  // Turbopack otherwise rewrites its import.meta.url to file:/// and Firefox blocks it.
+  const specifier = ["pdfjs-dist", "legacy/build/pdf.mjs"].join("/");
+  const m = await import(/* webpackIgnore: true */ specifier);
   return (m as unknown as { SignatureExtractor: VectorExtractor }).SignatureExtractor;
 }
 

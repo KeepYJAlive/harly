@@ -5,6 +5,9 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Called by release-image.yml so the exact tagged commit is linted, typechecked,
+  # built and tested before any image is published.
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}

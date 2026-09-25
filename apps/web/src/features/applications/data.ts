@@ -545,6 +545,19 @@ export async function createPublicApplication(
           resumeFileName: verifiedResume?.fileName ?? null,
           resumeKey: values.resumeKey ?? null,
           questionAnswers: values.questionAnswers,
+          acceptedAgreements: applicationConfig.questions
+            .filter(
+              (question) =>
+                question.type === "consent" &&
+                values.questionAnswers[question.id] === "agree",
+            )
+            .map((question) => ({
+              questionId: question.id,
+              title: question.label,
+              text: question.description ?? "",
+              acceptedLabel: question.agreeLabel ?? "I agree",
+              declinedLabel: question.disagreeLabel ?? "I do not agree",
+            })),
         },
       });
 

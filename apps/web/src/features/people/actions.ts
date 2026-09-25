@@ -7,6 +7,7 @@ import { db, schema } from "@harly/db";
 
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { getWorkspaceContext } from "@/features/workspaces/context";
+import { requirePermission } from "@/features/workspaces/permissions-server";
 import {
   updateProfileSchema,
   usernameSchema,
@@ -160,7 +161,9 @@ export type ProfileByUsernameResult =
 export async function getProfileByUsernameAction(
   username: string,
 ): Promise<ProfileByUsernameResult> {
-  await getWorkspaceContext();
+  // Cross-user directory lookup: members without directory visibility
+  // (custom roles without members:read) must not enumerate profiles.
+  await requirePermission("members:read");
 
   const [row] = await db
     .select(PROFILE_COLUMNS)
@@ -211,7 +214,7 @@ export async function listPeopleAction(filters?: {
   role?: string;
   specialty?: string;
 }) {
-  const context = await getWorkspaceContext();
+  const context = await requirePermission("members:read");
 
   const conditions = [
     eq(schema.member.organizationId, context.organization.id),
@@ -268,7 +271,7 @@ export type PersonJobRow = {
 export async function listPersonJobsAction(
   userId: string,
 ): Promise<PersonJobRow[]> {
-  const context = await getWorkspaceContext();
+  const context = await requirePermission("members:read");
 
   return db
     .select({

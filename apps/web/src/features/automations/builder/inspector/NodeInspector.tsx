@@ -976,7 +976,7 @@ function ConfigFieldEditor({
         <FieldLabel field={field} />
         {builderData.documentTemplates.length === 0 ? (
           <p className="text-[11px] text-soft-ink">
-            No document templates are available. Create one in Document templates, then return here.
+            No document templates are available. Create one in Documents → Workflow templates, then return here.
           </p>
         ) : null}
         <BuilderSelect

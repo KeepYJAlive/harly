@@ -169,7 +169,9 @@ export type OAuthProviderConfig = {
 export async function listOAuthProvidersAction(): Promise<
   OAuthProviderConfig[]
 > {
-  const { organization } = await getWorkspaceContext();
+  // Client IDs + secret presence are security posture: same gate as the
+  // writes below (security:manage).
+  const { organization } = await requirePermission("security:manage");
 
   const rows = await db
     .select()
@@ -383,7 +385,7 @@ export async function deleteOAuthProviderAction(
 export async function getOAuthProviderStatus(): Promise<
   Record<OAuthProvider, { configured: boolean; source: "db" | "env" | null }>
 > {
-  const { organization } = await getWorkspaceContext();
+  const { organization } = await requirePermission("security:manage");
 
   const rows = await db
     .select()

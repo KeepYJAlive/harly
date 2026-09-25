@@ -43,6 +43,7 @@ async function workspaceContext() {
 
 function revalidateDocumentTemplatePaths() {
   revalidatePath("/dashboard/document-templates");
+  revalidatePath("/dashboard/documents");
   revalidatePath("/dashboard/automations");
 }
 
