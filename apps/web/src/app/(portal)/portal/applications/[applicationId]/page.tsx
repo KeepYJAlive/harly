@@ -34,7 +34,13 @@ type PageProps = {
 };
 
 function synthesizeActivities(
-  app: { id: string; status: string; appliedAt: Date; updatedAt: Date },
+  app: {
+    id: string;
+    status: string;
+    appliedAt: Date;
+    updatedAt: Date;
+    jobOpportunityType: "employment" | "volunteer";
+  },
   interviews: Awaited<ReturnType<typeof getPortalApplicationInterviews>>,
 ): ActivityItem[] {
   const items: ActivityItem[] = [];
@@ -65,7 +71,10 @@ function synthesizeActivities(
     items.push({
       id: `${app.id}-hired`,
       type: "offer",
-      label: "Offer received!",
+      label:
+        app.jobOpportunityType === "volunteer"
+          ? "Volunteer application accepted!"
+          : "Offer received!",
       timestamp: app.updatedAt,
     });
   }
@@ -117,6 +126,7 @@ export default async function ApplicationDetailPage({
       jobTitle: jobs.title,
       jobDepartment: jobs.department,
       jobLocation: jobs.location,
+      jobOpportunityType: jobs.opportunityType,
       jobWorkplaceType: jobs.workplaceType,
       jobEmploymentType: jobs.employmentType,
     })
@@ -207,15 +217,20 @@ export default async function ApplicationDetailPage({
               {appRow.jobWorkplaceType && (
                 <span>{WORKPLACE_LABELS[appRow.jobWorkplaceType] ?? appRow.jobWorkplaceType}</span>
               )}
-              {appRow.jobEmploymentType && (
+              {appRow.jobOpportunityType === "volunteer" ? (
+                <span>Volunteer Opportunity</span>
+              ) : appRow.jobEmploymentType ? (
                 <span>{EMPLOYMENT_LABELS[appRow.jobEmploymentType] ?? appRow.jobEmploymentType}</span>
-              )}
+              ) : null}
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
               Applied {formatShort(appRow.appliedAt)}
             </p>
           </div>
-          <PortalStatusBadge status={appRow.status} />
+          <PortalStatusBadge
+            status={appRow.status}
+            opportunityType={appRow.jobOpportunityType}
+          />
         </div>
 
         {/* E-signature offer — review & sign / pending / accepted / declined */}

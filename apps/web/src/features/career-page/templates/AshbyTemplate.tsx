@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 import type { WorkspaceBoardBranding } from "@/features/workspaces/board";
 import type { CareerPageConfig } from "@/features/career-page/config";
 import type { Job } from "@/features/career-page/types";
@@ -62,7 +67,7 @@ export function AshbyTemplate({
     [jobs],
   );
   const types = useMemo(
-    () => facet(jobs, (j) => formatEmploymentType(j.employmentType)),
+    () => facet(jobs, (j) => formatOpportunityType(j.opportunityType)),
     [jobs],
   );
 
@@ -98,7 +103,7 @@ export function AshbyTemplate({
         if (!sel.location.has(loc)) return false;
       }
       if (sel.type.size) {
-        const t = formatEmploymentType(j.employmentType);
+        const t = formatOpportunityType(j.opportunityType);
         if (!sel.type.has(t)) return false;
       }
       return true;
@@ -129,8 +134,18 @@ export function AshbyTemplate({
       icon: MapPin,
       values: locations,
     },
-    { key: "type" as const, label: "Type", icon: Briefcase, values: types },
-  ].filter((g) => enabled.includes(g.key) && g.values.length > 0);
+    {
+      key: "type" as const,
+      label: "Opportunity",
+      icon: Briefcase,
+      values: types,
+    },
+  ].filter(
+    (g) =>
+      (enabled.includes(g.key) ||
+        (g.key === "type" && types.length > 1)) &&
+      g.values.length > 0,
+  );
 
   return (
     <div className="text-zinc-900 dark:text-zinc-100">
@@ -280,15 +295,30 @@ export function AshbyTemplate({
                           href={`${boardRoot}/jobs/${job.slug}` as Route}
                           className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900"
                         >
-                          <span className="flex-1 font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
-                            {job.title}
+                          <span className="flex-1">
+                            <span className="block font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
+                              {job.title}
+                            </span>
+                            {job.opportunityType === "volunteer" ? (
+                              <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                                Minimum Time Commitment:{" "}
+                                {formatMinimumTimeCommitment(
+                                  job.minimumHours,
+                                  job.commitmentPeriod,
+                                )}
+                              </span>
+                            ) : null}
                           </span>
                           <span className="hidden text-sm text-zinc-500 dark:text-zinc-400 sm:inline">
                             {job.location ??
                               formatWorkplaceType(job.workplaceType)}
                           </span>
                           <span className="hidden text-sm text-zinc-500 dark:text-zinc-400 sm:inline">
-                            {formatEmploymentType(job.employmentType)}
+                            {job.opportunityType === "volunteer"
+                              ? formatOpportunityType(job.opportunityType)
+                              : job.employmentType
+                                ? formatEmploymentType(job.employmentType)
+                                : formatOpportunityType(job.opportunityType)}
                           </span>
                           <ArrowUpRight
                             className="size-4 -translate-x-1 text-zinc-300 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100 dark:text-zinc-600"

@@ -34,7 +34,10 @@ export const optionalNonNegativeIntSchema = z
     if (value === null || value === undefined || value === "") return undefined;
     const number = typeof value === "number" ? value : Number(value);
     if (!Number.isInteger(number) || number < 0) {
-      ctx.addIssue({ code: "custom", message: "Expected a non-negative integer." });
+      ctx.addIssue({
+        code: "custom",
+        message: "Expected a non-negative integer.",
+      });
       return z.NEVER;
     }
     return number;
@@ -60,7 +63,15 @@ export const invitationSchema = z.object({
 
 // Public API v1 request contracts
 
-const employmentType = z.enum(["full_time", "part_time", "contract", "internship"]);
+const employmentType = z.enum([
+  "full_time",
+  "part_time",
+  "contract",
+  "temporary",
+  "internship",
+]);
+const opportunityType = z.enum(["employment", "volunteer"]);
+const commitmentPeriod = z.enum(["week", "month"]);
 const workplaceType = z.enum(["remote", "hybrid", "onsite"]);
 const jobStatus = z.enum(["draft", "open", "closed"]);
 const nullableString = z.string().trim().max(20_000).nullish();
@@ -88,13 +99,14 @@ const candidateExperienceEntrySchema = z.object({
   description: z.string().trim().max(20_000).nullable().default(null),
 });
 
-export const jobCreateSchema = z.object({
+const jobFieldsSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(50_000),
   slug: z.string().trim().max(200).optional(),
   department: nullableString,
   location: nullableString,
-  employmentType,
+  opportunityType,
+  employmentType: employmentType.nullish(),
   workplaceType,
   status: jobStatus.optional(),
   requirements: nullableString,
@@ -104,8 +116,59 @@ export const jobCreateSchema = z.object({
   salaryMax: z.number().int().nonnegative().nullish(),
   currency: z.string().trim().max(8).nullish(),
   salaryPeriod: z.enum(["annual", "monthly"]).nullish(),
+  minimumHours: z.number().int().positive().nullish(),
+  commitmentPeriod: commitmentPeriod.nullish(),
+  scheduleNotes: nullableString,
 });
-export const jobUpdateSchema = jobCreateSchema.partial();
+
+function validateOpportunityFields(
+  values: z.infer<typeof jobFieldsSchema>,
+  ctx: z.RefinementCtx,
+) {
+  if (values.opportunityType === "employment" && !values.employmentType) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["employmentType"],
+      message: "Employment type is required for employment opportunities.",
+    });
+  }
+
+  if (values.opportunityType === "volunteer") {
+    if (!values.minimumHours) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["minimumHours"],
+        message: "Minimum hours are required for volunteer opportunities.",
+      });
+    }
+    if (!values.commitmentPeriod) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["commitmentPeriod"],
+        message: "Commitment period is required for volunteer opportunities.",
+      });
+    }
+    if (
+      values.employmentType != null ||
+      values.salaryMin != null ||
+      values.salaryMax != null ||
+      values.currency != null ||
+      values.salaryPeriod != null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["opportunityType"],
+        message:
+          "Volunteer opportunities cannot include employment or compensation fields.",
+      });
+    }
+  }
+}
+
+export const jobCreateSchema = jobFieldsSchema
+  .extend({ opportunityType: opportunityType.default("employment") })
+  .superRefine(validateOpportunityFields);
+export const jobUpdateSchema = jobFieldsSchema.partial();
 
 export const candidateCreateSchema = z.object({
   firstName: z.string().trim().min(1).max(120),
@@ -114,6 +177,9 @@ export const candidateCreateSchema = z.object({
   phone: nullableString,
   address: nullableString,
   location: nullableString,
+  countryCode: z.string().trim().length(2).toUpperCase().nullish(),
+  region: nullableString,
+  city: nullableString,
   headline: nullableString,
   summary: nullableString,
   linkedinUrl: z.url().nullish(),
@@ -158,7 +224,10 @@ export const apiKeyCreateSchema = z.object({
 
 export const candidateNoteCreateSchema = z.object({
   body: z.string().trim().min(1).max(5_000),
-  mentions: z.array(z.object({ userId: z.string().trim().min(1).max(120) })).max(20).optional(),
+  mentions: z
+    .array(z.object({ userId: z.string().trim().min(1).max(120) }))
+    .max(20)
+    .optional(),
 });
 export const candidateTagCreateSchema = z.object({
   label: z.string().trim().min(1).max(40),
@@ -167,7 +236,10 @@ export const candidateTagCreateSchema = z.object({
 export const candidateFileUploadIntentSchema = resumeUploadRequestSchema;
 export const candidateFileConfirmSchema = z.object({
   key: z.string().trim().min(1).max(1_024),
-  contentHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  contentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i)
+    .optional(),
 });
 
 export const interviewCreateSchema = z.object({
@@ -196,7 +268,9 @@ const offerFieldsSchema = z.object({
   expiresAt: nullableIsoDateTime,
   notes: z.string().trim().max(5_000).nullable(),
 });
-export const offerCreateSchema = offerFieldsSchema.extend({ applicationId: z.uuid() });
+export const offerCreateSchema = offerFieldsSchema.extend({
+  applicationId: z.uuid(),
+});
 export const offerUpdateSchema = offerFieldsSchema.partial();
 export const offerDecisionSchema = z.object({
   decision: z.enum(["accepted", "declined"]),
@@ -209,15 +283,27 @@ export const scorecardCreateSchema = z.object({
   stageName: nullableString,
   rating: z.enum(["strong", "mixed", "weak"]),
   comment: nullableString,
-  criteria: z.array(z.object({ label: z.string().trim().min(1).max(200), score: z.number().finite().optional() })).max(50).optional(),
+  criteria: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(200),
+        score: z.number().finite().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
-export const scorecardUpdateSchema = scorecardCreateSchema.partial().omit({ candidateId: true });
+export const scorecardUpdateSchema = scorecardCreateSchema
+  .partial()
+  .omit({ candidateId: true });
 
 export const taskCreateSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2_000).nullish(),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  status: z.enum(["pending", "in_progress", "completed", "canceled"]).default("pending"),
+  status: z
+    .enum(["pending", "in_progress", "completed", "canceled"])
+    .default("pending"),
   dueDate: nullableIsoDateTime,
   ownerId: z.string().trim().min(1).max(120),
   candidateId: nullableUuid,
@@ -241,6 +327,8 @@ export const jobStageReorderSchema = z.object({
 export const poolEntryCreateSchema = z.object({
   candidateId: z.uuid(),
   jobId: nullableUuid,
-  source: z.enum(["applied", "imported", "sourced", "referred"]).default("sourced"),
+  source: z
+    .enum(["applied", "imported", "sourced", "referred"])
+    .default("sourced"),
   reason: z.string().trim().max(500).nullish(),
 });

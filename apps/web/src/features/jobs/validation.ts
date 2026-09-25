@@ -34,6 +34,11 @@ const optionalAmount = z.preprocess(
   z.coerce.number().int().nonnegative().optional(),
 );
 
+const optionalPositiveInt = z.preprocess(
+  (value) => (value === "" || value == null ? undefined : value),
+  z.coerce.number().int().positive().optional(),
+);
+
 const optionalSlug = z.preprocess(
   (value) => (value == null ? "" : value),
   z
@@ -49,10 +54,7 @@ const optionalDate = z.preprocess(
 
 const fieldVisibility = (defaultValue: ApplicationFieldVisibility) =>
   z.preprocess(
-    (value) =>
-      value == null || value === ""
-        ? defaultValue
-        : value,
+    (value) => (value == null || value === "" ? defaultValue : value),
     z.enum(["required", "optional", "disabled"]),
   );
 
@@ -63,12 +65,13 @@ export const jobFormSchema = z
     department: optionalText,
     sector: optionalText,
     location: optionalText,
-    employmentType: z.enum([
-      "full_time",
-      "part_time",
-      "contract",
-      "internship",
-    ]),
+    opportunityType: z.enum(["employment", "volunteer"]).default("employment"),
+    employmentType: z.preprocess(
+      (value) => (value === "" || value == null ? undefined : value),
+      z
+        .enum(["full_time", "part_time", "contract", "temporary", "internship"])
+        .optional(),
+    ),
     workplaceType: z.enum(["remote", "hybrid", "onsite"]),
     experienceLevel: optionalText,
     education: optionalText,
@@ -83,6 +86,12 @@ export const jobFormSchema = z
       (value) => (value === "" || value == null ? undefined : value),
       z.enum(["annual", "monthly"]).optional(),
     ),
+    minimumHours: optionalPositiveInt,
+    commitmentPeriod: z.preprocess(
+      (value) => (value === "" || value == null ? undefined : value),
+      z.enum(["week", "month"]).optional(),
+    ),
+    scheduleNotes: optionalText,
     officeAddress: optionalText,
     jobLocationCountry: optionalText,
     jobLocationRegion: optionalText,
@@ -137,6 +146,31 @@ export const jobFormSchema = z
           "Add a description or fill in at least one section (requirements, responsibilities, or benefits).",
       });
     }
+
+    if (values.opportunityType === "employment" && !values.employmentType) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["employmentType"],
+        message: "Choose an employment type.",
+      });
+    }
+
+    if (values.opportunityType === "volunteer") {
+      if (!values.minimumHours) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["minimumHours"],
+          message: "Add the minimum hours required to volunteer.",
+        });
+      }
+      if (!values.commitmentPeriod) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["commitmentPeriod"],
+          message: "Choose whether the commitment is per week or per month.",
+        });
+      }
+    }
   })
   .transform((values) => {
     const applicationConfig: JobApplicationConfig = {
@@ -189,7 +223,11 @@ export const jobFormSchema = z
       department: values.department,
       sector: values.sector,
       location: values.location,
-      employmentType: values.employmentType,
+      opportunityType: values.opportunityType,
+      employmentType:
+        values.opportunityType === "employment"
+          ? values.employmentType!
+          : undefined,
       workplaceType: values.workplaceType,
       experienceLevel: values.experienceLevel,
       education: values.education,
@@ -198,14 +236,35 @@ export const jobFormSchema = z
       // Column is NOT NULL; a sections-only job submits no description.
       description: values.description ?? "",
       contentSections,
-      salaryMin: values.salaryMin,
-      salaryMax: values.salaryMax,
-      currency: values.currency,
-      salaryPeriod: values.salaryPeriod,
+      salaryMin:
+        values.opportunityType === "employment" ? values.salaryMin : undefined,
+      salaryMax:
+        values.opportunityType === "employment" ? values.salaryMax : undefined,
+      currency:
+        values.opportunityType === "employment" ? values.currency : undefined,
+      salaryPeriod:
+        values.opportunityType === "employment"
+          ? values.salaryPeriod
+          : undefined,
+      minimumHours:
+        values.opportunityType === "volunteer"
+          ? values.minimumHours
+          : undefined,
+      commitmentPeriod:
+        values.opportunityType === "volunteer"
+          ? values.commitmentPeriod
+          : undefined,
+      scheduleNotes:
+        values.opportunityType === "volunteer"
+          ? values.scheduleNotes
+          : undefined,
       officeAddress: values.officeAddress,
       jobLocationCountry: values.jobLocationCountry?.toUpperCase(),
       jobLocationRegion: values.jobLocationRegion,
-      remoteEligibleCountries: (values.remoteEligibleCountries ?? "").split(",").map((value) => value.trim().toUpperCase()).filter((value) => /^[A-Z]{2}$/.test(value)),
+      remoteEligibleCountries: (values.remoteEligibleCountries ?? "")
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter((value) => /^[A-Z]{2}$/.test(value)),
       validThrough: values.validThrough,
       officePhotos: parseOfficePhotos(values.officePhotosJson),
       applicationConfig,

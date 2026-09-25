@@ -13,8 +13,9 @@ export function statusForStageName(
   stageName: string,
 ): PipelineApplicationStatus {
   const normalized = stageName.trim().toLowerCase();
-  if (normalized === "hired") return "hired";
-  if (normalized === "rejected") return "rejected";
+  if (normalized === "hired" || normalized === "accepted") return "hired";
+  if (normalized === "rejected" || normalized === "not selected")
+    return "rejected";
   return "active";
 }
 

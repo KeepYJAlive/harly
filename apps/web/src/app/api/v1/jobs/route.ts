@@ -21,11 +21,17 @@ export const runtime = "nodejs";
 
 export const GET = withApi(
   buildRouteHandler(listJobsContract, async ({ query, auth }) => {
-    const q = query as { limit?: number; cursor?: string; status?: JobStatus };
+    const q = query as {
+      limit?: number;
+      cursor?: string;
+      status?: JobStatus;
+      opportunityType?: "employment" | "volunteer";
+    };
     const status = q.status as JobStatus | undefined;
     const rows = await listJobsForApi({
       workspaceId: auth.workspaceId,
       status,
+      opportunityType: q.opportunityType,
       cursor: decodeCursor(q.cursor ?? null),
       limit: q.limit ?? parseLimit(null),
     });

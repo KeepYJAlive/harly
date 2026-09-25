@@ -35,6 +35,8 @@ export function getHarlyPublicOrigin(): string {
     process.env.BETTER_AUTH_URL ??
     DEFAULT_PUBLIC_ORIGIN;
 
+  const allowLocalUrl = process.env.HARLY_ALLOW_LOCAL_URL === "true";
+
   let url: URL;
   try {
     url = new URL(configured);
@@ -47,6 +49,7 @@ export function getHarlyPublicOrigin(): string {
   }
   if (
     process.env.NODE_ENV === "production" &&
+    !allowLocalUrl &&
     isUnsafeProductionHost(url.hostname)
   ) {
     if (process.env.NEXT_PHASE === "phase-production-build") {
@@ -57,7 +60,11 @@ export function getHarlyPublicOrigin(): string {
   if (url.username || url.password || url.search || url.hash) {
     throw new Error("HARLY_URL must be a public origin without credentials or query parameters.");
   }
-  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    !allowLocalUrl &&
+    url.protocol !== "https:"
+  ) {
     throw new Error("HARLY_URL must use HTTPS in production.");
   }
 

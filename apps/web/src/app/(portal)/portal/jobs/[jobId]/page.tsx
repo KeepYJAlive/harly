@@ -14,10 +14,7 @@ import {
 import { PORTAL_SESSION_COOKIE, resolvePortalSession } from "@/lib/portal-auth";
 import { PortalShell } from "@/features/portal/PortalShellServer";
 import { JobApplyForm } from "@/features/portal/JobApplyForm";
-import {
-  MapPinIcon,
-  CurrencyDollarIcon,
-} from "@/components/ui/icons/phosphor";
+import { MapPinIcon, CurrencyDollarIcon } from "@/components/ui/icons/phosphor";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +22,16 @@ type PageProps = {
   params: Promise<{ jobId: string }>;
 };
 
-function formatSalary(min: number | null, max: number | null, currency: string | null, period: string | null): string | null {
+function formatSalary(
+  min: number | null,
+  max: number | null,
+  currency: string | null,
+  period: string | null,
+): string | null {
   if (!min && !max) return null;
   const cur = currency ?? "USD";
-  const fmt = (v: number) => v >= 1000 ? `${cur} ${Math.round(v / 1000)}k` : `${cur} ${v}`;
+  const fmt = (v: number) =>
+    v >= 1000 ? `${cur} ${Math.round(v / 1000)}k` : `${cur} ${v}`;
   const suffix = period === "monthly" ? "/mo" : "/yr";
   if (min && max) return `${fmt(min)} – ${fmt(max)}${suffix}`;
   if (min) return `From ${fmt(min)}${suffix}`;
@@ -64,12 +67,16 @@ export default async function JobDetailPage({ params }: PageProps) {
       description: jobs.description,
       department: jobs.department,
       location: jobs.location,
+      opportunityType: jobs.opportunityType,
       workplaceType: jobs.workplaceType,
       employmentType: jobs.employmentType,
       salaryMin: jobs.salaryMin,
       salaryMax: jobs.salaryMax,
       currency: jobs.currency,
       salaryPeriod: jobs.salaryPeriod,
+      minimumHours: jobs.minimumHours,
+      commitmentPeriod: jobs.commitmentPeriod,
+      scheduleNotes: jobs.scheduleNotes,
     })
     .from(jobs)
     .where(
@@ -119,7 +126,12 @@ export default async function JobDetailPage({ params }: PageProps) {
     .where(eq(applicationQuestions.jobId, jobId))
     .orderBy(asc(applicationQuestions.order));
 
-  const salary = formatSalary(job.salaryMin, job.salaryMax, job.currency, job.salaryPeriod);
+  const salary = formatSalary(
+    job.salaryMin,
+    job.salaryMax,
+    job.currency,
+    job.salaryPeriod,
+  );
 
   return (
     <PortalShell>
@@ -128,10 +140,20 @@ export default async function JobDetailPage({ params }: PageProps) {
           href="/portal/jobs"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+          <svg
+            className="size-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+            />
           </svg>
-          Back to jobs
+          Back to opportunities
         </Link>
 
         <div>
@@ -147,10 +169,22 @@ export default async function JobDetailPage({ params }: PageProps) {
               </span>
             )}
             {job.workplaceType && (
-              <span>{WORKPLACE_LABELS[job.workplaceType] ?? job.workplaceType}</span>
+              <span>
+                {WORKPLACE_LABELS[job.workplaceType] ?? job.workplaceType}
+              </span>
             )}
-            {job.employmentType && (
-              <span>{EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType}</span>
+            {job.opportunityType === "volunteer" ? (
+              <span>Volunteer Opportunity</span>
+            ) : job.employmentType ? (
+              <span>
+                {EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType}
+              </span>
+            ) : null}
+            {job.opportunityType === "volunteer" && job.minimumHours && (
+              <span>
+                Minimum Time Commitment: {job.minimumHours} hours per{" "}
+                {job.commitmentPeriod}
+              </span>
             )}
             {salary && (
               <span className="flex items-center gap-1">
@@ -163,17 +197,34 @@ export default async function JobDetailPage({ params }: PageProps) {
 
         {job.description && (
           <div className="rounded-xl border border-border bg-card p-5">
-            <h2 className="mb-2 text-sm font-semibold text-foreground">About the role</h2>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">
+              {job.opportunityType === "volunteer"
+                ? "About the volunteer opportunity"
+                : "About the role"}
+            </h2>
             <div className="prose prose-sm max-w-none text-muted-foreground">
               {job.description}
             </div>
           </div>
         )}
 
+        {job.opportunityType === "volunteer" && job.scheduleNotes ? (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">
+              Schedule / availability
+            </h2>
+            <p className="whitespace-pre-line text-sm text-muted-foreground">
+              {job.scheduleNotes}
+            </p>
+          </div>
+        ) : null}
+
         {existingApp ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center dark:border-emerald-800 dark:bg-emerald-950/30">
             <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
-              You&apos;ve already applied to this position
+              {job.opportunityType === "volunteer"
+                ? "You've already submitted a volunteer application"
+                : "You've already applied to this position"}
             </p>
             <Link
               href={`/portal/applications/${existingApp.id}` as Route}
@@ -183,7 +234,11 @@ export default async function JobDetailPage({ params }: PageProps) {
             </Link>
           </div>
         ) : (
-          <JobApplyForm jobId={job.id} questions={questions} />
+          <JobApplyForm
+            jobId={job.id}
+            questions={questions}
+            opportunityType={job.opportunityType}
+          />
         )}
       </div>
     </PortalShell>

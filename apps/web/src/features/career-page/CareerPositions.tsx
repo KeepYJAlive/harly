@@ -6,7 +6,12 @@ import type { Route } from "next";
 import { ArrowUpRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 
 import type { Job } from "./types";
 
@@ -25,7 +30,10 @@ function facet(jobs: Job[], pick: (j: Job) => string | null): string[] {
 const FILTER_META: Record<FilterKind, { label: string; pick: (j: Job) => string | null }> = {
   department: { label: "Department", pick: (j) => j.department },
   location: { label: "Location", pick: (j) => j.location ?? formatWorkplaceType(j.workplaceType) },
-  type: { label: "Type", pick: (j) => formatEmploymentType(j.employmentType) },
+  type: {
+    label: "Opportunity",
+    pick: (j) => formatOpportunityType(j.opportunityType),
+  },
 };
 
 export function CareerPositions({
@@ -39,14 +47,22 @@ export function CareerPositions({
   accent: string;
   filters?: FilterKind[];
 }) {
+  const enabledFilters = useMemo<FilterKind[]>(() => {
+    const hasBothOpportunityTypes =
+      new Set(jobs.map((job) => job.opportunityType)).size > 1;
+    return hasBothOpportunityTypes && !filters.includes("type")
+      ? [...filters, "type"]
+      : filters;
+  }, [filters, jobs]);
+
   // Compute distinct values per enabled facet.
   const facetValues = useMemo(() => {
     const result: Record<FilterKind, string[]> = { department: [], location: [], type: [] };
-    for (const f of filters) {
+    for (const f of enabledFilters) {
       result[f] = facet(jobs, FILTER_META[f].pick);
     }
     return result;
-  }, [jobs, filters]);
+  }, [jobs, enabledFilters]);
 
   // Multi-select state per facet (AND between facets, OR within facet).
   const [sel, setSel] = useState<Record<FilterKind, Set<string>>>({
@@ -72,14 +88,16 @@ export function CareerPositions({
         if (!sel.location.has(loc)) return false;
       }
       if (sel.type.size) {
-        const t = formatEmploymentType(j.employmentType);
+        const t = formatOpportunityType(j.opportunityType);
         if (!sel.type.has(t)) return false;
       }
       return true;
     });
   }, [jobs, sel]);
 
-  const activeFilters = filters.filter((f) => facetValues[f].length > 0);
+  const activeFilters = enabledFilters.filter(
+    (f) => facetValues[f].length > 0,
+  );
 
   function clearFacet(facetKey: FilterKind) {
     setSel((prev) => ({ ...prev, [facetKey]: new Set() }));
@@ -134,18 +152,33 @@ export function CareerPositions({
               href={`${boardRoot}/jobs/${job.slug}` as Route}
               className="group grid grid-cols-1 items-center gap-2 py-5 transition-colors duration-150 hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-6 sm:px-2"
             >
-              <span className="flex items-center gap-2 text-lg font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
-                {job.title}
-                <ArrowUpRight
-                  className="size-4 -translate-x-1 text-zinc-400 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
-                  style={{ color: accent }}
-                />
+              <span>
+                <span className="flex items-center gap-2 text-lg font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
+                  {job.title}
+                  <ArrowUpRight
+                    className="size-4 -translate-x-1 text-zinc-400 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
+                    style={{ color: accent }}
+                  />
+                </span>
+                {job.opportunityType === "volunteer" ? (
+                  <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                    Minimum Time Commitment:{" "}
+                    {formatMinimumTimeCommitment(
+                      job.minimumHours,
+                      job.commitmentPeriod,
+                    )}
+                  </span>
+                ) : null}
               </span>
               <span className="text-sm text-zinc-500 dark:text-zinc-400">
                 {job.department ?? "Not specified"}
               </span>
               <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                {formatEmploymentType(job.employmentType)}
+                {job.opportunityType === "volunteer"
+                  ? formatOpportunityType(job.opportunityType)
+                  : job.employmentType
+                    ? formatEmploymentType(job.employmentType)
+                    : formatOpportunityType(job.opportunityType)}
               </span>
               <span className="text-sm text-zinc-500 dark:text-zinc-400">
                 {job.location ?? formatWorkplaceType(job.workplaceType) ?? "Not specified"}

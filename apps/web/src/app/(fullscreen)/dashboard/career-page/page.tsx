@@ -41,6 +41,9 @@ export default async function CareerPagePage() {
         location: job.location,
         employmentType: job.employmentType,
         workplaceType: job.workplaceType,
+        opportunityType: job.opportunityType,
+        minimumHours: job.minimumHours,
+        commitmentPeriod: job.commitmentPeriod,
       }))}
       availableLegalPages={availableLegalPages}
     />

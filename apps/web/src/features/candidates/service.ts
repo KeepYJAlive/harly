@@ -25,6 +25,9 @@ export type CandidateApiInput = {
   phone?: string | null;
   address?: string | null;
   location?: string | null;
+  countryCode?: string | null;
+  region?: string | null;
+  city?: string | null;
   headline?: string | null;
   summary?: string | null;
   linkedinUrl?: string | null;
@@ -43,6 +46,9 @@ export function serializeCandidate(candidate: Candidate) {
     phone: candidate.phone,
     address: candidate.address,
     location: candidate.address ?? candidate.location,
+    countryCode: candidate.countryCode,
+    region: candidate.region,
+    city: candidate.city,
     headline: candidate.headline,
     summary: candidate.summary,
     linkedinUrl: candidate.linkedinUrl,
@@ -131,6 +137,9 @@ export async function createCandidateForApi(input: {
         email,
         phone: input.values.phone ?? null,
         address: input.values.address ?? null,
+        countryCode: input.values.countryCode ?? null,
+        region: input.values.region ?? null,
+        city: input.values.city ?? null,
         headline: input.values.headline ?? null,
         summary: input.values.summary ?? null,
         linkedinUrl: input.values.linkedinUrl ?? null,
@@ -186,6 +195,9 @@ export async function updateCandidateForApi(input: {
         lastName: input.values.lastName ?? existing.lastName,
         phone: input.values.phone ?? existing.phone,
         address: input.values.address ?? existing.address,
+        countryCode: input.values.countryCode ?? existing.countryCode,
+        region: input.values.region ?? existing.region,
+        city: input.values.city ?? existing.city,
         headline: input.values.headline ?? existing.headline,
         summary: input.values.summary ?? existing.summary,
         linkedinUrl: input.values.linkedinUrl ?? existing.linkedinUrl,

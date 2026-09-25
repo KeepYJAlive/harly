@@ -6,6 +6,7 @@ import {
   getPublicJobApplicationContext,
 } from "@/features/applications/data";
 import { sendApplicationReceivedEmails } from "@/features/applications/notifications";
+import { validateApplicantLocation } from "@/features/applications/applicant-location";
 import { scheduleAutoScore } from "@/features/applications/auto-score";
 import { scheduleAutoDuplicateCheck } from "@/features/applications/auto-duplicates";
 import {
@@ -81,13 +82,23 @@ export const POST = withApi(
       throw ApiError.notFound("Job not available.");
     }
 
-    const schema = createApplicationFormSchema(jobContext.applicationConfig);
+    const schema = createApplicationFormSchema(jobContext.applicationConfig, {
+      opportunityType: jobContext.opportunityType,
+    });
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
       throw ApiError.unprocessable(
         "Validation failed.",
         parsed.error.flatten().fieldErrors,
       );
+    }
+    if (jobContext.opportunityType === "volunteer") {
+      const issue = validateApplicantLocation(parsed.data);
+      if (issue) {
+        throw ApiError.unprocessable("Validation failed.", {
+          [issue.field]: [issue.message],
+        });
+      }
     }
 
     const questionErrors = validateApplicationQuestionAnswers(

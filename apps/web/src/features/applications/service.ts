@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, exists, getTableColumns, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, getTableColumns, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { ApiError, type Cursor } from "@harly/api";
 import {
@@ -592,7 +592,8 @@ async function setApplicationStatus(
 ): Promise<Application> {
   const attemptStatus = async (): Promise<Application> => {
     const application = await getApplicationForApi(input);
-    const terminalStageName = status === "hired" ? "Hired" : "Rejected";
+    const terminalStageNames =
+      status === "hired" ? ["Hired", "Accepted"] : ["Rejected", "Not Selected"];
     const [terminalStage] = await db
       .select({ id: jobStages.id })
       .from(jobStages)
@@ -600,7 +601,7 @@ async function setApplicationStatus(
         and(
           eq(jobStages.workspaceId, input.workspaceId),
           eq(jobStages.jobId, application.jobId),
-          eq(jobStages.name, terminalStageName),
+          inArray(jobStages.name, terminalStageNames),
         ),
       )
       .limit(1);

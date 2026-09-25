@@ -13,6 +13,8 @@ type JobLike = {
   officePhotos?: unknown;
   officeAddress?: string | null;
   keywords?: unknown;
+  opportunityType?: "employment" | "volunteer";
+  scheduleNotes?: string | null;
 };
 
 function JobContent({ content }: { content: string }) {
@@ -79,6 +81,13 @@ export function JobOverviewBody({ job }: { job: JobLike }) {
           ) : null}
         </>
       )}
+
+      {job.opportunityType === "volunteer" && job.scheduleNotes ? (
+        <section>
+          <Heading>Schedule / availability</Heading>
+          <p className="mt-3 whitespace-pre-line">{job.scheduleNotes}</p>
+        </section>
+      ) : null}
 
       {mapSrc || officePhotos.length > 0 ? (
         <section>

@@ -27,11 +27,12 @@ import { normalizeCareerPageConfig } from "@/features/career-page/config";
 import { getPendingJobApproval } from "./approval";
 
 function parseJobFormData(formData: FormData) {
-  return jobFormSchema.parse({
+  const values = jobFormSchema.parse({
     title: formData.get("title"),
     slug: formData.get("slug"),
     department: formData.get("department"),
     location: formData.get("location"),
+    opportunityType: formData.get("opportunityType"),
     employmentType: formData.get("employmentType"),
     workplaceType: formData.get("workplaceType"),
     experienceLevel: formData.get("experienceLevel"),
@@ -44,6 +45,9 @@ function parseJobFormData(formData: FormData) {
     salaryMax: formData.get("salaryMax"),
     currency: formData.get("currency"),
     salaryPeriod: formData.get("salaryPeriod"),
+    minimumHours: formData.get("minimumHours"),
+    commitmentPeriod: formData.get("commitmentPeriod"),
+    scheduleNotes: formData.get("scheduleNotes"),
     officeAddress: formData.get("officeAddress"),
     jobLocationCountry: formData.get("jobLocationCountry"),
     jobLocationRegion: formData.get("jobLocationRegion"),
@@ -73,6 +77,7 @@ function parseJobFormData(formData: FormData) {
     ),
     applicationQuestionsJson: formData.get("applicationQuestionsJson"),
   });
+  return values;
 }
 
 export type JobActionState = {
@@ -136,7 +141,7 @@ export async function updateJobStatusAction(formData: FormData) {
   const jobId = String(formData.get("jobId") ?? "");
   const context = await requireJobPermission("jobs:edit", jobId);
   const status = jobStatusSchema.parse(formData.get("status"));
-  if (status === "open" && await getPendingJobApproval(jobId)) {
+  if (status === "open" && (await getPendingJobApproval(jobId))) {
     throw new Error("Job has a pending approval request.");
   }
   const job = await updateJobStatus(jobId, status);

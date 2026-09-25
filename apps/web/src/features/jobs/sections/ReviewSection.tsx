@@ -16,6 +16,7 @@ export function ReviewSection({
   job,
   title,
   workplace,
+  opportunityType,
   submitLabel,
   reviewVisited,
   hiringTeam,
@@ -26,6 +27,7 @@ export function ReviewSection({
   job?: Job;
   title: string;
   workplace: string;
+  opportunityType: "employment" | "volunteer";
   submitLabel: string;
   reviewVisited: boolean;
   hiringTeam?: HiringTeamMember[];
@@ -42,10 +44,11 @@ export function ReviewSection({
           </span>
           <div className="min-w-0">
             <p className="font-display text-[15px] font-semibold tracking-tight">
-              {title || "New job"}
+              {title || "New opportunity"}
             </p>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {WORKPLACE_LABEL[workplace] ?? workplace}
+              {opportunityType === "volunteer" ? " · Volunteer" : " · Employment"}
               {job ? " · Ready to save" : ` · Ready to ${submitLabel.toLowerCase()}`}
             </p>
           </div>

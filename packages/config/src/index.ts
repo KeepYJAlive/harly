@@ -61,6 +61,10 @@ const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    HARLY_ALLOW_LOCAL_URL: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
   .superRefine((env, ctx) => {
     const url = env.HARLY_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.BETTER_AUTH_URL;
@@ -78,16 +82,24 @@ const envSchema = z
           ipv4Parts.length === 4 &&
           ipv4Parts[0] === "127" &&
           ipv4Parts.slice(1).every((part) => /^(?:0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+        const isLocalOrigin =
+          normalizedHostname === "localhost" ||
+          normalizedHostname.endsWith(".localhost") ||
+          isIpv4Loopback ||
+          ["::1", "[::1]", "0.0.0.0", "::", "[::]"].includes(normalizedHostname);
+
         if (
           env.NODE_ENV === "production" &&
-          (normalizedHostname === "localhost" ||
-            normalizedHostname.endsWith(".localhost") ||
-            isIpv4Loopback ||
-            ["::1", "[::1]", "0.0.0.0", "::", "[::]"].includes(normalizedHostname))
+          !env.HARLY_ALLOW_LOCAL_URL &&
+          isLocalOrigin
         ) {
           throw new Error("local or unspecified bind address");
         }
-        if (env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+        if (
+          env.NODE_ENV === "production" &&
+          !env.HARLY_ALLOW_LOCAL_URL &&
+          parsed.protocol !== "https:"
+        ) {
           ctx.addIssue({ code: "custom", path: ["HARLY_URL"], message: "must use HTTPS in production" });
         }
       } catch {

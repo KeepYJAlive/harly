@@ -34,16 +34,49 @@ const DEFAULT_STAGES = [
   { name: "Rejected", color: "#FEE2E2" },
 ];
 
+const VOLUNTEER_STAGES = [
+  { name: "Applied", color: "#E0F2FE" },
+  { name: "Screening", color: "#F5F3FF" },
+  { name: "Interview", color: "#FEF3C7" },
+  { name: "Accepted", color: "#CCFBF1" },
+  { name: "Not Selected", color: "#FEE2E2" },
+];
+
 type StageName = (typeof DEFAULT_STAGES)[number]["name"];
 
 // Demo teammates — real `user` + `member` rows (no auth) so the dashboard can
 // show ownership, interviewers and a live team-activity feed.
 const TEAMMATES = [
-  { key: "sarah", id: "seed-teammate-sarah", name: "Sarah Chen", email: "sarah.chen@ploxhost.test" },
-  { key: "james", id: "seed-teammate-james", name: "James Park", email: "james.park@ploxhost.test" },
-  { key: "emma", id: "seed-teammate-emma", name: "Emma Wilson", email: "emma.wilson@ploxhost.test" },
-  { key: "diego", id: "seed-teammate-diego", name: "Diego Martinez", email: "diego.martinez@ploxhost.test" },
-  { key: "sofia", id: "seed-teammate-sofia", name: "Sofia Romero", email: "sofia.romero@ploxhost.test" },
+  {
+    key: "sarah",
+    id: "seed-teammate-sarah",
+    name: "Sarah Chen",
+    email: "sarah.chen@ploxhost.test",
+  },
+  {
+    key: "james",
+    id: "seed-teammate-james",
+    name: "James Park",
+    email: "james.park@ploxhost.test",
+  },
+  {
+    key: "emma",
+    id: "seed-teammate-emma",
+    name: "Emma Wilson",
+    email: "emma.wilson@ploxhost.test",
+  },
+  {
+    key: "diego",
+    id: "seed-teammate-diego",
+    name: "Diego Martinez",
+    email: "diego.martinez@ploxhost.test",
+  },
+  {
+    key: "sofia",
+    id: "seed-teammate-sofia",
+    name: "Sofia Romero",
+    email: "sofia.romero@ploxhost.test",
+  },
 ];
 const teammateId = (key: string) => TEAMMATES.find((t) => t.key === key)?.id;
 
@@ -196,10 +229,41 @@ const JOBS = [
     description:
       "<p>Generate and qualify pipeline for our account executives. Hungry, coachable, and resilient — prior SaaS outbound a plus.</p>",
   },
+  {
+    title: "Digital Artist",
+    department: "Creative",
+    sector: "Community",
+    location: "Remote",
+    opportunityType: "volunteer",
+    employmentType: null,
+    workplaceType: "remote",
+    experienceLevel: "Portfolio or equivalent experience",
+    education: "Any",
+    keywords: ["Digital art", "Illustration", "Community"],
+    salaryMin: null,
+    salaryMax: null,
+    currency: null,
+    salaryPeriod: null,
+    minimumHours: 5,
+    commitmentPeriod: "month",
+    scheduleNotes: "Flexible schedule with one monthly planning call.",
+    status: "open",
+    description:
+      "<p>Create welcoming digital artwork for our community education campaigns and social channels.</p>",
+  },
 ];
 
 // Hiring manager (teammate key) per job index — drives the ownership labels.
-const JOB_HM = ["sarah", "james", "emma", "sarah", "james", "diego", "emma"];
+const JOB_HM = [
+  "sarah",
+  "james",
+  "emma",
+  "sarah",
+  "james",
+  "diego",
+  "emma",
+  "sofia",
+];
 // Extra interviewers assigned to each job's hiring team.
 const JOB_INTERVIEWERS = [
   ["sofia", "diego"],
@@ -209,36 +273,176 @@ const JOB_INTERVIEWERS = [
   ["sofia"],
   ["diego"],
   ["emma"],
+  ["sarah"],
 ];
 
 const CANDIDATES = [
-  { firstName: "Ava", lastName: "Thompson", email: "ava.thompson@gmail.com", location: "San Francisco, CA", headline: "Senior Frontend Engineer · ex-Vercel", github: "https://github.com/avathompson" },
-  { firstName: "Liam", lastName: "Chen", email: "liam.chen@outlook.com", location: "Toronto, Canada", headline: "Full-stack engineer, React + Node", github: "https://github.com/liamchen" },
-  { firstName: "Sofía", lastName: "Martínez", email: "sofia.martinez@gmail.com", location: "Madrid, Spain", headline: "Product Designer · design systems", website: "https://sofiamartinez.design" },
-  { firstName: "Noah", lastName: "Williams", email: "noah.williams@proton.me", location: "Austin, TX", headline: "Backend engineer, Go & Postgres", github: "https://github.com/noahw" },
-  { firstName: "Emma", lastName: "Müller", email: "emma.mueller@gmail.com", location: "Berlin, Germany", headline: "Platform engineer, distributed systems", github: "https://github.com/emmamueller" },
-  { firstName: "Kwame", lastName: "Mensah", email: "kwame.mensah@gmail.com", location: "Accra, Ghana", headline: "Growth marketer, B2B SaaS" },
-  { firstName: "Priya", lastName: "Nair", email: "priya.nair@gmail.com", location: "Bangalore, India", headline: "Frontend engineer, TypeScript + React", github: "https://github.com/priyanair" },
-  { firstName: "Lucas", lastName: "Oliveira", email: "lucas.oliveira@gmail.com", location: "São Paulo, Brazil", headline: "DevOps / SRE, AWS + Terraform", github: "https://github.com/lucasoliveira" },
-  { firstName: "Mei", lastName: "Tanaka", email: "mei.tanaka@gmail.com", location: "Tokyo, Japan", headline: "Product designer, mobile-first", website: "https://meitanaka.com" },
-  { firstName: "Daniel", lastName: "Kim", email: "daniel.kim@gmail.com", location: "Seoul, South Korea", headline: "Customer support lead, hosting" },
-  { firstName: "Isabella", lastName: "Rossi", email: "isabella.rossi@gmail.com", location: "Milan, Italy", headline: "Lifecycle & content marketing" },
-  { firstName: "Omar", lastName: "Haddad", email: "omar.haddad@gmail.com", location: "Dubai, UAE", headline: "Senior backend engineer, Go", github: "https://github.com/omarhaddad" },
-  { firstName: "Charlotte", lastName: "Dubois", email: "charlotte.dubois@gmail.com", location: "Paris, France", headline: "Frontend engineer, design-minded", github: "https://github.com/cdubois" },
-  { firstName: "Ethan", lastName: "Brown", email: "ethan.brown@gmail.com", location: "London, UK", headline: "SDR, SaaS outbound" },
-  { firstName: "Aisha", lastName: "Khan", email: "aisha.khan@gmail.com", location: "Karachi, Pakistan", headline: "Support specialist, technical" },
-  { firstName: "Mateo", lastName: "González", email: "mateo.gonzalez@gmail.com", location: "Buenos Aires, Argentina", headline: "DevOps engineer, Kubernetes", github: "https://github.com/mateog" },
-  { firstName: "Hannah", lastName: "Schmidt", email: "hannah.schmidt@gmail.com", location: "Vienna, Austria", headline: "Growth marketing manager" },
-  { firstName: "Yuki", lastName: "Sato", email: "yuki.sato@gmail.com", location: "Osaka, Japan", headline: "Frontend engineer, Next.js", github: "https://github.com/yukisato" },
-  { firstName: "Olivia", lastName: "Nguyen", email: "olivia.nguyen@gmail.com", location: "Sydney, Australia", headline: "Product designer, B2B SaaS", website: "https://olivian.design" },
-  { firstName: "Carlos", lastName: "Rivera", email: "carlos.rivera@gmail.com", location: "Mexico City, Mexico", headline: "Backend engineer, Go + gRPC", github: "https://github.com/carlosr" },
+  {
+    firstName: "Ava",
+    lastName: "Thompson",
+    email: "ava.thompson@gmail.com",
+    location: "San Francisco, CA",
+    headline: "Senior Frontend Engineer · ex-Vercel",
+    github: "https://github.com/avathompson",
+  },
+  {
+    firstName: "Liam",
+    lastName: "Chen",
+    email: "liam.chen@outlook.com",
+    location: "Toronto, Canada",
+    headline: "Full-stack engineer, React + Node",
+    github: "https://github.com/liamchen",
+  },
+  {
+    firstName: "Sofía",
+    lastName: "Martínez",
+    email: "sofia.martinez@gmail.com",
+    location: "Madrid, Spain",
+    headline: "Product Designer · design systems",
+    website: "https://sofiamartinez.design",
+  },
+  {
+    firstName: "Noah",
+    lastName: "Williams",
+    email: "noah.williams@proton.me",
+    location: "Austin, TX",
+    headline: "Backend engineer, Go & Postgres",
+    github: "https://github.com/noahw",
+  },
+  {
+    firstName: "Emma",
+    lastName: "Müller",
+    email: "emma.mueller@gmail.com",
+    location: "Berlin, Germany",
+    headline: "Platform engineer, distributed systems",
+    github: "https://github.com/emmamueller",
+  },
+  {
+    firstName: "Kwame",
+    lastName: "Mensah",
+    email: "kwame.mensah@gmail.com",
+    location: "Accra, Ghana",
+    headline: "Growth marketer, B2B SaaS",
+  },
+  {
+    firstName: "Priya",
+    lastName: "Nair",
+    email: "priya.nair@gmail.com",
+    location: "Bangalore, India",
+    headline: "Frontend engineer, TypeScript + React",
+    github: "https://github.com/priyanair",
+  },
+  {
+    firstName: "Lucas",
+    lastName: "Oliveira",
+    email: "lucas.oliveira@gmail.com",
+    location: "São Paulo, Brazil",
+    headline: "DevOps / SRE, AWS + Terraform",
+    github: "https://github.com/lucasoliveira",
+  },
+  {
+    firstName: "Mei",
+    lastName: "Tanaka",
+    email: "mei.tanaka@gmail.com",
+    location: "Tokyo, Japan",
+    headline: "Product designer, mobile-first",
+    website: "https://meitanaka.com",
+  },
+  {
+    firstName: "Daniel",
+    lastName: "Kim",
+    email: "daniel.kim@gmail.com",
+    location: "Seoul, South Korea",
+    headline: "Customer support lead, hosting",
+  },
+  {
+    firstName: "Isabella",
+    lastName: "Rossi",
+    email: "isabella.rossi@gmail.com",
+    location: "Milan, Italy",
+    headline: "Lifecycle & content marketing",
+  },
+  {
+    firstName: "Omar",
+    lastName: "Haddad",
+    email: "omar.haddad@gmail.com",
+    location: "Dubai, UAE",
+    headline: "Senior backend engineer, Go",
+    github: "https://github.com/omarhaddad",
+  },
+  {
+    firstName: "Charlotte",
+    lastName: "Dubois",
+    email: "charlotte.dubois@gmail.com",
+    location: "Paris, France",
+    headline: "Frontend engineer, design-minded",
+    github: "https://github.com/cdubois",
+  },
+  {
+    firstName: "Ethan",
+    lastName: "Brown",
+    email: "ethan.brown@gmail.com",
+    location: "London, UK",
+    headline: "SDR, SaaS outbound",
+  },
+  {
+    firstName: "Aisha",
+    lastName: "Khan",
+    email: "aisha.khan@gmail.com",
+    location: "Karachi, Pakistan",
+    headline: "Support specialist, technical",
+  },
+  {
+    firstName: "Mateo",
+    lastName: "González",
+    email: "mateo.gonzalez@gmail.com",
+    location: "Buenos Aires, Argentina",
+    headline: "DevOps engineer, Kubernetes",
+    github: "https://github.com/mateog",
+  },
+  {
+    firstName: "Hannah",
+    lastName: "Schmidt",
+    email: "hannah.schmidt@gmail.com",
+    location: "Vienna, Austria",
+    headline: "Growth marketing manager",
+  },
+  {
+    firstName: "Yuki",
+    lastName: "Sato",
+    email: "yuki.sato@gmail.com",
+    location: "Osaka, Japan",
+    headline: "Frontend engineer, Next.js",
+    github: "https://github.com/yukisato",
+  },
+  {
+    firstName: "Olivia",
+    lastName: "Nguyen",
+    email: "olivia.nguyen@gmail.com",
+    location: "Sydney, Australia",
+    headline: "Product designer, B2B SaaS",
+    website: "https://olivian.design",
+  },
+  {
+    firstName: "Carlos",
+    lastName: "Rivera",
+    email: "carlos.rivera@gmail.com",
+    location: "Mexico City, Mexico",
+    headline: "Backend engineer, Go + gRPC",
+    github: "https://github.com/carlosr",
+  },
 ];
 
 // candidate index → job index → stage → source. Index in this array = pipeline
 // order; `STAGE_AGE[order]` = days the candidate has sat in its current stage,
 // which drives the dashboard's aging/severity (a deliberate mix: fresh today,
 // due in a couple of days, and a few genuinely overdue).
-const APPLICATIONS: { c: number; j: number; stage: StageName; source: string }[] = [
+const APPLICATIONS: {
+  c: number;
+  j: number;
+  stage: StageName;
+  source: string;
+}[] = [
   { c: 0, j: 0, stage: "Offer", source: "LinkedIn" },
   { c: 6, j: 0, stage: "Interview", source: "Referral" },
   { c: 12, j: 0, stage: "Screening", source: "Company website" },
@@ -264,7 +468,9 @@ const APPLICATIONS: { c: number; j: number; stage: StageName; source: string }[]
   { c: 13, j: 6, stage: "Applied", source: "LinkedIn" },
   { c: 1, j: 0, stage: "Screening", source: "Referral" },
 ];
-const STAGE_AGE = [3, 1, 0, 1, 2, 3, 1, 2, 0, 4, 2, 1, 0, 1, 0, 2, 2, 3, 1, 2, 0, 1, 2, 1];
+const STAGE_AGE = [
+  3, 1, 0, 1, 2, 3, 1, 2, 0, 4, 2, 1, 0, 1, 0, 2, 2, 3, 1, 2, 0, 1, 2, 1,
+];
 // Round-robin of who advanced each candidate (feeds team-activity ownership).
 const MOVERS = ["sarah", "diego", "emma", "james", "sofia"];
 
@@ -280,39 +486,154 @@ const TAGS = [
 ];
 
 const NOTES = [
-  { c: 0, body: "Great first call — clearly senior. Walked through a complex perf optimization at her last role. Moving to onsite." },
-  { c: 0, body: "Reference check came back glowing. Recommend extending an offer." },
-  { c: 6, body: "Solid React fundamentals. Slightly junior on architecture, but coachable. Worth an onsite." },
-  { c: 3, body: "Accepted offer! Start date confirmed for next month. Loop in IT for laptop." },
-  { c: 4, body: "Strong distributed-systems answers. Some hesitation on on-call expectations — clarify in next round." },
-  { c: 2, body: "Beautiful portfolio. Design systems work is exactly what we need. Scheduling portfolio review." },
-  { c: 16, body: "Impressive growth numbers at last role, but comp expectations are above band. Need to align." },
-  { c: 9, body: "Excellent support instincts and writing. Offer sent and accepted." },
+  {
+    c: 0,
+    body: "Great first call — clearly senior. Walked through a complex perf optimization at her last role. Moving to onsite.",
+  },
+  {
+    c: 0,
+    body: "Reference check came back glowing. Recommend extending an offer.",
+  },
+  {
+    c: 6,
+    body: "Solid React fundamentals. Slightly junior on architecture, but coachable. Worth an onsite.",
+  },
+  {
+    c: 3,
+    body: "Accepted offer! Start date confirmed for next month. Loop in IT for laptop.",
+  },
+  {
+    c: 4,
+    body: "Strong distributed-systems answers. Some hesitation on on-call expectations — clarify in next round.",
+  },
+  {
+    c: 2,
+    body: "Beautiful portfolio. Design systems work is exactly what we need. Scheduling portfolio review.",
+  },
+  {
+    c: 16,
+    body: "Impressive growth numbers at last role, but comp expectations are above band. Need to align.",
+  },
+  {
+    c: 9,
+    body: "Excellent support instincts and writing. Offer sent and accepted.",
+  },
 ];
 
 // `author` = teammate key, `aged` = days ago the scorecard was submitted.
 const SCORECARDS = [
-  { c: 0, rating: "strong", comment: "Top of the pile. Deep React + perf expertise, great communication.", stageName: "Interview", author: "emma", aged: 1 },
-  { c: 6, rating: "mixed", comment: "Good fundamentals, lighter on system design. Lean yes.", stageName: "Interview", author: "diego", aged: 0 },
-  { c: 4, rating: "strong", comment: "Strong backend + infra. Would hire.", stageName: "Interview", author: "sarah", aged: 2 },
-  { c: 2, rating: "strong", comment: "Exceptional design craft and process.", stageName: "Offer", author: "sofia", aged: 3 },
-  { c: 16, rating: "mixed", comment: "Great results, comp gap is the risk.", stageName: "Offer", author: "james", aged: 1 },
-  { c: 5, rating: "weak", comment: "Channel experience too narrow for this role.", stageName: "Interview", author: "emma", aged: 0 },
+  {
+    c: 0,
+    rating: "strong",
+    comment:
+      "Top of the pile. Deep React + perf expertise, great communication.",
+    stageName: "Interview",
+    author: "emma",
+    aged: 1,
+  },
+  {
+    c: 6,
+    rating: "mixed",
+    comment: "Good fundamentals, lighter on system design. Lean yes.",
+    stageName: "Interview",
+    author: "diego",
+    aged: 0,
+  },
+  {
+    c: 4,
+    rating: "strong",
+    comment: "Strong backend + infra. Would hire.",
+    stageName: "Interview",
+    author: "sarah",
+    aged: 2,
+  },
+  {
+    c: 2,
+    rating: "strong",
+    comment: "Exceptional design craft and process.",
+    stageName: "Offer",
+    author: "sofia",
+    aged: 3,
+  },
+  {
+    c: 16,
+    rating: "mixed",
+    comment: "Great results, comp gap is the risk.",
+    stageName: "Offer",
+    author: "james",
+    aged: 1,
+  },
+  {
+    c: 5,
+    rating: "weak",
+    comment: "Channel experience too narrow for this role.",
+    stageName: "Interview",
+    author: "emma",
+    aged: 0,
+  },
 ];
 
 const MESSAGES = [
-  { c: 0, subject: "Next steps — Senior Frontend Engineer", body: "Hi Ava, we loved your onsite. We'd like to move forward with an offer — call you tomorrow to discuss details." },
-  { c: 3, subject: "Welcome to PloxHost!", body: "Hi Noah, thrilled to have you on board. Your start details and onboarding plan are attached." },
-  { c: 16, subject: "Quick comp conversation", body: "Hi Hannah, great to connect. Could we chat briefly about compensation expectations before the next round?" },
+  {
+    c: 0,
+    subject: "Next steps — Senior Frontend Engineer",
+    body: "Hi Ava, we loved your onsite. We'd like to move forward with an offer — call you tomorrow to discuss details.",
+  },
+  {
+    c: 3,
+    subject: "Welcome to PloxHost!",
+    body: "Hi Noah, thrilled to have you on board. Your start details and onboarding plan are attached.",
+  },
+  {
+    c: 16,
+    subject: "Quick comp conversation",
+    body: "Hi Hannah, great to connect. Could we chat briefly about compensation expectations before the next round?",
+  },
 ];
 
 const TASKS = [
-  { title: "Review Ava Thompson's offer letter", status: "pending", priority: "high", owner: "sarah", dueDaysFromNow: 2 },
-  { title: "Schedule portfolio review with Sofía Martínez", status: "pending", priority: "medium", owner: "emma", dueDaysFromNow: 3 },
-  { title: "Send onboarding docs to Noah Williams", status: "completed", priority: "high", owner: "james", dueDaysFromNow: -1 },
-  { title: "Prepare technical assessment for Backend Engineer role", status: "in_progress", priority: "medium", owner: "diego", dueDaysFromNow: 4 },
-  { title: "Follow up with Isabella Rossi on marketing role", status: "pending", priority: "low", owner: "sofia", dueDaysFromNow: 5 },
-  { title: "Update job description for DevOps contract", status: "pending", priority: "medium", owner: "diego", dueDaysFromNow: 6 },
+  {
+    title: "Review Ava Thompson's offer letter",
+    status: "pending",
+    priority: "high",
+    owner: "sarah",
+    dueDaysFromNow: 2,
+  },
+  {
+    title: "Schedule portfolio review with Sofía Martínez",
+    status: "pending",
+    priority: "medium",
+    owner: "emma",
+    dueDaysFromNow: 3,
+  },
+  {
+    title: "Send onboarding docs to Noah Williams",
+    status: "completed",
+    priority: "high",
+    owner: "james",
+    dueDaysFromNow: -1,
+  },
+  {
+    title: "Prepare technical assessment for Backend Engineer role",
+    status: "in_progress",
+    priority: "medium",
+    owner: "diego",
+    dueDaysFromNow: 4,
+  },
+  {
+    title: "Follow up with Isabella Rossi on marketing role",
+    status: "pending",
+    priority: "low",
+    owner: "sofia",
+    dueDaysFromNow: 5,
+  },
+  {
+    title: "Update job description for DevOps contract",
+    status: "pending",
+    priority: "medium",
+    owner: "diego",
+    dueDaysFromNow: 6,
+  },
 ];
 
 // Interviews reference an application by `${c}-${j}`; `interviewer` = teammate key.
@@ -327,17 +648,94 @@ const INTERVIEWS: {
   title?: string;
 }[] = [
   // Today — drives the "Today's interviews" widget.
-  { c: 6, j: 0, type: "culture_fit", mode: "video", when: todayAt(11, 0), interviewer: "sofia", title: "Culture fit interview" },
-  { c: 4, j: 1, type: "technical", mode: "video", when: todayAt(14, 30), interviewer: "diego", title: "Technical interview" },
+  {
+    c: 6,
+    j: 0,
+    type: "culture_fit",
+    mode: "video",
+    when: todayAt(11, 0),
+    interviewer: "sofia",
+    title: "Culture fit interview",
+  },
+  {
+    c: 4,
+    j: 1,
+    type: "technical",
+    mode: "video",
+    when: todayAt(14, 30),
+    interviewer: "diego",
+    title: "Technical interview",
+  },
   // Upcoming.
-  { c: 8, j: 2, type: "onsite", mode: "onsite", when: daysFromNowAt(1, 10, 0), interviewer: "emma", title: "Portfolio review" },
-  { c: 5, j: 4, type: "screening", mode: "phone", when: daysFromNowAt(2, 9, 30), interviewer: "sofia", title: "Recruiter screen" },
+  {
+    c: 8,
+    j: 2,
+    type: "onsite",
+    mode: "onsite",
+    when: daysFromNowAt(1, 10, 0),
+    interviewer: "emma",
+    title: "Portfolio review",
+  },
+  {
+    c: 5,
+    j: 4,
+    type: "screening",
+    mode: "phone",
+    when: daysFromNowAt(2, 9, 30),
+    interviewer: "sofia",
+    title: "Recruiter screen",
+  },
   // Recently completed — feed the Interviews KPI, velocity and team activity.
-  { c: 0, j: 0, type: "final", mode: "onsite", when: daysAgoAt(2, 15), interviewer: "sarah", status: "completed", title: "Final round" },
-  { c: 2, j: 2, type: "onsite", mode: "onsite", when: daysAgoAt(4, 13), interviewer: "emma", status: "completed", title: "Portfolio review" },
-  { c: 14, j: 3, type: "technical", mode: "video", when: daysAgoAt(6, 11), interviewer: "diego", status: "completed", title: "Technical interview" },
-  { c: 16, j: 4, type: "screening", mode: "phone", when: daysAgoAt(9, 16), interviewer: "sofia", status: "completed", title: "Recruiter screen" },
-  { c: 6, j: 0, type: "technical", mode: "video", when: daysAgoAt(1, 10), interviewer: "diego", status: "completed", title: "Technical interview" },
+  {
+    c: 0,
+    j: 0,
+    type: "final",
+    mode: "onsite",
+    when: daysAgoAt(2, 15),
+    interviewer: "sarah",
+    status: "completed",
+    title: "Final round",
+  },
+  {
+    c: 2,
+    j: 2,
+    type: "onsite",
+    mode: "onsite",
+    when: daysAgoAt(4, 13),
+    interviewer: "emma",
+    status: "completed",
+    title: "Portfolio review",
+  },
+  {
+    c: 14,
+    j: 3,
+    type: "technical",
+    mode: "video",
+    when: daysAgoAt(6, 11),
+    interviewer: "diego",
+    status: "completed",
+    title: "Technical interview",
+  },
+  {
+    c: 16,
+    j: 4,
+    type: "screening",
+    mode: "phone",
+    when: daysAgoAt(9, 16),
+    interviewer: "sofia",
+    status: "completed",
+    title: "Recruiter screen",
+  },
+  {
+    c: 6,
+    j: 0,
+    type: "technical",
+    mode: "video",
+    when: daysAgoAt(1, 10),
+    interviewer: "diego",
+    status: "completed",
+    title: "Technical interview",
+  },
 ];
 
 async function main() {
@@ -375,11 +773,16 @@ async function main() {
       .limit(1);
 
     const workspaceId = org.id;
-    console.log(`Seeding workspace "${org.name}" (${org.slug}) for ${SEED_EMAIL}…`);
+    console.log(
+      `Seeding workspace "${org.name}" (${org.slug}) for ${SEED_EMAIL}…`,
+    );
 
     // Normalise the owner's display name (fixes the "Maximliano" typo).
     if (user.name !== OWNER_NAME) {
-      await db.update(schema.user).set({ name: OWNER_NAME }).where(eq(schema.user.id, user.id));
+      await db
+        .update(schema.user)
+        .set({ name: OWNER_NAME })
+        .where(eq(schema.user.id, user.id));
     }
 
     // ── Demo teammates (user + workspace membership; no auth) ──
@@ -438,25 +841,62 @@ async function main() {
         .values({
           workspaceId,
           title: job.title,
-          slug: job.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+          slug: job.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, ""),
           department: job.department,
           sector: job.sector,
           location: job.location,
-          employmentType: job.employmentType as "full_time" | "part_time" | "contract" | "internship",
+          opportunityType: (job.opportunityType ?? "employment") as
+            | "employment"
+            | "volunteer",
+          employmentType: job.employmentType as
+            | "full_time"
+            | "part_time"
+            | "contract"
+            | "temporary"
+            | "internship"
+            | null,
           workplaceType: job.workplaceType as "remote" | "hybrid" | "onsite",
           experienceLevel: job.experienceLevel,
           education: job.education,
           keywords: job.keywords,
           description: job.description,
           contentSections: [
-            { id: "responsibilities", title: "What you'll do", body: "<ul><li>Own features end to end</li><li>Collaborate across design and product</li><li>Raise the quality bar</li></ul>" },
-            { id: "requirements", title: "Requirements", body: `<ul>${job.keywords.map((k) => `<li>${k}</li>`).join("")}</ul>` },
-            { id: "benefits", title: "Benefits", body: "<ul><li>Remote-friendly</li><li>Equity</li><li>Learning budget</li></ul>" },
+            {
+              id: "responsibilities",
+              title: "What you'll do",
+              body: "<ul><li>Own features end to end</li><li>Collaborate across design and product</li><li>Raise the quality bar</li></ul>",
+            },
+            {
+              id: "requirements",
+              title:
+                job.opportunityType === "volunteer"
+                  ? "Qualifications / skills"
+                  : "Requirements",
+              body: `<ul>${job.keywords.map((k) => `<li>${k}</li>`).join("")}</ul>`,
+            },
+            ...(job.opportunityType === "volunteer"
+              ? []
+              : [
+                  {
+                    id: "benefits",
+                    title: "Benefits",
+                    body: "<ul><li>Remote-friendly</li><li>Equity</li><li>Learning budget</li></ul>",
+                  },
+                ]),
           ],
           salaryMin: job.salaryMin,
           salaryMax: job.salaryMax,
           currency: job.currency,
           salaryPeriod: job.salaryPeriod,
+          minimumHours: job.minimumHours ?? null,
+          commitmentPeriod: job.commitmentPeriod as
+            | "week"
+            | "month"
+            | undefined,
+          scheduleNotes: job.scheduleNotes ?? null,
           applicationConfig: {
             resumeRequired: true,
             profileLinks: { linkedin: true, github: true, website: true },
@@ -464,7 +904,8 @@ async function main() {
           },
           boardConfig: {},
           status: job.status as "draft" | "open" | "closed",
-          publishedAt: job.status === "open" ? daysAgo(22 - (j === 4 ? 0 : j)) : null,
+          publishedAt:
+            job.status === "open" ? daysAgo(22 - (j === 4 ? 0 : j)) : null,
           createdById: user.id,
           createdAt: daysAgo(j === 4 ? 35 : 25 - j),
         })
@@ -475,7 +916,10 @@ async function main() {
       const stageRows = await db
         .insert(schema.jobStages)
         .values(
-          DEFAULT_STAGES.map((stage, index) => ({
+          (job.opportunityType === "volunteer"
+            ? VOLUNTEER_STAGES
+            : DEFAULT_STAGES
+          ).map((stage, index) => ({
             workspaceId,
             jobId: created.id,
             name: stage.name,
@@ -656,16 +1100,19 @@ async function main() {
     // ── Messages ──
     for (const message of MESSAGES) {
       const cand = CANDIDATES[message.c];
-      const [thread] = await db.insert(schema.mailThreads).values({
-        workspaceId,
-        source: "provider",
-        mailboxId: null,
-        candidateId: candidateIds[message.c],
-        subject: message.subject,
-        normalizedSubject: message.subject.toLowerCase(),
-        participantEmail: cand.email,
-        lastMessageAt: daysAgo(3),
-      }).returning({ id: schema.mailThreads.id });
+      const [thread] = await db
+        .insert(schema.mailThreads)
+        .values({
+          workspaceId,
+          source: "provider",
+          mailboxId: null,
+          candidateId: candidateIds[message.c],
+          subject: message.subject,
+          normalizedSubject: message.subject.toLowerCase(),
+          participantEmail: cand.email,
+          lastMessageAt: daysAgo(3),
+        })
+        .returning({ id: schema.mailThreads.id });
       await db.insert(schema.mailMessages).values({
         workspaceId,
         threadId: thread.id,
@@ -685,13 +1132,23 @@ async function main() {
     for (let j = 0; j < jobIds.length; j++) {
       await db
         .insert(schema.jobHiringTeam)
-        .values({ workspaceId, jobId: jobIds[j], userId: user.id, role: "recruiter" })
+        .values({
+          workspaceId,
+          jobId: jobIds[j],
+          userId: user.id,
+          role: "recruiter",
+        })
         .onConflictDoNothing();
       const hmId = teammateId(JOB_HM[j]);
       if (hmId) {
         await db
           .insert(schema.jobHiringTeam)
-          .values({ workspaceId, jobId: jobIds[j], userId: hmId, role: "hiring_manager" })
+          .values({
+            workspaceId,
+            jobId: jobIds[j],
+            userId: hmId,
+            role: "hiring_manager",
+          })
           .onConflictDoNothing();
       }
       for (const key of JOB_INTERVIEWERS[j] ?? []) {
@@ -699,7 +1156,12 @@ async function main() {
         if (!iId || iId === hmId) continue;
         await db
           .insert(schema.jobHiringTeam)
-          .values({ workspaceId, jobId: jobIds[j], userId: iId, role: "interviewer" })
+          .values({
+            workspaceId,
+            jobId: jobIds[j],
+            userId: iId,
+            role: "interviewer",
+          })
           .onConflictDoNothing();
       }
     }
@@ -720,7 +1182,8 @@ async function main() {
         mode: iv.mode,
         status: iv.status ?? "scheduled",
         scheduledAt: iv.when,
-        createdAt: iv.status === "completed" ? iv.when : daysAgo(1 + (iv.c % 3)),
+        createdAt:
+          iv.status === "completed" ? iv.when : daysAgo(1 + (iv.c % 3)),
       });
       interviewCount++;
     }
@@ -731,7 +1194,11 @@ async function main() {
       await db.insert(schema.tasks).values({
         workspaceId,
         title: task.title,
-        status: task.status as "pending" | "in_progress" | "completed" | "canceled",
+        status: task.status as
+          | "pending"
+          | "in_progress"
+          | "completed"
+          | "canceled",
         priority: task.priority as "low" | "medium" | "high" | "urgent",
         ownerId,
         createdById: user.id,

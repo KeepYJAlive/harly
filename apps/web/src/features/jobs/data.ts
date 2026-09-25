@@ -125,13 +125,21 @@ export {
   formatJobStatus,
 } from "@/lib/format";
 
-const defaultStages = [
+const employmentStages = [
   { name: "Applied", color: "#E0F2FE" },
   { name: "Screening", color: "#F5F3FF" },
   { name: "Interview", color: "#FEF3C7" },
   { name: "Offer", color: "#DCFCE7" },
   { name: "Hired", color: "#CCFBF1" },
   { name: "Rejected", color: "#FEE2E2" },
+];
+
+const volunteerStages = [
+  { name: "Applied", color: "#E0F2FE" },
+  { name: "Screening", color: "#F5F3FF" },
+  { name: "Interview", color: "#FEF3C7" },
+  { name: "Accepted", color: "#CCFBF1" },
+  { name: "Not Selected", color: "#FEE2E2" },
 ];
 
 async function syncJobApplicationQuestions(
@@ -207,6 +215,7 @@ export async function listJobsWithStats() {
       slug: jobs.slug,
       department: jobs.department,
       location: jobs.location,
+      opportunityType: jobs.opportunityType,
       employmentType: jobs.employmentType,
       workplaceType: jobs.workplaceType,
       status: jobs.status,
@@ -327,10 +336,7 @@ export async function listOpenJobsForWorkspaceSlug(workspaceSlug: string) {
     .select()
     .from(jobs)
     .where(
-      and(
-        eq(jobs.workspaceId, workspace.id),
-        publicJobVisibilityConditions(),
-      ),
+      and(eq(jobs.workspaceId, workspace.id), publicJobVisibilityConditions()),
     )
     .orderBy(desc(jobs.publishedAt), desc(jobs.createdAt));
 
@@ -463,7 +469,8 @@ export async function createJob(values: JobFormValues) {
         department: values.department,
         sector: values.sector,
         location: values.location,
-        employmentType: values.employmentType,
+        opportunityType: values.opportunityType,
+        employmentType: values.employmentType ?? null,
         workplaceType: values.workplaceType,
         experienceLevel: values.experienceLevel,
         education: values.education,
@@ -471,10 +478,13 @@ export async function createJob(values: JobFormValues) {
         keywords: values.keywords,
         description: values.description,
         contentSections: values.contentSections,
-        salaryMin: values.salaryMin,
-        salaryMax: values.salaryMax,
-        currency: values.currency,
-        salaryPeriod: values.salaryPeriod,
+        salaryMin: values.salaryMin ?? null,
+        salaryMax: values.salaryMax ?? null,
+        currency: values.currency ?? null,
+        salaryPeriod: values.salaryPeriod ?? null,
+        minimumHours: values.minimumHours ?? null,
+        commitmentPeriod: values.commitmentPeriod ?? null,
+        scheduleNotes: values.scheduleNotes ?? null,
         officeAddress: values.officeAddress,
         jobLocationCountry: values.jobLocationCountry,
         jobLocationRegion: values.jobLocationRegion,
@@ -489,7 +499,10 @@ export async function createJob(values: JobFormValues) {
       .returning();
 
     await tx.insert(jobStages).values(
-      defaultStages.map((stage, index) => ({
+      (values.opportunityType === "volunteer"
+        ? volunteerStages
+        : employmentStages
+      ).map((stage, index) => ({
         workspaceId: workspace.id,
         jobId: createdJob.id,
         name: stage.name,
@@ -536,7 +549,8 @@ export async function updateJob(jobId: string, values: JobFormValues) {
         department: values.department,
         sector: values.sector,
         location: values.location,
-        employmentType: values.employmentType,
+        opportunityType: values.opportunityType,
+        employmentType: values.employmentType ?? null,
         workplaceType: values.workplaceType,
         experienceLevel: values.experienceLevel,
         education: values.education,
@@ -547,10 +561,13 @@ export async function updateJob(jobId: string, values: JobFormValues) {
         // Legacy fields are migrated into contentSections.
         requirements: null,
         benefits: null,
-        salaryMin: values.salaryMin,
-        salaryMax: values.salaryMax,
-        currency: values.currency,
-        salaryPeriod: values.salaryPeriod,
+        salaryMin: values.salaryMin ?? null,
+        salaryMax: values.salaryMax ?? null,
+        currency: values.currency ?? null,
+        salaryPeriod: values.salaryPeriod ?? null,
+        minimumHours: values.minimumHours ?? null,
+        commitmentPeriod: values.commitmentPeriod ?? null,
+        scheduleNotes: values.scheduleNotes ?? null,
         officeAddress: values.officeAddress,
         jobLocationCountry: values.jobLocationCountry,
         jobLocationRegion: values.jobLocationRegion,
@@ -565,6 +582,29 @@ export async function updateJob(jobId: string, values: JobFormValues) {
       .returning();
 
     if (updatedJob) {
+      const terminalStageRenames =
+        values.opportunityType === "volunteer"
+          ? [
+              ["Hired", "Accepted"],
+              ["Rejected", "Not Selected"],
+            ]
+          : [
+              ["Accepted", "Hired"],
+              ["Not Selected", "Rejected"],
+            ];
+      for (const [fromName, toName] of terminalStageRenames) {
+        await tx
+          .update(jobStages)
+          .set({ name: toName, updatedAt: new Date() })
+          .where(
+            and(
+              eq(jobStages.workspaceId, workspace.id),
+              eq(jobStages.jobId, updatedJob.id),
+              eq(jobStages.name, fromName),
+            ),
+          );
+      }
+
       await syncJobApplicationQuestions(tx, {
         workspaceId: workspace.id,
         jobId: updatedJob.id,
@@ -631,7 +671,10 @@ export async function permanentlyDeleteJob(jobId: string) {
     // with the same event/webhook/audit trail a standalone delete gets, so by
     // the time the job row is deleted below zero referrals are left to cascade.
     const jobReferrals = await tx
-      .select({ id: candidateReferrals.id, candidateId: candidateReferrals.candidateId })
+      .select({
+        id: candidateReferrals.id,
+        candidateId: candidateReferrals.candidateId,
+      })
       .from(candidateReferrals)
       .where(
         and(
@@ -646,7 +689,12 @@ export async function permanentlyDeleteJob(jobId: string) {
         { id: r.id, workspaceId: workspace.id, candidateId: r.candidateId },
         user.id,
       );
-      if (event) referralDeletions.push({ event, referralId: r.id, candidateId: r.candidateId });
+      if (event)
+        referralDeletions.push({
+          event,
+          referralId: r.id,
+          candidateId: r.candidateId,
+        });
     }
 
     await tx

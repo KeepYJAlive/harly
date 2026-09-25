@@ -3,7 +3,14 @@ import "server-only";
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { ApiError, type Cursor } from "@harly/api";
-import { db, jobApprovalRequests, jobHiringTeam, jobs, jobStages, type Job } from "@harly/db";
+import {
+  db,
+  jobApprovalRequests,
+  jobHiringTeam,
+  jobs,
+  jobStages,
+  type Job,
+} from "@harly/db";
 
 import { emitWebhookEvent } from "@/server/webhooks/emit";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
@@ -21,7 +28,7 @@ import type { JobStatus } from "./validation";
  * same logic is reusable outside a user session.
  */
 
-const DEFAULT_API_STAGES = [
+const DEFAULT_EMPLOYMENT_STAGES = [
   { name: "Applied", color: "#E0F2FE" },
   { name: "Screening", color: "#F5F3FF" },
   { name: "Interview", color: "#FEF3C7" },
@@ -30,13 +37,22 @@ const DEFAULT_API_STAGES = [
   { name: "Rejected", color: "#FEE2E2" },
 ];
 
+const DEFAULT_VOLUNTEER_STAGES = [
+  { name: "Applied", color: "#E0F2FE" },
+  { name: "Screening", color: "#F5F3FF" },
+  { name: "Interview", color: "#FEF3C7" },
+  { name: "Accepted", color: "#CCFBF1" },
+  { name: "Not Selected", color: "#FEE2E2" },
+];
+
 export type JobApiInput = {
   title: string;
   description: string;
   slug?: string;
   department?: string | null;
   location?: string | null;
-  employmentType: Job["employmentType"];
+  opportunityType?: Job["opportunityType"];
+  employmentType?: Job["employmentType"];
   workplaceType: Job["workplaceType"];
   experienceLevel?: string | null;
   status?: JobStatus;
@@ -47,6 +63,9 @@ export type JobApiInput = {
   salaryMax?: number | null;
   currency?: string | null;
   salaryPeriod?: string | null;
+  minimumHours?: number | null;
+  commitmentPeriod?: Job["commitmentPeriod"];
+  scheduleNotes?: string | null;
 };
 
 export function serializeJob(job: Job) {
@@ -57,6 +76,7 @@ export function serializeJob(job: Job) {
     status: job.status,
     department: job.department,
     location: job.location,
+    opportunityType: job.opportunityType,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     description: job.description,
@@ -67,6 +87,9 @@ export function serializeJob(job: Job) {
     salaryMax: job.salaryMax,
     currency: job.currency,
     salaryPeriod: job.salaryPeriod,
+    minimumHours: job.minimumHours,
+    commitmentPeriod: job.commitmentPeriod,
+    scheduleNotes: job.scheduleNotes,
     publishedAt: job.publishedAt?.toISOString() ?? null,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
@@ -86,6 +109,7 @@ export function serializePublicJob(job: Job, workspaceSlug: string) {
     title: job.title,
     department: job.department,
     location: job.location,
+    opportunityType: job.opportunityType,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     description: job.description,
@@ -96,6 +120,9 @@ export function serializePublicJob(job: Job, workspaceSlug: string) {
     salaryMax: job.salaryMax,
     currency: job.currency,
     salaryPeriod: job.salaryPeriod,
+    minimumHours: job.minimumHours,
+    commitmentPeriod: job.commitmentPeriod,
+    scheduleNotes: job.scheduleNotes,
     publishedAt: job.publishedAt?.toISOString() ?? null,
     // Where the company's careers page can deep-link for the hosted apply flow.
     hostedApplyUrl: `${base}/board/${workspaceSlug}/apply/${job.slug}`,
@@ -116,6 +143,7 @@ function cursorWhere(cursor: Cursor | null) {
 export async function listJobsForApi(input: {
   workspaceId: string;
   status?: JobStatus;
+  opportunityType?: Job["opportunityType"];
   cursor: Cursor | null;
   limit: number;
 }): Promise<Job[]> {
@@ -127,6 +155,9 @@ export async function listJobsForApi(input: {
         eq(jobs.workspaceId, input.workspaceId),
         isNull(jobs.deletedAt),
         input.status ? eq(jobs.status, input.status) : undefined,
+        input.opportunityType
+          ? eq(jobs.opportunityType, input.opportunityType)
+          : undefined,
         cursorWhere(input.cursor),
       ),
     )
@@ -164,6 +195,20 @@ export async function createJobForApi(input: {
     values.slug ?? values.title,
   );
   const status: JobStatus = values.status ?? "draft";
+  const opportunityType = values.opportunityType ?? "employment";
+  if (opportunityType === "employment" && !values.employmentType) {
+    throw ApiError.unprocessable(
+      "employmentType is required for employment opportunities.",
+    );
+  }
+  if (
+    opportunityType === "volunteer" &&
+    (!values.minimumHours || !values.commitmentPeriod)
+  ) {
+    throw ApiError.unprocessable(
+      "minimumHours and commitmentPeriod are required for volunteer opportunities.",
+    );
+  }
 
   const { job, event } = await db.transaction(async (tx) => {
     const [created] = await tx
@@ -175,16 +220,32 @@ export async function createJobForApi(input: {
         description: values.description,
         department: values.department ?? null,
         location: values.location ?? null,
-        employmentType: values.employmentType,
+        opportunityType,
+        employmentType:
+          opportunityType === "employment" ? values.employmentType : null,
         workplaceType: values.workplaceType,
         experienceLevel: values.experienceLevel ?? null,
         requirements: values.requirements ?? null,
         benefits: values.benefits ?? null,
         keywords: values.keywords ?? [],
-        salaryMin: values.salaryMin ?? null,
-        salaryMax: values.salaryMax ?? null,
-        currency: values.currency ?? null,
-        salaryPeriod: values.salaryPeriod ?? null,
+        salaryMin:
+          opportunityType === "employment" ? (values.salaryMin ?? null) : null,
+        salaryMax:
+          opportunityType === "employment" ? (values.salaryMax ?? null) : null,
+        currency:
+          opportunityType === "employment" ? (values.currency ?? null) : null,
+        salaryPeriod:
+          opportunityType === "employment"
+            ? (values.salaryPeriod ?? null)
+            : null,
+        minimumHours:
+          opportunityType === "volunteer" ? values.minimumHours : null,
+        commitmentPeriod:
+          opportunityType === "volunteer" ? values.commitmentPeriod : null,
+        scheduleNotes:
+          opportunityType === "volunteer"
+            ? (values.scheduleNotes ?? null)
+            : null,
         status,
         publishedAt: status === "open" ? new Date() : null,
         createdById: actorUserId,
@@ -192,7 +253,10 @@ export async function createJobForApi(input: {
       .returning();
 
     await tx.insert(jobStages).values(
-      DEFAULT_API_STAGES.map((stage, index) => ({
+      (opportunityType === "volunteer"
+        ? DEFAULT_VOLUNTEER_STAGES
+        : DEFAULT_EMPLOYMENT_STAGES
+      ).map((stage, index) => ({
         workspaceId,
         jobId: created.id,
         name: stage.name,
@@ -226,9 +290,14 @@ export async function createJobForApi(input: {
 
   if (event) {
     await publishPersistedDomainEvents([event]);
-    await emitWebhookEvent(workspaceId, "job.published", {
-      job: serializeJob(job),
-    }, { actorId: actorUserId, skipDomainEvent: true });
+    await emitWebhookEvent(
+      workspaceId,
+      "job.published",
+      {
+        job: serializeJob(job),
+      },
+      { actorId: actorUserId, skipDomainEvent: true },
+    );
   }
   return job;
 }
@@ -244,8 +313,45 @@ export async function updateJobForApi(input: {
   });
 
   const nextStatus = input.values.status ?? existing.status;
+  const nextOpportunityType =
+    input.values.opportunityType ?? existing.opportunityType;
+  const nextEmploymentType =
+    nextOpportunityType === "employment"
+      ? (input.values.employmentType ?? existing.employmentType)
+      : null;
+  const nextMinimumHours =
+    nextOpportunityType === "volunteer"
+      ? (input.values.minimumHours ?? existing.minimumHours)
+      : null;
+  const nextCommitmentPeriod =
+    nextOpportunityType === "volunteer"
+      ? (input.values.commitmentPeriod ?? existing.commitmentPeriod)
+      : null;
+  if (nextOpportunityType === "employment" && !nextEmploymentType) {
+    throw ApiError.unprocessable(
+      "employmentType is required for employment opportunities.",
+    );
+  }
+  if (
+    nextOpportunityType === "volunteer" &&
+    (!nextMinimumHours || !nextCommitmentPeriod)
+  ) {
+    throw ApiError.unprocessable(
+      "minimumHours and commitmentPeriod are required for volunteer opportunities.",
+    );
+  }
   if (nextStatus === "open") {
-    const [pending] = await db.select({ id: jobApprovalRequests.id }).from(jobApprovalRequests).where(and(eq(jobApprovalRequests.workspaceId, input.workspaceId), eq(jobApprovalRequests.jobId, input.jobId), eq(jobApprovalRequests.status, "pending"))).limit(1);
+    const [pending] = await db
+      .select({ id: jobApprovalRequests.id })
+      .from(jobApprovalRequests)
+      .where(
+        and(
+          eq(jobApprovalRequests.workspaceId, input.workspaceId),
+          eq(jobApprovalRequests.jobId, input.jobId),
+          eq(jobApprovalRequests.status, "pending"),
+        ),
+      )
+      .limit(1);
     if (pending) throw ApiError.conflict("Job has a pending approval request.");
   }
   const becomesPublished =
@@ -256,33 +362,75 @@ export async function updateJobForApi(input: {
     const [next] = await tx
       .update(jobs)
       .set({
-      title: input.values.title ?? existing.title,
-      description: input.values.description ?? existing.description,
-      department: input.values.department ?? existing.department,
-      location: input.values.location ?? existing.location,
-      employmentType: input.values.employmentType ?? existing.employmentType,
-      workplaceType: input.values.workplaceType ?? existing.workplaceType,
-      requirements: input.values.requirements ?? existing.requirements,
-      benefits: input.values.benefits ?? existing.benefits,
-      keywords: input.values.keywords ?? (existing.keywords as string[]),
-      salaryMin: input.values.salaryMin ?? existing.salaryMin,
-      salaryMax: input.values.salaryMax ?? existing.salaryMax,
-      currency: input.values.currency ?? existing.currency,
-      salaryPeriod: input.values.salaryPeriod ?? existing.salaryPeriod,
-      status: nextStatus,
-      publishedAt:
-        nextStatus === "open"
-          ? becomesPublished
-            ? new Date()
-            : existing.publishedAt
-          : null,
-      updatedAt: new Date(),
+        title: input.values.title ?? existing.title,
+        description: input.values.description ?? existing.description,
+        department: input.values.department ?? existing.department,
+        location: input.values.location ?? existing.location,
+        opportunityType: nextOpportunityType,
+        employmentType: nextEmploymentType,
+        workplaceType: input.values.workplaceType ?? existing.workplaceType,
+        requirements: input.values.requirements ?? existing.requirements,
+        benefits: input.values.benefits ?? existing.benefits,
+        keywords: input.values.keywords ?? (existing.keywords as string[]),
+        salaryMin:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryMin ?? existing.salaryMin)
+            : null,
+        salaryMax:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryMax ?? existing.salaryMax)
+            : null,
+        currency:
+          nextOpportunityType === "employment"
+            ? (input.values.currency ?? existing.currency)
+            : null,
+        salaryPeriod:
+          nextOpportunityType === "employment"
+            ? (input.values.salaryPeriod ?? existing.salaryPeriod)
+            : null,
+        minimumHours: nextMinimumHours,
+        commitmentPeriod: nextCommitmentPeriod,
+        scheduleNotes:
+          nextOpportunityType === "volunteer"
+            ? (input.values.scheduleNotes ?? existing.scheduleNotes)
+            : null,
+        status: nextStatus,
+        publishedAt:
+          nextStatus === "open"
+            ? becomesPublished
+              ? new Date()
+              : existing.publishedAt
+            : null,
+        updatedAt: new Date(),
       })
       .where(
         and(eq(jobs.id, input.jobId), eq(jobs.workspaceId, input.workspaceId)),
       )
       .returning();
     if (!next) throw ApiError.notFound("Job not found.");
+
+    const terminalStageRenames =
+      nextOpportunityType === "volunteer"
+        ? [
+            ["Hired", "Accepted"],
+            ["Rejected", "Not Selected"],
+          ]
+        : [
+            ["Accepted", "Hired"],
+            ["Not Selected", "Rejected"],
+          ];
+    for (const [fromName, toName] of terminalStageRenames) {
+      await tx
+        .update(jobStages)
+        .set({ name: toName, updatedAt: new Date() })
+        .where(
+          and(
+            eq(jobStages.workspaceId, input.workspaceId),
+            eq(jobStages.jobId, input.jobId),
+            eq(jobStages.name, fromName),
+          ),
+        );
+    }
     return {
       updated: next,
       event: becomesPublished
@@ -299,9 +447,14 @@ export async function updateJobForApi(input: {
 
   if (event) {
     await publishPersistedDomainEvents([event]);
-    await emitWebhookEvent(input.workspaceId, "job.published", {
-      job: serializeJob(updated),
-    }, { skipDomainEvent: true });
+    await emitWebhookEvent(
+      input.workspaceId,
+      "job.published",
+      {
+        job: serializeJob(updated),
+      },
+      { skipDomainEvent: true },
+    );
   }
   return updated;
 }

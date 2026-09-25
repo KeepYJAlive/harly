@@ -9,6 +9,9 @@ export type Job = {
   title: string;
   department: string | null;
   location: string | null;
-  employmentType: string;
+  opportunityType: "employment" | "volunteer";
+  employmentType: string | null;
   workplaceType: string;
+  minimumHours: number | null;
+  commitmentPeriod: "week" | "month" | null;
 };

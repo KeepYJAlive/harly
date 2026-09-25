@@ -16,6 +16,7 @@ export type PreviewJobDraft = {
   description: string;
   department: string;
   location: string;
+  opportunityType: "employment" | "volunteer";
   employmentType: string;
   workplaceType: string;
   experienceLevel?: string;
@@ -23,6 +24,9 @@ export type PreviewJobDraft = {
   salaryMax?: number;
   currency?: string;
   salaryPeriod?: string;
+  minimumHours?: number;
+  commitmentPeriod?: string;
+  scheduleNotes?: string;
   officeAddress?: string;
   contentSections?: unknown;
   officePhotos?: unknown;

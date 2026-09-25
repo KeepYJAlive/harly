@@ -3,10 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowLeft, Briefcase, Building2, Check, Link2, MapPin, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  Briefcase,
+  Building2,
+  Check,
+  Link2,
+  MapPin,
+  Wallet,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 import type { WorkspaceBoardBranding } from "@/features/workspaces/board";
 
 import { isLightColor, type CareerPageConfig } from "../config";
@@ -133,9 +146,14 @@ export function JobShell({
     };
   }, [activeTab, job.slug]);
 
+  const isVolunteer = job.opportunityType === "volunteer";
   const tabs = [
     { tab: "overview", label: "Overview", href: overviewHref },
-    { tab: "application", label: "Application", href: applyHref },
+    {
+      tab: "application",
+      label: isVolunteer ? "Volunteer Application" : "Application",
+      href: applyHref,
+    },
   ] as const;
 
   return (
@@ -285,7 +303,7 @@ export function JobShell({
                   )}
                   style={{ backgroundColor: accent, color: onAccent }}
                 >
-                  Apply for this role
+                  {isVolunteer ? "Apply to Volunteer" : "Apply for this role"}
                 </Link>
               ) : null}
             </aside>
@@ -341,12 +359,18 @@ export function JobShell({
       <footer className="border-t border-zinc-200 dark:border-zinc-800">
         {variant === "join" && (
           <div className="mx-auto max-w-5xl px-6 pt-6 text-xs text-zinc-400 dark:text-zinc-500">
-            <Link href={(boardRoot || "/") as Route} className="hover:text-zinc-700 dark:hover:text-zinc-300">
+            <Link
+              href={(boardRoot || "/") as Route}
+              className="hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
               Home
             </Link>
             <span className="mx-1.5">/</span>
-            <Link href={(boardRoot || "/") as Route} className="hover:text-zinc-700 dark:hover:text-zinc-300">
-              Jobs at {workspace.name}
+            <Link
+              href={(boardRoot || "/") as Route}
+              className="hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Opportunities at {workspace.name}
             </Link>
             <span className="mx-1.5">/</span>
             <span>{job.title}</span>
@@ -408,12 +432,20 @@ function JoinJobContent({
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-6 pb-20 pt-10">
-      <h1 className={cn("text-2xl font-semibold tracking-tight sm:text-3xl", reveal)}>
+      <h1
+        className={cn(
+          "text-2xl font-semibold tracking-tight sm:text-3xl",
+          reveal,
+        )}
+      >
         {title}
       </h1>
 
       <div
-        className={cn("mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-zinc-500 dark:text-zinc-400", reveal)}
+        className={cn(
+          "mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-zinc-500 dark:text-zinc-400",
+          reveal,
+        )}
         style={{ animationDelay: "40ms" }}
       >
         <span className="flex items-center gap-1.5">
@@ -422,7 +454,11 @@ function JoinJobContent({
         </span>
         <span className="flex items-center gap-1.5">
           <Briefcase className="size-3.5" strokeWidth={1.8} />
-          {formatEmploymentType(job.employmentType)}
+          {job.opportunityType === "volunteer"
+            ? "Volunteer Opportunity"
+            : job.employmentType
+              ? formatEmploymentType(job.employmentType)
+              : formatOpportunityType(job.opportunityType)}
         </span>
         {job.department && (
           <span className="flex items-center gap-1.5">
@@ -436,14 +472,29 @@ function JoinJobContent({
             {comp}
           </span>
         )}
+        {job.opportunityType === "volunteer" ? (
+          <span className="flex items-center gap-1.5">
+            Minimum Time Commitment:{" "}
+            {formatMinimumTimeCommitment(
+              job.minimumHours,
+              job.commitmentPeriod,
+            )}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-8 grid gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,1fr)_240px]">
-        <main className={cn("min-w-0", reveal)} style={{ animationDelay: "100ms" }}>
+        <main
+          className={cn("min-w-0", reveal)}
+          style={{ animationDelay: "100ms" }}
+        >
           {children}
         </main>
 
-        <aside className={cn("lg:sticky lg:top-8 lg:self-start", reveal)} style={{ animationDelay: "140ms" }}>
+        <aside
+          className={cn("lg:sticky lg:top-8 lg:self-start", reveal)}
+          style={{ animationDelay: "140ms" }}
+        >
           {activeTab === "overview" ? (
             <>
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
@@ -454,7 +505,9 @@ function JoinJobContent({
                 className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-full px-5 text-sm font-semibold transition-transform duration-150 active:scale-[0.98]"
                 style={{ backgroundColor: accent, color: onAccent }}
               >
-                Apply now
+                {job.opportunityType === "volunteer"
+                  ? "Apply to Volunteer"
+                  : "Apply now"}
               </Link>
             </>
           ) : (
@@ -463,12 +516,12 @@ function JoinJobContent({
               className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
             >
               <ArrowLeft className="size-3.5" strokeWidth={1.8} />
-              Back to job
+              Back to opportunity
             </Link>
           )}
 
           <p className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-            Share this job
+            Share this opportunity
           </p>
           <button
             type="button"

@@ -20,9 +20,11 @@ type Question = {
 export function JobApplyForm({
   jobId,
   questions,
+  opportunityType,
 }: {
   jobId: string;
   questions: Question[];
+  opportunityType: "employment" | "volunteer";
 }) {
   const [isPending, start] = useTransition();
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -128,7 +130,11 @@ export function JobApplyForm({
         toast.error(result.error);
         return;
       }
-      toast.success("Application submitted!");
+      toast.success(
+        opportunityType === "volunteer"
+          ? "Volunteer application submitted!"
+          : "Application submitted!",
+      );
       window.location.href = `/portal/applications/${result.applicationId}`;
     });
   }
@@ -287,7 +293,11 @@ export function JobApplyForm({
             "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
           )}
         >
-          {isPending ? "Submitting…" : "Submit application"}
+          {isPending
+            ? "Submitting…"
+            : opportunityType === "volunteer"
+              ? "Apply to Volunteer"
+              : "Submit application"}
         </button>
       </div>
     </form>

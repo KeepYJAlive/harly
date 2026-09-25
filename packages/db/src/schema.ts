@@ -31,7 +31,18 @@ export const employmentTypeEnum = pgEnum("employment_type", [
   "full_time",
   "part_time",
   "contract",
+  "temporary",
   "internship",
+]);
+
+export const opportunityTypeEnum = pgEnum("opportunity_type", [
+  "employment",
+  "volunteer",
+]);
+
+export const commitmentPeriodEnum = pgEnum("commitment_period", [
+  "week",
+  "month",
 ]);
 
 export const workplaceTypeEnum = pgEnum("workplace_type", [
@@ -181,11 +192,10 @@ export const workflowRunStatusEnum = pgEnum("workflow_run_status", [
 ]);
 
 /** Lifecycle of a workflow definition, independent from an execution run. */
-export const workflowDefinitionStatusEnum = pgEnum("workflow_definition_status", [
-  "draft",
-  "published",
-  "paused",
-]);
+export const workflowDefinitionStatusEnum = pgEnum(
+  "workflow_definition_status",
+  ["draft", "published", "paused"],
+);
 
 export const memberStatusEnum = pgEnum("member_status", [
   "active",
@@ -1255,7 +1265,10 @@ export const jobs = pgTable(
     slug: text("slug").notNull(),
     department: text("department"),
     location: text("location"),
-    employmentType: employmentTypeEnum("employment_type").notNull(),
+    opportunityType: opportunityTypeEnum("opportunity_type")
+      .default("employment")
+      .notNull(),
+    employmentType: employmentTypeEnum("employment_type"),
     workplaceType: workplaceTypeEnum("workplace_type").notNull(),
     description: text("description").notNull(),
     requirements: text("requirements"),
@@ -1267,9 +1280,7 @@ export const jobs = pgTable(
     sector: text("sector"),
     experienceLevel: text("experience_level"),
     education: text("education"),
-    evaluationMode: text("evaluation_mode")
-      .default("balanced")
-      .notNull(),
+    evaluationMode: text("evaluation_mode").default("balanced").notNull(),
     keywords: jsonb("keywords")
       .default(sql`'[]'::jsonb`)
       .notNull(),
@@ -1278,6 +1289,9 @@ export const jobs = pgTable(
     currency: text("currency"),
     // 'annual' | 'monthly'
     salaryPeriod: text("salary_period"),
+    minimumHours: integer("minimum_hours"),
+    commitmentPeriod: commitmentPeriodEnum("commitment_period"),
+    scheduleNotes: text("schedule_notes"),
     // On-site / hybrid office details shown on the public page.
     officeAddress: text("office_address"),
     officeLat: doublePrecision("office_lat"),
@@ -1320,6 +1334,14 @@ export const jobs = pgTable(
       table.createdAt,
     ),
     index("jobs_created_by_idx").on(table.createdById),
+    check(
+      "jobs_opportunity_fields_check",
+      sql`(
+        (${table.opportunityType} = 'employment' and ${table.employmentType} is not null and ${table.minimumHours} is null and ${table.commitmentPeriod} is null and ${table.scheduleNotes} is null)
+        or
+        (${table.opportunityType} = 'volunteer' and ${table.employmentType} is null and ${table.salaryMin} is null and ${table.salaryMax} is null and ${table.currency} is null and ${table.salaryPeriod} is null and ${table.minimumHours} > 0 and ${table.commitmentPeriod} is not null)
+      )`,
+    ),
   ],
 );
 
@@ -1426,6 +1448,10 @@ export const candidates = pgTable(
     phone: text("phone"),
     address: text("address"),
     location: text("location"),
+    countryCode: text("country_code"),
+    region: text("region"),
+    city: text("city"),
+    timezone: text("timezone"),
     linkedinUrl: text("linkedin_url"),
     githubUrl: text("github_url"),
     websiteUrl: text("website_url"),
@@ -1747,7 +1773,9 @@ export const candidateNotes = pgTable(
       table.createdAt,
     ),
     index("candidate_notes_author_idx").on(table.authorId),
-    uniqueIndex("candidate_notes_workflow_effect_uidx").on(table.workflowEffectId),
+    uniqueIndex("candidate_notes_workflow_effect_uidx").on(
+      table.workflowEffectId,
+    ),
   ],
 );
 
@@ -2042,7 +2070,10 @@ export const signatureFields = pgTable(
       table.workspaceId,
       table.documentId,
     ),
-    check("signature_fields_type_check", sql`${table.type} in ('signature', 'text')`),
+    check(
+      "signature_fields_type_check",
+      sql`${table.type} in ('signature', 'text')`,
+    ),
     check(
       "signature_fields_geometry_check",
       sql`${table.page} >= 1 AND ${table.x} >= 0 AND ${table.y} >= 0 AND ${table.w} > 0 AND ${table.h} > 0 AND ${table.x} + ${table.w} <= 1 AND ${table.y} + ${table.h} <= 1`,
@@ -2784,7 +2815,9 @@ export const domainEventOutbox = pgTable(
     lastError: text("last_error"),
     // Durable consumer checkpoint for workflow dispatch. Realtime publication
     // and automation dispatch are independent consumers of this event log.
-    automationsDispatchedAt: timestamp("automations_dispatched_at", { withTimezone: true }),
+    automationsDispatchedAt: timestamp("automations_dispatched_at", {
+      withTimezone: true,
+    }),
     automationAttempts: integer("automation_attempts").default(0).notNull(),
     automationLastError: text("automation_last_error"),
     automationParentRunId: uuid("automation_parent_run_id"),
@@ -3219,7 +3252,9 @@ export const candidateTags = pgTable(
       sql`lower(${table.label})`,
       table.candidateId,
     ),
-    uniqueIndex("candidate_tags_workflow_effect_uidx").on(table.workflowEffectId),
+    uniqueIndex("candidate_tags_workflow_effect_uidx").on(
+      table.workflowEffectId,
+    ),
   ],
 );
 
@@ -4626,19 +4661,35 @@ export const workflowDefinitions = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     enabled: boolean("enabled").default(true).notNull(),
-    status: workflowDefinitionStatusEnum("status").default("published").notNull(),
+    status: workflowDefinitionStatusEnum("status")
+      .default("published")
+      .notNull(),
     definitionVersion: integer("definition_version").default(1).notNull(),
-    consecutiveFailureCount: integer("consecutive_failure_count").default(0).notNull(),
+    consecutiveFailureCount: integer("consecutive_failure_count")
+      .default(0)
+      .notNull(),
     autoPausedAt: timestamp("auto_paused_at", { withTimezone: true }),
-    approvalRequestedAt: timestamp("approval_requested_at", { withTimezone: true }),
-    approvedById: text("approved_by_id").references(() => user.id, { onDelete: "set null" }),
+    approvalRequestedAt: timestamp("approval_requested_at", {
+      withTimezone: true,
+    }),
+    approvedById: text("approved_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    publishedById: text("published_by_id").references(() => user.id, { onDelete: "set null" }),
+    publishedById: text("published_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     maxRunsPerMinute: integer("max_runs_per_minute").default(60).notNull(),
-    maxExternalActionsPerMinute: integer("max_external_actions_per_minute").default(30).notNull(),
-    circuitBreakerThreshold: integer("circuit_breaker_threshold").default(5).notNull(),
-    circuitBreakerCooldownSeconds: integer("circuit_breaker_cooldown_seconds").default(300).notNull(),
+    maxExternalActionsPerMinute: integer("max_external_actions_per_minute")
+      .default(30)
+      .notNull(),
+    circuitBreakerThreshold: integer("circuit_breaker_threshold")
+      .default(5)
+      .notNull(),
+    circuitBreakerCooldownSeconds: integer("circuit_breaker_cooldown_seconds")
+      .default(300)
+      .notNull(),
     circuitOpenUntil: timestamp("circuit_open_until", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     // The triggering webhook event, promoted to a column for the dispatch index.
@@ -4694,14 +4745,24 @@ export const workflowDefinitionVersions = pgTable(
     createdById: text("created_by_id").references(() => user.id, {
       onDelete: "set null",
     }),
-    approvedById: text("approved_by_id").references(() => user.id, { onDelete: "set null" }),
+    approvedById: text("approved_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    publishedById: text("published_by_id").references(() => user.id, { onDelete: "set null" }),
+    publishedById: text("published_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     maxRunsPerMinute: integer("max_runs_per_minute").default(60).notNull(),
-    maxExternalActionsPerMinute: integer("max_external_actions_per_minute").default(30).notNull(),
-    circuitBreakerThreshold: integer("circuit_breaker_threshold").default(5).notNull(),
-    circuitBreakerCooldownSeconds: integer("circuit_breaker_cooldown_seconds").default(300).notNull(),
+    maxExternalActionsPerMinute: integer("max_external_actions_per_minute")
+      .default(30)
+      .notNull(),
+    circuitBreakerThreshold: integer("circuit_breaker_threshold")
+      .default(5)
+      .notNull(),
+    circuitBreakerCooldownSeconds: integer("circuit_breaker_cooldown_seconds")
+      .default(300)
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -4915,8 +4976,10 @@ export const workspaceSecrets = pgTable(
 
 export type WorkflowDefinition = typeof workflowDefinitions.$inferSelect;
 export type NewWorkflowDefinition = typeof workflowDefinitions.$inferInsert;
-export type WorkflowDefinitionVersion = typeof workflowDefinitionVersions.$inferSelect;
-export type NewWorkflowDefinitionVersion = typeof workflowDefinitionVersions.$inferInsert;
+export type WorkflowDefinitionVersion =
+  typeof workflowDefinitionVersions.$inferSelect;
+export type NewWorkflowDefinitionVersion =
+  typeof workflowDefinitionVersions.$inferInsert;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;

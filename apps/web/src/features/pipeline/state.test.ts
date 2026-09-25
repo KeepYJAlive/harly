@@ -8,6 +8,8 @@ import {
 describe("pipeline state mapping", () => {
   it.each([
     ["Hired", "hired"],
+    ["Accepted", "hired"],
+    ["Not Selected", "rejected"],
     [" rejected ", "rejected"],
     ["Interview", "active"],
     ["Offer", "active"],

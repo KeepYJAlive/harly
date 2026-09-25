@@ -24,12 +24,14 @@ export const GET = withApi(async (request) => {
   const department = url.searchParams.get("department")?.toLowerCase();
   const location = url.searchParams.get("location")?.toLowerCase();
   const workplaceType = url.searchParams.get("workplaceType");
+  const opportunityType = url.searchParams.get("opportunityType");
   const query = url.searchParams.get("q")?.toLowerCase();
 
   const filtered = jobs.filter((job) => {
     if (department && job.department?.toLowerCase() !== department) return false;
     if (location && !job.location?.toLowerCase().includes(location)) return false;
     if (workplaceType && job.workplaceType !== workplaceType) return false;
+    if (opportunityType && job.opportunityType !== opportunityType) return false;
     if (query && !`${job.title} ${job.description}`.toLowerCase().includes(query))
       return false;
     return true;

@@ -60,12 +60,15 @@ export default async function PortalJobsPage() {
       title: jobs.title,
       department: jobs.department,
       location: jobs.location,
+      opportunityType: jobs.opportunityType,
       workplaceType: jobs.workplaceType,
       employmentType: jobs.employmentType,
       salaryMin: jobs.salaryMin,
       salaryMax: jobs.salaryMax,
       currency: jobs.currency,
       salaryPeriod: jobs.salaryPeriod,
+      minimumHours: jobs.minimumHours,
+      commitmentPeriod: jobs.commitmentPeriod,
     })
     .from(jobs)
     .where(
@@ -89,14 +92,14 @@ export default async function PortalJobsPage() {
       <div className="space-y-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Open positions
+            Open opportunities
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">
             Join our team
           </h1>
           {openJobs.length > 0 && (
             <p className="mt-1.5 text-sm text-muted-foreground">
-              {openJobs.length} open role{openJobs.length === 1 ? "" : "s"} across{" "}
+              {openJobs.length} open opportunit{openJobs.length === 1 ? "y" : "ies"} across{" "}
               {depts.length} department{depts.length === 1 ? "" : "s"}
             </p>
           )}
@@ -105,7 +108,7 @@ export default async function PortalJobsPage() {
         {openJobs.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
             <BriefcaseIcon className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-            <p className="font-medium text-foreground">No open roles right now</p>
+            <p className="font-medium text-foreground">No open opportunities right now</p>
             <p className="mt-1 text-sm text-muted-foreground">Check back soon for new opportunities.</p>
           </div>
         ) : (
@@ -142,9 +145,19 @@ export default async function PortalJobsPage() {
                                 {job.location}
                               </span>
                             )}
-                            {job.employmentType && (
+                            {(job.opportunityType === "volunteer" ||
+                              job.employmentType) && (
                               <span>
-                                {EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType}
+                                {job.opportunityType === "volunteer"
+                                ? "Volunteer Opportunity"
+                                : job.employmentType
+                                  ? EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType
+                                  : "Employment Opportunity"}
+                              </span>
+                            )}
+                            {job.opportunityType === "volunteer" && (
+                              <span>
+                                Minimum Time Commitment: {job.minimumHours} hours/{job.commitmentPeriod}
                               </span>
                             )}
                             {salary && (

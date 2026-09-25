@@ -32,6 +32,7 @@ export default async function PortalApplicationsPage() {
         jobTitle: jobs.title,
         jobDepartment: jobs.department,
         jobLocation: jobs.location,
+        jobOpportunityType: jobs.opportunityType,
       })
       .from(applications)
       .innerJoin(jobs, and(eq(jobs.id, applications.jobId), eq(jobs.workspaceId, session.workspaceId), isNull(jobs.deletedAt)))
@@ -101,7 +102,10 @@ export default async function PortalApplicationsPage() {
                       {[application.jobDepartment, application.jobLocation].filter(Boolean).join(" · ") || "Application submitted"}
                     </p>
                   </div>
-                  <PortalStatusBadge status={application.status} />
+                  <PortalStatusBadge
+                    status={application.status}
+                    opportunityType={application.jobOpportunityType}
+                  />
                 </div>
                 <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>Applied {formatShort(application.appliedAt)}</span>

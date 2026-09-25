@@ -27,6 +27,7 @@ export default async function BoardApplyPage({
     <ApplyForm
       jobSlug={job.slug}
       workspaceSlug={workspace.slug}
+      opportunityType={job.opportunityType}
       applicationConfig={normalizeJobApplicationConfig(job.applicationConfig)}
       variant={
         config.template === "ashby"

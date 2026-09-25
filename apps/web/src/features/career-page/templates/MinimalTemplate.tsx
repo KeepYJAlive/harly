@@ -1,10 +1,16 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { ArrowUpRight } from "lucide-react";
 
-import { formatEmploymentType, formatWorkplaceType } from "@/lib/format";
+import {
+  formatEmploymentType,
+  formatMinimumTimeCommitment,
+  formatOpportunityType,
+  formatWorkplaceType,
+} from "@/lib/format";
 import type { WorkspaceBoardBranding } from "@/features/workspaces/board";
 import type { CareerPageConfig } from "@/features/career-page/config";
 import type { Job } from "@/features/career-page/types";
@@ -30,6 +36,18 @@ export function MinimalTemplate({
   const headline = config.hero.headline || `Careers at ${workspace.name}`;
   const subhead = config.hero.subhead;
   const ctaText = config.hero.ctaButtonText || "View jobs";
+  const [opportunityType, setOpportunityType] = useState("all");
+  const availableOpportunityTypes = useMemo(
+    () => Array.from(new Set(jobs.map((job) => job.opportunityType))),
+    [jobs],
+  );
+  const shownJobs = useMemo(
+    () =>
+      opportunityType === "all"
+        ? jobs
+        : jobs.filter((job) => job.opportunityType === opportunityType),
+    [jobs, opportunityType],
+  );
 
   // Which logo to show: square mark vs full wordmark
   const displayLogo =
@@ -56,7 +74,7 @@ export function MinimalTemplate({
   // Group jobs by department
   const groups = (() => {
     const map = new Map<string, Job[]>();
-    jobs.forEach((j) => {
+    shownJobs.forEach((j) => {
       const key = j.department ?? "Other";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(j);
@@ -197,6 +215,22 @@ export function MinimalTemplate({
             {config.positions.title}
           </h2>
 
+          {availableOpportunityTypes.length > 1 ? (
+            <select
+              value={opportunityType}
+              onChange={(event) => setOpportunityType(event.target.value)}
+              aria-label="Opportunity type"
+              className="mt-5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+            >
+              <option value="all">All opportunities</option>
+              {availableOpportunityTypes.map((type) => (
+                <option key={type} value={type}>
+                  {formatOpportunityType(type)}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
           {jobs.length === 0 ? (
             <p className="mt-8 text-sm text-zinc-500 dark:text-zinc-400">
               No open positions right now.
@@ -217,15 +251,26 @@ export function MinimalTemplate({
                           href={`${boardRoot}/jobs/${job.slug}` as Route}
                           className="group flex items-center justify-between gap-6 py-4 transition-colors"
                         >
-                          <span
-                            className="flex items-center gap-1.5 font-medium transition-opacity group-hover:opacity-70"
-                            style={{ color: accent }}
-                          >
-                            {job.title}
-                            <ArrowUpRight
-                              className="size-3.5 -translate-x-1 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
-                              strokeWidth={2}
-                            />
+                          <span>
+                            <span
+                              className="flex items-center gap-1.5 font-medium transition-opacity group-hover:opacity-70"
+                              style={{ color: accent }}
+                            >
+                              {job.title}
+                              <ArrowUpRight
+                                className="size-3.5 -translate-x-1 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
+                                strokeWidth={2}
+                              />
+                            </span>
+                            {job.opportunityType === "volunteer" ? (
+                              <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                                Minimum Time Commitment:{" "}
+                                {formatMinimumTimeCommitment(
+                                  job.minimumHours,
+                                  job.commitmentPeriod,
+                                )}
+                              </span>
+                            ) : null}
                           </span>
                           <span className="flex shrink-0 items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
                             <span>
@@ -236,7 +281,11 @@ export function MinimalTemplate({
                               ·
                             </span>
                             <span>
-                              {formatEmploymentType(job.employmentType)}
+                              {job.opportunityType === "volunteer"
+                                ? formatOpportunityType(job.opportunityType)
+                                : job.employmentType
+                                  ? formatEmploymentType(job.employmentType)
+                                  : formatOpportunityType(job.opportunityType)}
                             </span>
                           </span>
                         </Link>
