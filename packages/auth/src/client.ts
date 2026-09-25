@@ -5,7 +5,14 @@ import { magicLinkClient, organizationClient, twoFactorClient } from "better-aut
 import { ssoClient } from "@better-auth/sso/client";
 
 export const authClient = createAuthClient({
-  plugins: [organizationClient(), twoFactorClient(), magicLinkClient(), ssoClient()],
+  plugins: [
+    organizationClient(),
+    twoFactorClient({
+      twoFactorPage: "/verify-2fa",
+    }),
+    magicLinkClient(),
+    ssoClient(),
+  ],
 });
 
 export const { signIn, signOut, useSession, getSession } = authClient;
