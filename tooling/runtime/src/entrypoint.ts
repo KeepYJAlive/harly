@@ -354,9 +354,15 @@ if (!commands[command]) {
 } else {
   commands[command]().catch((error) => {
     if (!process.exitCode) process.exitCode = 1;
-    jsonLog("error", "runtime.fatal", {
+   jsonLog("error", "runtime.fatal", {
       command,
       message: error instanceof Error ? error.message : "unknown error",
+      cause:
+        error instanceof Error && error.cause instanceof Error
+          ? error.cause.message
+          : error instanceof Error && error.cause
+            ? String(error.cause)
+            : undefined,
     });
   });
 }
