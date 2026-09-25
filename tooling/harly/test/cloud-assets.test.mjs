@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { decideStableChannel } from "../scripts/stable-channel.mjs";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const repositoryRoot = path.resolve(packageRoot, "..", "..");
@@ -92,6 +93,9 @@ test("version tags are the only published images", async () => {
   assert.doesNotMatch(workflow, /flavor: latest=\$\{\{/);
   assert.match(workflow, /group: release-channel/);
   assert.match(workflow, /Recompute which stable version owns the channel/);
+  assert.match(workflow, /gh api --paginate/);
+  assert.match(workflow, /select\(\.draft == false and \.prerelease == false\)/);
+  assert.doesNotMatch(workflow, /git tag --list 'v\*'/);
   assert.match(workflow, /docker buildx imagetools create/);
   // Moving :latest and rewriting the manifest are both gated on that recomputed
   // decision, so neither can regress to an older release line. Checked by
@@ -151,6 +155,17 @@ test("version tags are the only published images", async () => {
     assert.match(workflow, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(workflow, /deploy\/railway\/README\.md/);
+});
+
+test("failed higher stable tags do not block the newest published stable release", () => {
+  const failedHigherTag = decideStableChannel("0.2.1", ["v0.2.0"]);
+  assert.deepEqual(failedHigherTag, { owns: true, highest: "0.2.1" });
+
+  const publishedHigherRelease = decideStableChannel("0.2.1", ["v0.2.0", "v0.3.0"]);
+  assert.deepEqual(publishedHigherRelease, { owns: false, highest: "0.3.0" });
+
+  const newerCandidate = decideStableChannel("0.3.0", ["v0.2.0"]);
+  assert.deepEqual(newerCandidate, { owns: true, highest: "0.3.0" });
 });
 
 test("cloud documentation links and provider instructions resolve", async () => {

@@ -171,15 +171,20 @@ jobs:
         name: Recompute which stable version owns the channel
         env:
           RELEASE_VERSION: ${{ needs.image.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          highest="$(
-            git tag --list 'v*' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | sed 's/^v//' \
-              | sort -V \
-              | tail -1
+          # Published GitHub Releases are the success record for this workflow:
+          # failed validation/scanning/build tags have no release and cannot
+          # block an older successful release from taking the stable channel.
+          # Include this run's image, which is built and pushed before this job
+          # but is not published as a GitHub Release until the final job.
+          decision="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+              | node tooling/harly/scripts/stable-channel.mjs "$RELEASE_VERSION"
           )"
-          if [ "$RELEASE_VERSION" = "$highest" ]; then
+          IFS=$'\t' read -r owns highest <<< "$decision"
+          if [ "$owns" = "true" ]; then
             echo "owns=true" >> "$GITHUB_OUTPUT"
             echo "$RELEASE_VERSION is the newest stable version; it takes the channel."
           else
