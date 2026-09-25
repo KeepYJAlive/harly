@@ -84,15 +84,45 @@ test("version tags are the only published images", async () => {
   assert.doesNotMatch(workflow, /branches:\s*\[main\]/);
   assert.doesNotMatch(workflow, /value=edge/);
   assert.doesNotMatch(workflow, /prefix=sha-/);
-  assert.match(
-    workflow,
-    /flavor: latest=\$\{\{ steps\.version\.outputs\.latest \}\}/,
-  );
+  // The build itself never publishes :latest. Which version owns the channel is
+  // recomputed inside the serialized job, so two overlapping releases cannot
+  // both believe they are the newest and race to overwrite it.
+  assert.match(workflow, /flavor: latest=false/);
   assert.doesNotMatch(workflow, /flavor: latest=true/);
-  // A prerelease never moves latest, and neither does a stable tag that is not
-  // the highest one published, so latest cannot move backwards.
-  assert.match(workflow, /echo "latest=false" >> "\$GITHUB_OUTPUT"/);
-  assert.match(workflow, /sort -V/);
+  assert.doesNotMatch(workflow, /flavor: latest=\$\{\{/);
+  assert.match(workflow, /group: release-channel/);
+  assert.match(workflow, /Recompute which stable version owns the channel/);
+  assert.match(workflow, /docker buildx imagetools create/);
+  // Moving :latest and rewriting the manifest are both gated on that recomputed
+  // decision, so neither can regress to an older release line. Checked by
+  // isolating each step's own block rather than with a loose regex over the
+  // whole file, which would pass even with the gate deleted.
+  const channelJob = workflow.slice(
+    workflow.indexOf("\n  release-channel:"),
+    workflow.indexOf("\n  github-release:"),
+  );
+  assert.ok(channelJob.length > 0, "release-channel job not found");
+  const stepBlocks = channelJob
+    .split(/\n      - (?=name:|uses:|id:)/)
+    .slice(1)
+    .map((block) => `      - ${block}`);
+  for (const step of [
+    "Point :latest at this version",
+    "Point deployment assets at the stable image",
+  ]) {
+    const block = stepBlocks.find((candidate) => candidate.includes(step));
+    assert.ok(block, `step not found: ${step}`);
+    assert.match(
+      block,
+      /if: steps\.decide\.outputs\.owns == 'true'/,
+      `${step} must be gated on the recomputed channel decision`,
+    );
+  }
+  // A prerelease never touches the stable channel at all.
+  assert.match(workflow, /if: needs\.image\.outputs\.prerelease == 'false'/);
+  // The notes are published only once the channel has been settled.
+  assert.match(workflow, /needs: \[image, release-channel\]/);
+  assert.match(workflow, /LATEST: \$\{\{ needs\.release-channel\.outputs\.owns \}\}/);
   // The image is scanned before it is pushed, so a blocking finding keeps it
   // out of the registry instead of only skipping the release.
   assert.match(workflow, /image-ref: harly:candidate/);
@@ -102,18 +132,14 @@ test("version tags are the only published images", async () => {
   // The tagged commit is validated before anything is published.
   assert.match(workflow, /uses: \.\/\.github\/workflows\/ci\.yml/);
   // The notes are published only once the manifest they point at is live.
-  assert.match(workflow, /needs: \[image, release-manifest\]/);
-  // The manifest moves only for the release that owns the stable channel. A
-  // stable patch on an older line must not rewrite it, or `harly update` would
-  // hand every stable installation an older version than it already runs.
-  assert.match(
-    workflow,
-    /if: needs\.image\.outputs\.latest == 'true'/,
-  );
+  // The manifest moves only for the release that owns the stable channel, which
+  // release-channel recomputes; a stable patch on an older line must not rewrite
+  // it, or `harly update` would hand every installation an older version.
   assert.doesNotMatch(
     workflow,
-    /if: needs\.image\.outputs\.prerelease == 'false'/,
+    /if: needs\.image\.outputs\.prerelease == 'false'\s*\n\s*needs: image\s*\n\s*runs-on[\s\S]{0,80}?sync-release-assets/,
   );
+  assert.doesNotMatch(workflow, /needs\.image\.outputs\.latest/);
   for (const file of [
     "release-manifest.json",
     "fly.toml",

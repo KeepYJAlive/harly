@@ -92,10 +92,12 @@ before you start.
   `ghcr.io/vytral/harly:latest` to that same digest. Prerelease tags publish
   only their own version tag.
 - Pushes to `main` no longer publish an image.
-- `:latest` only ever moves forward, and so does the release manifest that
-  `harly update` reads. Tagging a support patch on an older line after a newer
-  version is published leaves both where they are, so a release can never
-  downgrade the installs that follow the stable channel.
+- `:latest` and the release manifest that `harly update` reads only ever move
+  forward, and which version owns them is recomputed under a lock at the moment
+  they are written. Deciding it before the image build left a stale answer that
+  a 40-minute build could invalidate, so two releases tagged close together
+  could settle on the older one. Tagging a support patch on an older line leaves
+  both untouched; install it with `--to`.
 - The container image is built and scanned before it is pushed. A blocking
   vulnerability now keeps the image out of the registry instead of only
   skipping the release that announces it.

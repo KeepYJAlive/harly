@@ -72,21 +72,24 @@ The numbers are examples. A tag has to match one of those three shapes, with a
 `v`, such as `0.2.0`, is not a release either.
 
 `latest` moves only when a stable tag is published, and it points at that
-version's digest. It only ever moves forward: tagging a support patch on an
-older line after a newer version is out leaves `latest` where it is, so a
-release can never downgrade the installs that follow the stable channel. After
-`harly update`, the installation is pinned to the digest rather than left
-floating on `latest`. The command reads `release-manifest.json` on `main`.
-`--to latest` selects the same stable version.
+version's digest. It only ever moves forward, and which version owns it is
+recomputed under a lock at the moment it is written — not decided before the
+build, which would go stale while the build ran. Tagging a support patch on an
+older line, or publishing two versions close together, therefore cannot drag it
+backwards. After `harly update`, the installation is pinned to the digest rather
+than left floating on `latest`. The command reads `release-manifest.json` on
+`main`. `--to latest` selects the same stable version.
 
-The newest stable tag updates the manifest, `fly.toml`, `render.yaml`, the
-DigitalOcean specs, and the release metadata embedded in the CLI, then commits
-those files to `main`. A beta or release candidate publishes the image and a
-GitHub prerelease, and leaves the stable manifest alone. So does a stable patch
-on an older line: it publishes its image and release, but it does not touch the
-manifest or `latest`, because doing so would hand every stable installation a
-version older than the one it already runs. Install one of those deliberately
-with `--to`.
+The newest stable tag updates `latest`, the manifest, `fly.toml`, `render.yaml`,
+the DigitalOcean specs, and the release metadata embedded in the CLI, then
+commits those files to `main`. All of that happens in one serialized job that
+recomputes which version is newest at the moment it writes, so two releases
+published close together converge instead of racing. A beta or release candidate
+publishes the image and a GitHub prerelease, and leaves the stable channel
+alone. So does a stable patch on an older line: it publishes its image and
+release, but it does not touch `latest` or the manifest, because doing so would
+hand every stable installation a version older than the one it already runs.
+Install one of those deliberately with `--to`.
 
 Images already published as `edge` or `sha-*` stay in GHCR until they are
 deleted from the package settings. New commits do not add more of them.

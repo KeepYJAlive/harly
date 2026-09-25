@@ -42,15 +42,11 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
-      latest: ${{ steps.version.outputs.latest }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Every stable tag is needed to decide whether this one is the newest.
-          fetch-depth: 0
       - id: version
-        name: Require a clean version tag and decide the latest channel
+        name: Require a clean version tag
         run: |
           tag="${GITHUB_REF_NAME}"
           if [[ ! "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-(beta|rc)\.[0-9]+)?)$ ]]; then
@@ -60,30 +56,10 @@ jobs:
           fi
           version="${BASH_REMATCH[1]}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
           if [[ "$version" == *-* ]]; then
-            # A beta or release candidate never moves latest.
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "latest=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "prerelease=false" >> "$GITHUB_OUTPUT"
-
-          # `latest` must only ever move forward. Tagging a support patch such as
-          # v0.1.6 after v0.2.0 is published must not drag latest backwards, which
-          # would downgrade every install that follows the stable channel.
-          highest="$(
-            git tag --list 'v*' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | sed 's/^v//' \
-              | sort -V \
-              | tail -1
-          )"
-          if [ "$version" = "$highest" ]; then
-            echo "latest=true" >> "$GITHUB_OUTPUT"
           else
-            echo "latest=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$version is older than $highest, so :latest stays on $highest."
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -129,8 +105,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/vytral/harly
-          # Only the newest stable version moves :latest. See the version step.
-          flavor: latest=${{ steps.version.outputs.latest }}
+          # This job never publishes :latest. Which version owns that channel is
+          # decided later, in a serialized job that recomputes it at write time —
+          # see release-channel. Deciding it here would be a stale read: the
+          # build takes long enough for a newer tag to be pushed and published in
+          # the meantime, and this run would then overwrite it.
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
           labels: |
@@ -150,33 +130,64 @@ jobs:
           sbom: true
           provenance: mode=max
 
-  release-manifest:
-    # Only the release that owns the stable channel may move the manifest.
-    #
-    # `prerelease == 'false'` is not enough: tagging a support patch on an older
-    # line (v0.1.6 after v0.2.0 is out) is a stable tag, so it would rewrite the
-    # manifest and the deployment assets to the older version. `:latest` would
-    # correctly stay on 0.2.0 while fresh installs and the default update
-    # channel went backwards to 0.1.6 — and every 0.2.0 install would fail the
-    # CLI's downgrade guard. `latest` is true only for the highest stable tag,
-    # which is exactly the condition for owning the channel.
-    if: needs.image.outputs.latest == 'true'
+  # Everything that points the stable channel at a version lives here, in one
+  # serialized job, and the decision is recomputed at write time.
+  #
+  # The previous design decided "am I the newest?" in the image job and carried
+  # the answer through a 40-minute build. Two overlapping releases both computed
+  # `true` before either finished, and whichever landed last won — so tagging
+  # v0.2.0 and v0.3.0 close together could leave :latest, the manifest, and the
+  # deployment assets on v0.2.0. Serializing the writes did not help, because
+  # neither run re-checked.
+  #
+  # Recomputing here, after the concurrency gate, makes overlapping runs
+  # converge: the run that finds a newer tag stands down instead of overwriting
+  # it. The worst case is a channel that is briefly behind, never one that moves
+  # backwards.
+  release-channel:
+    # A beta or release candidate never touches the stable channel.
+    if: needs.image.outputs.prerelease == 'false'
     needs: image
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     concurrency:
-      group: release-manifest
+      group: release-channel
       cancel-in-progress: false
+    outputs:
+      owns: ${{ steps.decide.outputs.owns }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+          # Fetched now, inside the gate, so the tag list reflects anything
+          # published while this release was building.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - id: decide
+        name: Recompute which stable version owns the channel
+        env:
+          RELEASE_VERSION: ${{ needs.image.outputs.version }}
+        run: |
+          highest="$(
+            git tag --list 'v*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sed 's/^v//' \
+              | sort -V \
+              | tail -1
+          )"
+          if [ "$RELEASE_VERSION" = "$highest" ]; then
+            echo "owns=true" >> "$GITHUB_OUTPUT"
+            echo "$RELEASE_VERSION is the newest stable version; it takes the channel."
+          else
+            echo "owns=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$RELEASE_VERSION is not the newest stable version ($highest owns the channel). Leaving :latest and the release manifest untouched; install this one with --to $RELEASE_VERSION."
+          fi
       - name: Require the tag to be on main
+        if: steps.decide.outputs.owns == 'true'
         run: |
           # The assets are regenerated from this checkout of main. If the tagged
           # commit is not on main, main's templates and sync script are not the
@@ -186,7 +197,24 @@ jobs:
             echo "Merge the release into main before tagging."
             exit 1
           fi
+      - uses: docker/login-action@v3
+        if: steps.decide.outputs.owns == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point :latest at this version
+        if: steps.decide.outputs.owns == 'true'
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          # Retags the existing multi-architecture index by digest. It does not
+          # rebuild, so :latest and the version tag are the same bytes.
+          docker buildx imagetools create \
+            --tag ghcr.io/vytral/harly:latest \
+            "ghcr.io/vytral/harly@${DIGEST}"
       - name: Point deployment assets at the stable image
+        if: steps.decide.outputs.owns == 'true'
         env:
           RELEASE_VERSION: ${{ needs.image.outputs.version }}
           RELEASE_DIGEST: ${{ needs.image.outputs.digest }}
@@ -229,16 +257,16 @@ jobs:
           exit 1
 
   github-release:
-    # Published last, and only once the manifest is live for a stable release:
-    # the stable notes tell operators to run `npx @harly/cli update`, which reads
-    # that manifest. A prerelease skips release-manifest by design, so a skipped
-    # dependency still counts as success here.
-    needs: [image, release-manifest]
+    # Published last, and only once the channel has been settled: the stable
+    # notes tell operators to run `npx @harly/cli update`, which reads the
+    # manifest that release-channel writes. A prerelease skips that job by
+    # design, so a skipped dependency still counts as success here.
+    needs: [image, release-channel]
     if: >-
       always() &&
       needs.image.result == 'success' &&
-      (needs.release-manifest.result == 'success' ||
-       needs.release-manifest.result == 'skipped')
+      (needs.release-channel.result == 'success' ||
+       needs.release-channel.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -252,7 +280,9 @@ jobs:
           VERSION: ${{ needs.image.outputs.version }}
           DIGEST: ${{ needs.image.outputs.digest }}
           PRERELEASE: ${{ needs.image.outputs.prerelease }}
-          LATEST: ${{ needs.image.outputs.latest }}
+          # Taken from release-channel, which recomputed it under the lock.
+          # Empty when that job was skipped, which reads as false below.
+          LATEST: ${{ needs.release-channel.outputs.owns }}
           TAG: ${{ github.ref_name }}
         run: |
           notes="$(mktemp)"
