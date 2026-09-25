@@ -81,8 +81,6 @@ services:
       interval: 10s
       timeout: 4s
       retries: 12
-    networks:
-      - harly-db
 
   scheduler:
     image: *harly-image
@@ -108,8 +106,6 @@ services:
       timeout: 10s
       start_period: 45s
       retries: 3
-    networks:
-      - harly-db
 
   caddy:
     image: caddy:2.10-alpine
@@ -168,6 +164,3 @@ volumes:
   caddy-config:
   docuseal-data:
 
-networks:
-  harly-db:
-    external: true

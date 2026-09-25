@@ -1,3 +1,17 @@
+services:
+  migrate:
+    networks:
+      - harly-db
+
+  app:
+    networks:
+      - harly-db
+
+  scheduler:
+    networks:
+      - harly-db
+
 networks:
   harly-db:
     external: true
+    name: ${HARLY_DB_NETWORK:-harly-db}
