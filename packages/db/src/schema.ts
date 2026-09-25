@@ -4358,11 +4358,9 @@ export const passkeyChallenge = pgTable(
   "passkey_challenge",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     challenge: text("challenge").notNull(),
-    type: text("type").notNull(), // "registration" | "authentication"
+    type: text("type").notNull(), // "login" | "registration" | "authentication"
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

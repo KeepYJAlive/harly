@@ -7,26 +7,11 @@ import { eq } from "drizzle-orm";
 import { db, passkeys } from "@harly/db";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
-import { RP_ID, ORIGIN } from "@/lib/passkey";
+import { RP_ID, ORIGIN, storeChallenge, consumeChallenge } from "@/lib/passkey";
 import { signSessionCookieValue } from "@/lib/session-cookie";
 import { clientIp, enforceRateLimit } from "@/server/api/ratelimit";
 
 const log = createLogger("api-passkey-login");
-
-// In-memory challenge store for passkey login (short-lived, 5 min TTL).
-// We can't use the existing passkeyChallenge table because it requires a userId,
-// but for passkey login we don't know the user until after verification.
-const loginChallenges = new Map<string, { challenge: string; expiresAt: number }>();
-
-// Clean up expired challenges periodically.
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of loginChallenges.entries()) {
-    if (value.expiresAt < now) {
-      loginChallenges.delete(key);
-    }
-  }
-}, 60_000);
 
 // GET , generate authentication options for passkey login (no session required).
 export async function GET(req: NextRequest) {
@@ -39,31 +24,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Too many attempts." }, { status: 429 });
   }
 
-  // Get all passkeys to allow the browser to check if any are available.
-  const allPasskeys = await db
-    .select({ credentialId: passkeys.credentialId, transports: passkeys.transports })
-    .from(passkeys);
-
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
     userVerification: "preferred",
-    allowCredentials: allPasskeys.map((p) => ({
-      id: p.credentialId,
-      transports: p.transports
-        ? (JSON.parse(p.transports) as AuthenticatorTransport[])
-        : undefined,
-    })),
+    // Empty allowCredentials requests a discoverable credential and avoids
+    // exposing credential IDs before the user has authenticated.
+    allowCredentials: [],
   });
 
-  // Generate a unique challenge ID and store the challenge.
-  const challengeId = crypto.randomUUID();
-  loginChallenges.set(challengeId, {
-    challenge: options.challenge,
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-  });
+  const storedChallenge = await storeChallenge(null, options.challenge, "login");
 
   // Return options with the challenge ID for the client to send back.
-  return NextResponse.json({ ...options, challengeId });
+  return NextResponse.json({ ...options, challengeId: storedChallenge.id });
 }
 
 // POST , verify authentication response and create session for passkey login.
@@ -79,18 +51,16 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
 
-  // Get and consume the challenge using the challenge ID.
-  const storedChallenge = loginChallenges.get(body.challengeId);
-  if (!storedChallenge || storedChallenge.expiresAt < Date.now()) {
-    loginChallenges.delete(body.challengeId);
+  // Atomically consume the anonymous login challenge by its unique ID.
+  const expectedChallenge = typeof body.challengeId === "string"
+    ? await consumeChallenge(body.challengeId, null, "login")
+    : null;
+  if (!expectedChallenge) {
     return NextResponse.json(
       { error: "Challenge expired or not found" },
       { status: 400 },
     );
   }
-  loginChallenges.delete(body.challengeId);
-
-  const expectedChallenge = storedChallenge.challenge;
 
   // Find the passkey by credential ID.
   const [storedPasskey] = await db

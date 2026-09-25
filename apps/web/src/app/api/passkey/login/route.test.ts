@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   findUserById: vi.fn(),
   enforceRateLimit: vi.fn(),
+  storeChallenge: vi.fn(),
+  consumeChallenge: vi.fn(),
 }));
 
 vi.mock("@simplewebauthn/server", () => ({
@@ -46,7 +48,12 @@ vi.mock("@/lib/auth", () => ({
     }),
   },
 }));
-vi.mock("@/lib/passkey", () => ({ RP_ID: "harly.test", ORIGIN: "https://harly.test" }));
+vi.mock("@/lib/passkey", () => ({
+  RP_ID: "harly.test",
+  ORIGIN: "https://harly.test",
+  storeChallenge: mocks.storeChallenge,
+  consumeChallenge: mocks.consumeChallenge,
+}));
 vi.mock("@/lib/logger", () => ({ createLogger: () => ({ error: vi.fn() }) }));
 vi.mock("@/server/api/ratelimit", () => ({
   clientIp: () => "127.0.0.1",
@@ -68,12 +75,11 @@ function selectChain(result: unknown[]) {
 describe("passkey login", () => {
   it("sets the session cookie without returning the bearer token in JSON", async () => {
     mocks.enforceRateLimit.mockResolvedValue(undefined);
+    mocks.storeChallenge.mockResolvedValue({ id: "challenge-id" });
+    mocks.consumeChallenge.mockResolvedValue("challenge-1");
     mocks.generateAuthenticationOptions.mockResolvedValue({
       challenge: "challenge-1",
       allowCredentials: [],
-    });
-    mocks.select.mockReturnValueOnce({
-      from: async () => [],
     });
     mocks.select.mockReturnValueOnce(
       selectChain([
@@ -106,7 +112,16 @@ describe("passkey login", () => {
     });
 
     const optionsResponse = await GET(new Request("https://harly.test/api/passkey/login") as never);
-    const { challengeId } = await optionsResponse.json();
+    const { challengeId, allowCredentials } = await optionsResponse.json();
+    expect(challengeId).toBe("challenge-id");
+    expect(allowCredentials).toEqual([]);
+    expect(mocks.generateAuthenticationOptions).toHaveBeenCalledWith({
+      rpID: "harly.test",
+      userVerification: "preferred",
+      allowCredentials: [],
+    });
+    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.storeChallenge).toHaveBeenCalledWith(null, "challenge-1", "login");
     const response = await POST(
       new Request("https://harly.test/api/passkey/login", {
         method: "POST",
@@ -117,6 +132,8 @@ describe("passkey login", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ verified: true });
+    expect(mocks.consumeChallenge).toHaveBeenCalledWith("challenge-id", null, "login");
+    expect(mocks.createSession).toHaveBeenCalledWith("user-1");
     // better-auth only accepts a signed session cookie. A raw token here would
     // leave the visitor anonymous after a successful WebAuthn assertion.
     const expectedSignature = createHmac("sha256", "test-secret")

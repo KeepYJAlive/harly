@@ -49,14 +49,16 @@ export async function GET(req: NextRequest) {
       id: p.credentialId,
     })),
     authenticatorSelection: {
-      residentKey: "preferred",
+      // Passwordless login is username-less, so every newly registered
+      // credential must be discoverable by the authenticator.
+      residentKey: "required",
       userVerification: "preferred",
     },
   });
 
-  await storeChallenge(session.user.id, options.challenge, "registration");
+  const challenge = await storeChallenge(session.user.id, options.challenge, "registration");
 
-  return NextResponse.json(options);
+  return NextResponse.json({ ...options, challengeId: challenge.id });
 }
 
 // POST , verify and store the registration response.
@@ -73,7 +75,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { response, name } = body;
 
-  const expectedChallenge = await consumeChallenge(session.user.id, "registration");
+  const expectedChallenge = typeof body.challengeId === "string"
+    ? await consumeChallenge(body.challengeId, session.user.id, "registration")
+    : null;
   if (!expectedChallenge) {
     return NextResponse.json(
       { error: "Challenge expired or not found" },

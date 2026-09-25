@@ -47,7 +47,7 @@ export function PasskeysCard({
         // 1. Get registration options from server
         const optRes = await fetch("/api/passkey/register");
         if (!optRes.ok) throw new Error("Failed to get registration options");
-        const options = await optRes.json();
+        const { challengeId, ...options } = await optRes.json();
 
         // 2. Browser creates credential
         const attestation = await startRegistration({ optionsJSON: options });
@@ -56,7 +56,7 @@ export function PasskeysCard({
         const verRes = await fetch("/api/passkey/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ response: attestation, name: passkeyName || "Passkey" }),
+          body: JSON.stringify({ challengeId, response: attestation, name: passkeyName || "Passkey" }),
         });
 
         if (!verRes.ok) {

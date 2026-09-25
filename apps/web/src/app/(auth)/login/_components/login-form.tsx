@@ -299,7 +299,7 @@ export function LoginForm({
       window.location.href = callbackURL;
     } catch (err) {
       if (err instanceof Error && err.name === "NotAllowedError") {
-        setError("Passkey authentication was cancelled.");
+        setError("No passkey was selected or the request was cancelled. If your passkey was added before discoverable sign-in was required, sign in another way and add it again.");
       } else {
         setError("Passkey authentication failed.");
       }
