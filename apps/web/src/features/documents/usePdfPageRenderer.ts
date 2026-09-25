@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type RefObject } from "react";
 
-import { configurePdfWorker } from "./pdf-worker";
+
 
 export type PdfPage = { number: number; width: number; height: number; rotation: number };
 
@@ -41,7 +41,12 @@ export function usePdfPageRenderer(
       try {
         const pdfjs = await import("pdfjs-dist");
         if (cancelled) return;
-        configurePdfWorker(pdfjs);
+        // Turbopack reports import.meta.url as file:///ROOT/… Firefox blocks that
+        // from localhost even though it is not a real disk path.
+        const workerBase = import.meta.url;
+        pdfjs.GlobalWorkerOptions.workerSrc = !workerBase || workerBase.startsWith("file:")
+          ? "/api/pdfjs/pdf.worker.min.mjs"
+          : new URL("pdfjs-dist/build/pdf.worker.min.mjs", workerBase).toString();
         const loadingTask = pdfjs.getDocument({ url: fileUrl });
         disposeTask = createPdfTaskDisposer(loadingTask);
         const pdf = await loadingTask.promise;
@@ -78,7 +83,10 @@ export function usePdfPageRenderer(
         if (pages.length === 0 || !rootRef.current) return;
         const pdfjs = await import("pdfjs-dist");
         if (cancelled) return;
-        configurePdfWorker(pdfjs);
+        const workerBase = import.meta.url;
+        pdfjs.GlobalWorkerOptions.workerSrc = !workerBase || workerBase.startsWith("file:")
+          ? "/api/pdfjs/pdf.worker.min.mjs"
+          : new URL("pdfjs-dist/build/pdf.worker.min.mjs", workerBase).toString();
         const loadingTask = pdfjs.getDocument({ url: fileUrl });
         disposeTask = createPdfTaskDisposer(loadingTask);
         const pdf = await loadingTask.promise;
