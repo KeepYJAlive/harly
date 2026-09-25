@@ -15,6 +15,19 @@ export type ApplicantLocationIssue = {
 
 export type LocationOption = { code: string; name: string };
 
+type CountryTimeZoneData = {
+  timezones?: Array<{ zoneName: string }>;
+};
+
+export function listTimeZones(countryCode: string): string[] {
+  const country = locations
+    .getAllCountries()
+    .find((entry) => entry.iso2 === countryCode.toUpperCase()) as
+    | CountryTimeZoneData
+    | undefined;
+  return country?.timezones?.map((timezone) => timezone.zoneName) ?? [];
+}
+
 export function listCountries(): LocationOption[] {
   return locations
     .getAllCountries()

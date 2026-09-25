@@ -4,6 +4,7 @@ import {
   listCities,
   listCountries,
   listRegions,
+  listTimeZones,
 } from "./applicant-location";
 
 export async function getCountries() {
@@ -16,4 +17,8 @@ export async function getRegions(countryCode: string) {
 
 export async function getCities(countryCode: string, region?: string) {
   return listCities(countryCode, region);
+}
+
+export async function getTimeZones(countryCode: string) {
+  return listTimeZones(countryCode);
 }

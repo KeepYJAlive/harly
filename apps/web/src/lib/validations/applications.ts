@@ -348,6 +348,7 @@ export type ApplicationFormValues = {
   countryCode?: string;
   region?: string;
   city?: string;
+  timezone?: string;
   headline?: string;
   photoUrl?: string;
   linkedinUrl?: string;

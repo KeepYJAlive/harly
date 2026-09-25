@@ -19,14 +19,14 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import { getCities, getCountries, getRegions } from "./location-actions";
+import {
+  getCities,
+  getCountries,
+  getRegions,
+  getTimeZones,
+} from "./location-actions";
 
 type LocationOption = { code: string; name: string };
-
-const timeZoneOptions =
-  typeof Intl.supportedValuesOf === "function"
-    ? ["UTC", ...Intl.supportedValuesOf("timeZone")]
-    : ["UTC"];
 
 function SearchableLocationSelect({
   name,
@@ -130,6 +130,7 @@ export function ApplicantLocationFields({
   const [countries, setCountries] = useState<LocationOption[]>([]);
   const [regions, setRegions] = useState<LocationOption[]>([]);
   const [cities, setCities] = useState<string[]>([]);
+  const [timeZoneOptions, setTimeZoneOptions] = useState<string[]>([]);
   const [countryCode, setCountryCode] = useState("");
   const [region, setRegion] = useState("");
   const [city, setCity] = useState("");
@@ -190,6 +191,7 @@ export function ApplicantLocationFields({
   }, [countryCode, region, regions.length, regionsLoaded]);
 
   useEffect(() => {
+    let active = true;
     if (
       !timeZoneChanged &&
       countryCode &&
@@ -197,8 +199,16 @@ export function ApplicantLocationFields({
       (regions.length === 0 || region) &&
       citiesLoaded
     ) {
-      setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+      void getTimeZones(countryCode).then((values) => {
+        if (active) {
+          setTimeZoneOptions(values.length > 0 ? values : ["UTC"]);
+          if (!timeZoneChanged) setTimeZone(values[0] ?? "UTC");
+        }
+      });
     }
+    return () => {
+      active = false;
+    };
   }, [countryCode, region, regions.length, regionsLoaded, citiesLoaded, timeZoneChanged]);
 
   const countryName = countries.find(
@@ -228,6 +238,8 @@ export function ApplicantLocationFields({
               setCountryCode(value);
               setRegion("");
               setCity("");
+              setTimeZoneOptions([]);
+              setTimeZone("");
               setTimeZoneChanged(false);
             }}
           />
@@ -254,6 +266,8 @@ export function ApplicantLocationFields({
             onChange={(value) => {
               setRegion(value);
               setCity("");
+              setTimeZoneOptions([]);
+              setTimeZone("");
               setTimeZoneChanged(false);
             }}
           />
