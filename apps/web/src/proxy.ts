@@ -18,6 +18,9 @@ const PUBLIC_PATHS = [
   "/enter",
   "/api/demo",
   "/api/auth",
+  // Passkey login starts from the anonymous login form (register and
+  // authenticate verify the session in-route, so they stay gated).
+  "/api/passkey/login",
   "/api/health",
   "/api/metrics",
   // SSE authenticates in the route so unauthenticated EventSource clients get
@@ -38,6 +41,12 @@ const PUBLIC_PATHS = [
   "/jobs",
   "/apply",
   "/board",
+  // Workspace legal pages (privacy, terms, cookies…) linked from every
+  // public footer. The board-scoped variant is covered by "/board".
+  "/legal",
+  // Invite-link landing: renders a "Sign in to join" CTA for anonymous
+  // visitors, so the proxy must let them through (page handles !session).
+  "/join",
   "/invite",
   // Portal public routes , pages enforce isPortalEnabled themselves
   "/portal",
@@ -45,7 +54,7 @@ const PUBLIC_PATHS = [
   "/setup-2fa",
   "/sign",
   "/api/native-sign",
-  "/api/pdfjs-worker",
+  "/api/pdfjs",
 ];
 
 const PROTECTED_PATH_PREFIXES = ["/dashboard", "/settings"];
