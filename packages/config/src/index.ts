@@ -57,6 +57,7 @@ const envSchema = z
     S3_SECRET_ACCESS_KEY: optionalString,
     S3_ENDPOINT: optionalString,
     S3_PUBLIC_URL: optionalString,
+    S3_PREFIX: optionalString,
     GOOGLE_CLIENT_ID: optionalString,
     GOOGLE_CLIENT_SECRET: optionalString,
     GITHUB_CLIENT_ID: optionalString,
@@ -285,7 +286,6 @@ export function loadHarlyConfig(
     deprecatedUrlVariables,
   };
 }
-
 
 /**
  * True when this instance runs as a public demo. Reads process.env directly

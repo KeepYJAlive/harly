@@ -56,6 +56,7 @@ and unspecified bind addresses are development-only values.
 | `S3_SECRET_ACCESS_KEY` | — | When `STORAGE_PROVIDER=s3` | S3-compatible secret key. |
 | `S3_ENDPOINT` | — | No | Optional S3-compatible endpoint, such as R2 or MinIO. |
 | `S3_PUBLIC_URL` | — | No | Optional public URL for storage assets; do not use it to expose private resumes. |
+| `S3_PREFIX` | — | No | Optional object-key prefix used to namespace files within the S3-compatible bucket. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | No | Must be configured together for Google OAuth. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | — | No | Must be configured together for GitHub OAuth. |
 | `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` | — | No | Must be configured together for LinkedIn OAuth. |

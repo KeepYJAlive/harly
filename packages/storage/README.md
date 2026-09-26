@@ -50,4 +50,5 @@ S3_ACCESS_KEY_ID="..."
 S3_SECRET_ACCESS_KEY="..."
 S3_ENDPOINT="https://..."        # For R2 or MinIO
 S3_PUBLIC_URL="https://..."      # Public base URL for serving files
+S3_PREFIX="harly"                 # Optional object-key prefix within the bucket
 ```

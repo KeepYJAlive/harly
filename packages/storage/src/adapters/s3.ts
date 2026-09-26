@@ -19,6 +19,13 @@ function encodeKey(key: string) {
   return key.split("/").map(encodeURIComponent).join("/");
 }
 
+function prefixKey(key: string, prefix?: string) {
+  if (!prefix) return key;
+
+  const normalizedPrefix = prefix.replace(/^\/+|\/+$/g, "");
+  return normalizedPrefix ? `${normalizedPrefix}/${key}` : key;
+}
+
 export class S3Adapter implements StorageAdapter {
   private readonly client: S3Client;
   private readonly config: S3Config;
@@ -46,10 +53,11 @@ export class S3Adapter implements StorageAdapter {
     contentLength: number;
   }) {
     const isPublicImage = params.key.includes("/images/");
+    const objectKey = prefixKey(params.key, this.config.prefix);
 
     const command = new PutObjectCommand({
       Bucket: this.config.bucket,
-      Key: params.key,
+      Key: objectKey,
       ContentType: params.contentType,
       ContentLength: params.contentLength,
       ...(isPublicImage ? { ACL: "public-read" } : {}),
@@ -60,15 +68,13 @@ export class S3Adapter implements StorageAdapter {
     });
 
     const fileUrl = this.config.publicUrl
-      ? `${trimTrailingSlash(this.config.publicUrl)}/${encodeKey(params.key)}`
-      : `https://${this.config.bucket}.s3.${this.config.region}.amazonaws.com/${encodeKey(params.key)}`;
+      ? `${trimTrailingSlash(this.config.publicUrl)}/${encodeKey(objectKey)}`
+      : `https://${this.config.bucket}.s3.${this.config.region}.amazonaws.com/${encodeKey(objectKey)}`;
 
     return {
       uploadUrl,
       fileUrl,
-      uploadHeaders: isPublicImage
-        ? { "x-amz-acl": "public-read" }
-        : undefined,
+      uploadHeaders: isPublicImage ? { "x-amz-acl": "public-read" } : undefined,
     };
   }
 
@@ -76,7 +82,7 @@ export class S3Adapter implements StorageAdapter {
     const response = await this.client.send(
       new GetObjectCommand({
         Bucket: this.config.bucket,
-        Key: key,
+        Key: prefixKey(key, this.config.prefix),
       }),
     );
 
@@ -92,7 +98,7 @@ export class S3Adapter implements StorageAdapter {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.config.bucket,
-        Key: key,
+        Key: prefixKey(key, this.config.prefix),
         Body: content,
         ContentLength: content.byteLength,
         ContentType: contentType,
@@ -104,25 +110,35 @@ export class S3Adapter implements StorageAdapter {
     await this.client.send(
       new DeleteObjectCommand({
         Bucket: this.config.bucket,
-        Key: key,
+        Key: prefixKey(key, this.config.prefix),
       }),
     );
   }
 
   async list(prefix: string) {
     const keys: string[] = [];
+    const storagePrefix = this.config.prefix
+      ? `${this.config.prefix.replace(/^\/+|\/+$/g, "")}/`
+      : "";
+
     let continuationToken: string | undefined;
     do {
       const page = await this.client.send(
         new ListObjectsV2Command({
           Bucket: this.config.bucket,
-          Prefix: prefix,
+          Prefix: prefixKey(prefix, this.config.prefix),
           ContinuationToken: continuationToken,
         }),
       );
       keys.push(
         ...(page.Contents ?? []).flatMap((object) =>
-          object.Key ? [object.Key] : [],
+          object.Key
+            ? [
+                storagePrefix && object.Key.startsWith(storagePrefix)
+                  ? object.Key.slice(storagePrefix.length)
+                  : object.Key,
+              ]
+            : [],
         ),
       );
       continuationToken = page.IsTruncated

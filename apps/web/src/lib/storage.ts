@@ -20,6 +20,7 @@ const config: StorageConfig =
         secretAccessKey: requiredEnv("S3_SECRET_ACCESS_KEY"),
         endpoint: process.env.S3_ENDPOINT || undefined,
         publicUrl: process.env.S3_PUBLIC_URL || undefined,
+        prefix: process.env.S3_PREFIX || undefined,
       }
     : { provider: "local" };
 
