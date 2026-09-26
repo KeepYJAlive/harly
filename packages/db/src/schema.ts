@@ -33,6 +33,17 @@ export const employmentTypeEnum = pgEnum("employment_type", [
   "part_time",
   "contract",
   "internship",
+  "temporary",
+]);
+
+export const opportunityTypeEnum = pgEnum("opportunity_type", [
+  "employment",
+  "volunteer",
+]);
+
+export const commitmentPeriodEnum = pgEnum("commitment_period", [
+  "week",
+  "month",
 ]);
 
 export const workplaceTypeEnum = pgEnum("workplace_type", [
@@ -1275,7 +1286,10 @@ export const jobs = pgTable(
     slug: text("slug").notNull(),
     department: text("department"),
     location: text("location"),
-    employmentType: employmentTypeEnum("employment_type").notNull(),
+    opportunityType: opportunityTypeEnum("opportunity_type")
+      .default("employment")
+      .notNull(),
+    employmentType: employmentTypeEnum("employment_type"),
     workplaceType: workplaceTypeEnum("workplace_type").notNull(),
     description: text("description").notNull(),
     requirements: text("requirements"),
@@ -1296,6 +1310,9 @@ export const jobs = pgTable(
     currency: text("currency"),
     // 'annual' | 'monthly'
     salaryPeriod: text("salary_period"),
+    minimumHours: integer("minimum_hours"),
+    commitmentPeriod: commitmentPeriodEnum("commitment_period"),
+    scheduleNotes: text("schedule_notes"),
     // On-site / hybrid office details shown on the public page.
     officeAddress: text("office_address"),
     officeLat: doublePrecision("office_lat"),
@@ -1338,6 +1355,14 @@ export const jobs = pgTable(
       table.createdAt,
     ),
     index("jobs_created_by_idx").on(table.createdById),
+    check(
+      "jobs_opportunity_fields_check",
+      sql`(
+        (${table.opportunityType} = 'employment' and ${table.employmentType} is not null and ${table.minimumHours} is null and ${table.commitmentPeriod} is null and ${table.scheduleNotes} is null)
+        or
+        (${table.opportunityType} = 'volunteer' and ${table.employmentType} is null and ${table.salaryMin} is null and ${table.salaryMax} is null and ${table.currency} is null and ${table.salaryPeriod} is null and ${table.minimumHours} > 0 and ${table.commitmentPeriod} is not null)
+      )`,
+    ),
   ],
 );
 
@@ -1444,6 +1469,10 @@ export const candidates = pgTable(
     phone: text("phone"),
     address: text("address"),
     location: text("location"),
+    countryCode: text("country_code"),
+    region: text("region"),
+    city: text("city"),
+    timezone: text("timezone"),
     linkedinUrl: text("linkedin_url"),
     githubUrl: text("github_url"),
     websiteUrl: text("website_url"),

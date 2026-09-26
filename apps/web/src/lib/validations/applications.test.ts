@@ -167,7 +167,11 @@ describe("applicationFormSchema", () => {
     const schema = createApplicationFormSchema(
       {
         resumeRequired: false,
-        profileLinks: {},
+        profileLinks: {
+          linkedin: { enabled: false, required: false },
+          github: { enabled: false, required: false },
+          website: { enabled: false, required: false },
+        },
         sections: {
           personal: {
             phone: { visibility: "optional" },

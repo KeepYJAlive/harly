@@ -159,7 +159,7 @@ const jobFieldsSchema = z.object({
   scheduleNotes: nullableString,
 });
 function validateJobFields(
-  values: z.infer<typeof jobFieldsSchema>,
+  values: Partial<z.infer<typeof jobFieldsSchema>>,
   ctx: z.RefinementCtx,
 ) {
   refineJobSalary(values, ctx);

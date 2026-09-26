@@ -153,41 +153,43 @@ export const jobFormSchema = z
       });
     }
 
-    if (
-      values.salaryMin != null &&
-      values.salaryMax != null &&
-      values.salaryMin > values.salaryMax
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["salaryMax"],
-        message:
-          "Maximum salary must be greater than or equal to minimum salary.",
-      });
-    }
+    if (values.opportunityType === "employment") {
+  if (
+    values.salaryMin != null &&
+    values.salaryMax != null &&
+    values.salaryMin > values.salaryMax
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["salaryMax"],
+      message:
+        "Maximum salary must be greater than or equal to minimum salary.",
+    });
+  }
 
     if (
-      (values.salaryMin != null || values.salaryMax != null) &&
-      !values.currency
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["currency"],
-        message: "Currency is required when a salary amount is specified.",
-      });
-    }
+        (values.salaryMin != null || values.salaryMax != null) &&
+        !values.currency
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["currency"],
+          message: "Currency is required when a salary amount is specified.",
+        });
+      }
 
-    if (
-      (values.salaryMin != null || values.salaryMax != null) &&
-      !values.salaryPeriod
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["salaryPeriod"],
-        message: "Pay period is required when a salary amount is specified.",
-      });
+      if (
+        (values.salaryMin != null || values.salaryMax != null) &&
+        !values.salaryPeriod
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["salaryPeriod"],
+          message: "Pay period is required when a salary amount is specified.",
+        });
+      }
     }
-
+    
     if (values.opportunityType === "employment" && !values.employmentType) {
       ctx.addIssue({
         code: "custom",

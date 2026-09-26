@@ -151,18 +151,33 @@ export function ApplicantLocationFields({
 
   useEffect(() => {
     let active = true;
-    setRegionsLoaded(false);
+
     if (!countryCode) {
-      setRegions([]);
-      setRegionsLoaded(true);
-      return;
+      queueMicrotask(() => {
+        if (active) {
+          setRegions([]);
+          setRegionsLoaded(true);
+        }
+      });
+
+      return () => {
+        active = false;
+      };
     }
+
+    queueMicrotask(() => {
+      if (active) {
+        setRegionsLoaded(false);
+      }
+    });
+
     void getRegions(countryCode).then((values) => {
       if (active) {
         setRegions(values);
         setRegionsLoaded(true);
       }
     });
+
     return () => {
       active = false;
     };
@@ -170,21 +185,37 @@ export function ApplicantLocationFields({
 
   useEffect(() => {
     let active = true;
-    setCitiesLoaded(false);
+
     if (
       !countryCode ||
       !regionsLoaded ||
       (regions.length > 0 && !region)
     ) {
-      setCities([]);
-      return;
+      queueMicrotask(() => {
+        if (active) {
+          setCities([]);
+          setCitiesLoaded(false);
+        }
+      });
+
+      return () => {
+        active = false;
+      };
     }
+
+    queueMicrotask(() => {
+      if (active) {
+        setCitiesLoaded(false);
+      }
+    });
+
     void getCities(countryCode, region || undefined).then((values) => {
       if (active) {
         setCities(values);
         setCitiesLoaded(true);
       }
     });
+
     return () => {
       active = false;
     };

@@ -36,7 +36,8 @@ export type JobApiInput = {
   slug?: string;
   department?: string | null;
   location?: string | null;
-  employmentType: Job["employmentType"];
+  opportunityType?: Job["opportunityType"];
+  employmentType?: Job["employmentType"];
   workplaceType: Job["workplaceType"];
   experienceLevel?: string | null;
   status?: JobStatus;
@@ -47,6 +48,9 @@ export type JobApiInput = {
   salaryMax?: number | null;
   currency?: string | null;
   salaryPeriod?: string | null;
+  minimumHours?: number | null;
+  commitmentPeriod?: Job["commitmentPeriod"];
+  scheduleNotes?: string | null;
 };
 
 export function serializeJob(job: Job) {
@@ -57,6 +61,7 @@ export function serializeJob(job: Job) {
     status: job.status,
     department: job.department,
     location: job.location,
+    opportunityType: job.opportunityType,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     description: job.description,
@@ -86,6 +91,7 @@ export function serializePublicJob(job: Job, workspaceSlug: string) {
     title: job.title,
     department: job.department,
     location: job.location,
+    opportunityType: job.opportunityType,
     employmentType: job.employmentType,
     workplaceType: job.workplaceType,
     description: job.description,
@@ -118,6 +124,7 @@ function cursorWhere(cursor: Cursor | null) {
 export async function listJobsForApi(input: {
   workspaceId: string;
   status?: JobStatus;
+  opportunityType?: "employment" | "volunteer";
   cursor: Cursor | null;
   limit: number;
 }): Promise<Job[]> {
@@ -129,6 +136,9 @@ export async function listJobsForApi(input: {
         eq(jobs.workspaceId, input.workspaceId),
         isNull(jobs.deletedAt),
         input.status ? eq(jobs.status, input.status) : undefined,
+        input.opportunityType
+          ? eq(jobs.opportunityType, input.opportunityType)
+          : undefined,
         cursorWhere(input.cursor),
       ),
     )
@@ -177,7 +187,8 @@ export async function createJobForApi(input: {
         description: values.description,
         department: values.department ?? null,
         location: values.location ?? null,
-        employmentType: values.employmentType,
+        opportunityType: values.opportunityType ?? "employment",
+        employmentType: values.employmentType ?? null,
         workplaceType: values.workplaceType,
         experienceLevel: values.experienceLevel ?? null,
         requirements: values.requirements ?? null,
@@ -187,6 +198,9 @@ export async function createJobForApi(input: {
         salaryMax: values.salaryMax ?? null,
         currency: values.currency ?? null,
         salaryPeriod: values.salaryPeriod ?? null,
+        minimumHours: values.minimumHours ?? null,
+        commitmentPeriod: values.commitmentPeriod ?? null,
+        scheduleNotes: values.scheduleNotes ?? null,
         status,
         publishedAt: status === "open" ? new Date() : null,
         createdById: actorUserId,
