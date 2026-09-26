@@ -40,6 +40,7 @@ const PUBLIC_PATHS = [
   "/portal",
   "/api/portal",
   "/setup-2fa",
+  "/verify-2fa",
   "/sign",
   "/api/native-sign",
 ];
