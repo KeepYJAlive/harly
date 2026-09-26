@@ -1,6 +1,6 @@
 {
-  "id": "3272b3ca-ec27-47cb-9df3-95e1e41986db",
-  "prevId": "10289b65-1c19-4f6b-bef0-81120bb9dc43",
+  "id": "8f943870-ac01-4639-9ac5-eebc7618d8c3",
+  "prevId": "0fff3531-b503-4d19-b953-cf5e16e9b88d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2232,6 +2232,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"applications\".\"status\" = 'active'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4758,24 +4759,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "country_code": {
-          "name": "country_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "region": {
-          "name": "region",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "city": {
-          "name": "city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "linkedin_url": {
           "name": "linkedin_url",
           "type": "text",
@@ -4884,6 +4867,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"candidates\".\"deleted_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -10209,20 +10193,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opportunity_type": {
-          "name": "opportunity_type",
-          "type": "opportunity_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'employment'"
-        },
         "employment_type": {
           "name": "employment_type",
           "type": "employment_type",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "workplace_type": {
           "name": "workplace_type",
@@ -10308,25 +10284,6 @@
         },
         "salary_period": {
           "name": "salary_period",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "minimum_hours": {
-          "name": "minimum_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "commitment_period": {
-          "name": "commitment_period",
-          "type": "commitment_period",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "schedule_notes": {
-          "name": "schedule_notes",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -10574,12 +10531,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "jobs_opportunity_fields_check": {
-          "name": "jobs_opportunity_fields_check",
-          "value": "(\n        (\"jobs\".\"opportunity_type\" = 'employment' and \"jobs\".\"employment_type\" is not null and \"jobs\".\"minimum_hours\" is null and \"jobs\".\"commitment_period\" is null and \"jobs\".\"schedule_notes\" is null)\n        or\n        (\"jobs\".\"opportunity_type\" = 'volunteer' and \"jobs\".\"employment_type\" is null and \"jobs\".\"salary_min\" is null and \"jobs\".\"salary_max\" is null and \"jobs\".\"currency\" is null and \"jobs\".\"salary_period\" is null and \"jobs\".\"minimum_hours\" > 0 and \"jobs\".\"commitment_period\" is not null)\n      )"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.mail_attachments": {
@@ -11906,6 +11858,27 @@
         }
       },
       "indexes": {
+        "member_organization_user_uidx": {
+          "name": "member_organization_user_uidx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "member_organizationId_idx": {
           "name": "member_organizationId_idx",
           "columns": [
@@ -12869,6 +12842,22 @@
         }
       },
       "indexes": {
+        "offers_application_active_uidx": {
+          "name": "offers_application_active_uidx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"offers\".\"status\" in ('draft', 'sent')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "offers_workspace_created_at_idx": {
           "name": "offers_workspace_created_at_idx",
           "columns": [
@@ -14469,7 +14458,18 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "scorecards_workspace_application_author_stage_uidx": {
+          "name": "scorecards_workspace_application_author_stage_uidx",
+          "nullsNotDistinct": true,
+          "columns": [
+            "workspace_id",
+            "application_id",
+            "author_id",
+            "stage_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -20254,14 +20254,6 @@
         "minimal"
       ]
     },
-    "public.commitment_period": {
-      "name": "commitment_period",
-      "schema": "public",
-      "values": [
-        "week",
-        "month"
-      ]
-    },
     "public.consent_type": {
       "name": "consent_type",
       "schema": "public",
@@ -20297,7 +20289,6 @@
         "full_time",
         "part_time",
         "contract",
-        "temporary",
         "internship"
       ]
     },
@@ -20450,14 +20441,6 @@
         "accepted",
         "declined",
         "withdrawn"
-      ]
-    },
-    "public.opportunity_type": {
-      "name": "opportunity_type",
-      "schema": "public",
-      "values": [
-        "employment",
-        "volunteer"
       ]
     },
     "public.pool_entry_source": {

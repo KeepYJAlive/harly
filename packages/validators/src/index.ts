@@ -99,6 +99,44 @@ const candidateExperienceEntrySchema = z.object({
   description: z.string().trim().max(20_000).nullable().default(null),
 });
 
+function refineJobSalary(
+  values: {
+    salaryMin?: number | null;
+    salaryMax?: number | null;
+    currency?: string | null;
+    salaryPeriod?: "annual" | "monthly" | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    values.salaryMin != null &&
+    values.salaryMax != null &&
+    values.salaryMin > values.salaryMax
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["salaryMax"],
+      message:
+        "Maximum salary must be greater than or equal to minimum salary.",
+    });
+  }
+  const hasAmount = values.salaryMin != null || values.salaryMax != null;
+  if (hasAmount && !values.currency) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["currency"],
+      message: "Currency is required when a salary amount is specified.",
+    });
+  }
+  if (hasAmount && !values.salaryPeriod) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["salaryPeriod"],
+      message: "Pay period is required when a salary amount is specified.",
+    });
+  }
+}
+
 const jobFieldsSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(50_000),
@@ -120,11 +158,12 @@ const jobFieldsSchema = z.object({
   commitmentPeriod: commitmentPeriod.nullish(),
   scheduleNotes: nullableString,
 });
-
-function validateOpportunityFields(
-  values: z.infer<typeof jobFieldsSchema>,
+function validateJobFields(
+  values: Partial<z.infer<typeof jobFieldsSchema>>,
   ctx: z.RefinementCtx,
 ) {
+  refineJobSalary(values, ctx);
+
   if (values.opportunityType === "employment" && !values.employmentType) {
     ctx.addIssue({
       code: "custom",
@@ -135,40 +174,21 @@ function validateOpportunityFields(
 
   if (values.opportunityType === "volunteer") {
     if (!values.minimumHours) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["minimumHours"],
-        message: "Minimum hours are required for volunteer opportunities.",
-      });
+      ctx.addIssue({ code: "custom", path: ["minimumHours"], message: "Minimum hours are required for volunteer opportunities." });
     }
     if (!values.commitmentPeriod) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["commitmentPeriod"],
-        message: "Commitment period is required for volunteer opportunities.",
-      });
+      ctx.addIssue({ code: "custom", path: ["commitmentPeriod"], message: "Commitment period is required for volunteer opportunities." });
     }
-    if (
-      values.employmentType != null ||
-      values.salaryMin != null ||
-      values.salaryMax != null ||
-      values.currency != null ||
-      values.salaryPeriod != null
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["opportunityType"],
-        message:
-          "Volunteer opportunities cannot include employment or compensation fields.",
-      });
+    if (values.employmentType != null || values.salaryMin != null || values.salaryMax != null || values.currency != null || values.salaryPeriod != null) {
+      ctx.addIssue({ code: "custom", path: ["opportunityType"], message: "Volunteer opportunities cannot include employment or compensation fields." });
     }
   }
 }
 
 export const jobCreateSchema = jobFieldsSchema
   .extend({ opportunityType: opportunityType.default("employment") })
-  .superRefine(validateOpportunityFields);
-export const jobUpdateSchema = jobFieldsSchema.partial();
+  .superRefine(validateJobFields);
+export const jobUpdateSchema = jobFieldsSchema.partial().superRefine(validateJobFields);
 
 export const candidateCreateSchema = z.object({
   firstName: z.string().trim().min(1).max(120),

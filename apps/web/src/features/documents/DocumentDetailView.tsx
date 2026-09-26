@@ -4,6 +4,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Archive,
   ArchiveRestore,
@@ -294,8 +295,8 @@ function VoidSignatureDialog({
         <DialogHeader>
           <DialogTitle>Void signature request</DialogTitle>
           <DialogDescription>
-            This cancels the DocuSeal submission. The recipient can no longer
-            sign it.
+            This cancels the signing request. Recipients can no longer sign it,
+            and the original document is left unsigned.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -996,16 +997,14 @@ export function DocumentDetailView({
                   document.mimeType !== "application/pdf"
                 }
                 onClick={() =>
-                  window.location.assign(
-                    `/dashboard/documents/${document.id}/sign`,
-                  )
+                  router.push(`/dashboard/documents/${document.id}/sign`)
                 }
               >
                 <LockKeyhole className="size-4" />
                 Sign now
               </Button>
               {document.signatureStatus === "pending" &&
-              document.signatureProvider === "docuseal" ? (
+              (document.signatureProvider === "docuseal" || document.signatureProvider === "native") ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1016,16 +1015,22 @@ export function DocumentDetailView({
                   Void request
                 </Button>
               ) : canSendForSignature ? (
-                <div className={data.esign.connected ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={isArchived}
-                    onClick={() => setNativeSendOpen(true)}
-                  >
-                    <LockKeyhole className="size-4" />
-                    Native link
-                  </Button>
+                <div className={data.esign.connected && data.remoteSignEnabled ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
+                  {data.remoteSignEnabled ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isArchived}
+                      onClick={() => setNativeSendOpen(true)}
+                    >
+                      <LockKeyhole className="size-4" />
+                      Native link
+                    </Button>
+                  ) : (
+                    <p className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                      Remote signing links are disabled. <Link href="/settings/signature" className="font-medium text-foreground underline underline-offset-2">Enable them in Signature settings</Link>.
+                    </p>
+                  )}
                   {data.esign.connected ? (
                     <Button
                       size="sm"

@@ -16,6 +16,7 @@ export function statusForStageName(
   if (normalized === "hired" || normalized === "accepted") return "hired";
   if (normalized === "rejected" || normalized === "not selected")
     return "rejected";
+  if (normalized === "withdrawn") return "withdrawn";
   return "active";
 }
 
@@ -24,5 +25,6 @@ export function terminalStageNameForStatus(
 ) {
   if (status === "hired") return "Hired";
   if (status === "rejected") return "Rejected";
+  if (status === "withdrawn") return "Withdrawn";
   return null;
 }
