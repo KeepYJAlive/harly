@@ -1,6 +1,6 @@
 {
-  "id": "c32ffb9f-b407-4b96-b77a-28d5c17bdce3",
-  "prevId": "3272b3ca-ec27-47cb-9df3-95e1e41986db",
+  "id": "823484f7-ff0d-45ce-b33e-210c9b04f00d",
+  "prevId": "8f943870-ac01-4639-9ac5-eebc7618d8c3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -619,6 +619,152 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.ai_evaluation_revisions": {
+      "name": "ai_evaluation_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "evaluation_id": {
+          "name": "evaluation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ai_evaluation_revisions_evaluation_revision_idx": {
+          "name": "ai_evaluation_revisions_evaluation_revision_idx",
+          "columns": [
+            {
+              "expression": "evaluation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "revision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ai_evaluation_revisions_workspace_application_idx": {
+          "name": "ai_evaluation_revisions_workspace_application_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ai_evaluation_revisions_evaluation_id_ai_evaluations_id_fk": {
+          "name": "ai_evaluation_revisions_evaluation_id_ai_evaluations_id_fk",
+          "tableFrom": "ai_evaluation_revisions",
+          "tableTo": "ai_evaluations",
+          "columnsFrom": [
+            "evaluation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ai_evaluation_revisions_workspace_id_organization_id_fk": {
+          "name": "ai_evaluation_revisions_workspace_id_organization_id_fk",
+          "tableFrom": "ai_evaluation_revisions",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ai_evaluation_revisions_application_id_applications_id_fk": {
+          "name": "ai_evaluation_revisions_application_id_applications_id_fk",
+          "tableFrom": "ai_evaluation_revisions",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.ai_evaluations": {
       "name": "ai_evaluations",
       "schema": "",
@@ -721,6 +867,36 @@
         },
         "rubric_snapshot": {
           "name": "rubric_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "candidate_facts_snapshot": {
+          "name": "candidate_facts_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "skill_profiles_snapshot": {
+          "name": "skill_profiles_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evaluation_metadata_snapshot": {
+          "name": "evaluation_metadata_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criterion_details_snapshot": {
+          "name": "criterion_details_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "impact_highlights_snapshot": {
+          "name": "impact_highlights_snapshot",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -2232,6 +2408,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"applications\".\"status\" = 'active'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4758,30 +4935,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "country_code": {
-          "name": "country_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "region": {
-          "name": "region",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "city": {
-          "name": "city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "timezone": {
-          "name": "timezone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "linkedin_url": {
           "name": "linkedin_url",
           "type": "text",
@@ -4890,6 +5043,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"candidates\".\"deleted_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8163,6 +8317,26 @@
           "primaryKey": false,
           "notNull": true
         },
+        "is_knockout": {
+          "name": "is_knockout",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "excluded": {
+          "name": "excluded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "source_provenance": {
+          "name": "source_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "aliases": {
           "name": "aliases",
           "type": "jsonb",
@@ -10215,20 +10389,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "opportunity_type": {
-          "name": "opportunity_type",
-          "type": "opportunity_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'employment'"
-        },
         "employment_type": {
           "name": "employment_type",
           "type": "employment_type",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "workplace_type": {
           "name": "workplace_type",
@@ -10314,25 +10480,6 @@
         },
         "salary_period": {
           "name": "salary_period",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "minimum_hours": {
-          "name": "minimum_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "commitment_period": {
-          "name": "commitment_period",
-          "type": "commitment_period",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "schedule_notes": {
-          "name": "schedule_notes",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -10580,12 +10727,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "jobs_opportunity_fields_check": {
-          "name": "jobs_opportunity_fields_check",
-          "value": "(\n        (\"jobs\".\"opportunity_type\" = 'employment' and \"jobs\".\"employment_type\" is not null and \"jobs\".\"minimum_hours\" is null and \"jobs\".\"commitment_period\" is null and \"jobs\".\"schedule_notes\" is null)\n        or\n        (\"jobs\".\"opportunity_type\" = 'volunteer' and \"jobs\".\"employment_type\" is null and \"jobs\".\"salary_min\" is null and \"jobs\".\"salary_max\" is null and \"jobs\".\"currency\" is null and \"jobs\".\"salary_period\" is null and \"jobs\".\"minimum_hours\" > 0 and \"jobs\".\"commitment_period\" is not null)\n      )"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.mail_attachments": {
@@ -11912,6 +12054,27 @@
         }
       },
       "indexes": {
+        "member_organization_user_uidx": {
+          "name": "member_organization_user_uidx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "member_organizationId_idx": {
           "name": "member_organizationId_idx",
           "columns": [
@@ -12875,6 +13038,22 @@
         }
       },
       "indexes": {
+        "offers_application_active_uidx": {
+          "name": "offers_application_active_uidx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"offers\".\"status\" in ('draft', 'sent')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "offers_workspace_created_at_idx": {
           "name": "offers_workspace_created_at_idx",
           "columns": [
@@ -13695,6 +13874,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'png'"
+        },
         "storage_key": {
           "name": "storage_key",
           "type": "text",
@@ -14475,7 +14661,18 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "scorecards_workspace_application_author_stage_uidx": {
+          "name": "scorecards_workspace_application_author_stage_uidx",
+          "nullsNotDistinct": true,
+          "columns": [
+            "workspace_id",
+            "application_id",
+            "author_id",
+            "stage_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -20137,6 +20334,13 @@
           "notNull": true,
           "default": false
         },
+        "vector_signatures_enabled": {
+          "name": "vector_signatures_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "signature_otp_enabled": {
           "name": "signature_otp_enabled",
           "type": "boolean",
@@ -20260,14 +20464,6 @@
         "minimal"
       ]
     },
-    "public.commitment_period": {
-      "name": "commitment_period",
-      "schema": "public",
-      "values": [
-        "week",
-        "month"
-      ]
-    },
     "public.consent_type": {
       "name": "consent_type",
       "schema": "public",
@@ -20303,7 +20499,6 @@
         "full_time",
         "part_time",
         "contract",
-        "temporary",
         "internship"
       ]
     },
@@ -20456,14 +20651,6 @@
         "accepted",
         "declined",
         "withdrawn"
-      ]
-    },
-    "public.opportunity_type": {
-      "name": "opportunity_type",
-      "schema": "public",
-      "values": [
-        "employment",
-        "volunteer"
       ]
     },
     "public.pool_entry_source": {
