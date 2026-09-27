@@ -1,4 +1,4 @@
-import { FileSpreadsheet } from "lucide-react";
+import { ClipboardCheck, FileSpreadsheet } from "lucide-react";
 import type { ComponentType } from "react";
 
 import {
@@ -68,6 +68,7 @@ const INTEGRATION_LOGOS: Record<IntegrationSlug, Logo> = {
   linkedin: svgBrand("linkedin", "LinkedIn"),
   zapier: svgBrand("zapier", "Zapier"),
   webhooks: svgBrand("zapier", "Webhooks"),
+  tao: ClipboardCheck,
   "harly-sign": PencilIcon,
   docuseal: DocuSealLogo,
   turnstile: CloudflareLogo,

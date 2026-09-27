@@ -53,6 +53,7 @@ import {
   WEBHOOK_EVENTS,
   WEBHOOK_EVENT_LABELS,
 } from "@/server/webhooks/events";
+import { ClipboardCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ const DETAIL_LOGOS: Record<IntegrationSlug, Logo> = {
   linkedin: svgBrand("linkedin", "LinkedIn"),
   zapier: svgBrand("zapier", "Zapier"),
   webhooks: svgBrand("zapier", "Webhooks"),
+  tao: ClipboardCheck,
   "harly-sign": SealCheckDuotoneIcon,
   docuseal: DocuSealLogo,
   turnstile: CloudflareLogo,

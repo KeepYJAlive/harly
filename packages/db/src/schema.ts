@@ -1653,6 +1653,147 @@ export const applications = pgTable(
   ],
 );
 
+/**
+ * LTI 1.3 tool registration for a workspace. Harly is the LTI Platform and
+ * TAO is the Tool. The private signing key is encrypted at rest; only the
+ * public JWK is exposed through the workspace-specific JWKS endpoint.
+ */
+export const ltiRegistrations = pgTable(
+  "lti_registrations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").default(true).notNull(),
+    toolName: text("tool_name").default("TAO").notNull(),
+    clientId: text("client_id").notNull(),
+    deploymentId: text("deployment_id").notNull(),
+    toolAudience: text("tool_audience"),
+    oidcInitiationUrl: text("oidc_initiation_url").notNull(),
+    jwksUrl: text("jwks_url").notNull(),
+    keyId: text("key_id").notNull(),
+    publicJwk: jsonb("public_jwk")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    privateKeyCiphertext: text("private_key_ciphertext").notNull(),
+    privateKeyIv: text("private_key_iv").notNull(),
+    privateKeyTag: text("private_key_tag").notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("lti_registrations_workspace_uidx").on(table.workspaceId),
+    uniqueIndex("lti_registrations_client_id_uidx").on(table.clientId),
+  ],
+);
+
+/** A candidate-facing TAO delivery tied to one concrete application. */
+export const ltiAssessmentAttempts = pgTable(
+  "lti_assessment_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    registrationId: uuid("registration_id")
+      .notNull()
+      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
+    applicationId: uuid("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => candidates.id, { onDelete: "cascade" }),
+    createdById: text("created_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    deliveryId: text("delivery_id"),
+    targetLinkUri: text("target_link_uri").notNull(),
+    subject: text("subject").notNull(),
+    loginHintHash: text("login_hint_hash"),
+    status: text("status").default("assigned").notNull(),
+    scoreGiven: doublePrecision("score_given"),
+    scoreMaximum: doublePrecision("score_maximum"),
+    normalizedScore: integer("normalized_score"),
+    activityProgress: text("activity_progress"),
+    gradingProgress: text("grading_progress"),
+    lastScorePayload: jsonb("last_score_payload"),
+    launchedAt: timestamp("launched_at", { withTimezone: true }),
+    lastScoreAt: timestamp("last_score_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (table) => [
+    index("lti_attempts_workspace_application_idx").on(
+      table.workspaceId,
+      table.applicationId,
+      table.createdAt,
+    ),
+    index("lti_attempts_candidate_idx").on(table.candidateId),
+    index("lti_attempts_registration_status_idx").on(
+      table.registrationId,
+      table.status,
+    ),
+    check(
+      "lti_attempts_normalized_score_check",
+      sql`${table.normalizedScore} is null or (${table.normalizedScore} >= 0 and ${table.normalizedScore} <= 100)`,
+    ),
+  ],
+);
+
+/** Short-lived bearer tokens issued to an authenticated LTI tool. */
+export const ltiAccessTokens = pgTable(
+  "lti_access_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    registrationId: uuid("registration_id")
+      .notNull()
+      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    scope: text("scope").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("lti_access_tokens_hash_uidx").on(table.tokenHash),
+    index("lti_access_tokens_registration_expiry_idx").on(
+      table.registrationId,
+      table.expiresAt,
+    ),
+  ],
+);
+
+/** Durable replay protection for OAuth private_key_jwt assertions. */
+export const ltiClientAssertions = pgTable(
+  "lti_client_assertions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    registrationId: uuid("registration_id")
+      .notNull()
+      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
+    jti: text("jti").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("lti_client_assertions_registration_jti_uidx").on(
+      table.registrationId,
+      table.jti,
+    ),
+    index("lti_client_assertions_expiry_idx").on(table.expiresAt),
+  ],
+);
+
+export type LtiRegistration = typeof ltiRegistrations.$inferSelect;
+export type NewLtiRegistration = typeof ltiRegistrations.$inferInsert;
+export type LtiAssessmentAttempt = typeof ltiAssessmentAttempts.$inferSelect;
+export type NewLtiAssessmentAttempt = typeof ltiAssessmentAttempts.$inferInsert;
+
 /** Optional self-identification data, kept separate from candidate PII. */
 export const candidateDemographics = pgTable(
   "candidate_demographics",

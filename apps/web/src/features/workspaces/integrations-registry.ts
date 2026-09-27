@@ -12,6 +12,7 @@ import { getWorkspaceSlackStatus } from "@/lib/slack/config";
 import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getWorkspaceTelegramStatus } from "@/lib/telegram/config";
 import { getZoomConfig } from "@/lib/zoom/config";
+import { getWorkspaceLtiStatus } from "@/lib/lti/config";
 
 /**
  * Central registry for connectable integrations (OAuth / persistent
@@ -25,6 +26,7 @@ import { getZoomConfig } from "@/lib/zoom/config";
 export type IntegrationCategory =
   | "calendar"
   | "communication"
+  | "assessment"
   | "automation"
   | "signing"
   | "security";
@@ -43,6 +45,7 @@ export type IntegrationSlug =
   | "telegram"
   | "gmail"
   | "linkedin"
+  | "tao"
   | "harly-sign"
   | "docuseal"
   | "turnstile"
@@ -72,6 +75,7 @@ export type IntegrationDefinition = {
 export const CATEGORY_LABELS: Record<IntegrationCategory, string> = {
   calendar: "Calendar & scheduling",
   communication: "Communication",
+  assessment: "Assessments",
   automation: "Automation",
   signing: "Signature",
   security: "Security",
@@ -80,6 +84,7 @@ export const CATEGORY_LABELS: Record<IntegrationCategory, string> = {
 export const CATEGORY_ORDER: IntegrationCategory[] = [
   "calendar",
   "communication",
+  "assessment",
   "automation",
   "signing",
   "security",
@@ -223,6 +228,16 @@ export const INTEGRATIONS: IntegrationDefinition[] = [
     comingSoon: true,
   },
   {
+    slug: "tao",
+    name: "TAO assessments",
+    category: "assessment",
+    description: "Launch candidate assessments and receive scores automatically.",
+    detail:
+      "Connect TAO over LTI 1.3. Candidates open assigned deliveries from Harly, and TAO publishes completion and scores back through Assignment and Grade Services.",
+    tileClassName:
+      "bg-gradient-to-br from-violet-500 via-indigo-600 to-slate-900 text-white",
+  },
+  {
     slug: "harly-sign",
     name: "Harly Sign",
     category: "signing",
@@ -323,13 +338,14 @@ export type IntegrationStatuses = {
   jitsi: Awaited<ReturnType<typeof getWorkspaceJitsiStatus>>;
   docuseal: Awaited<ReturnType<typeof getWorkspaceEsignStatus>>;
   captcha: Awaited<ReturnType<typeof getWorkspaceCaptchaStatus>>;
+  lti: Awaited<ReturnType<typeof getWorkspaceLtiStatus>>;
 };
 
 /** Fetch every connectable integration's status for a workspace in parallel. */
 export async function getIntegrationStatuses(
   workspaceId: string,
 ): Promise<IntegrationStatuses> {
-  const [email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha] =
+  const [email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, lti] =
     await Promise.all([
       getWorkspaceEmailStatus(workspaceId),
       getWorkspaceCalStatus(workspaceId),
@@ -342,8 +358,9 @@ export async function getIntegrationStatuses(
       getWorkspaceJitsiStatus(workspaceId),
       getWorkspaceEsignStatus(workspaceId),
       getWorkspaceCaptchaStatus(workspaceId),
+      getWorkspaceLtiStatus(workspaceId),
     ]);
-  return { email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha };
+  return { email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, lti };
 }
 
 /** Resolve whether a given integration slug is currently connected. */
@@ -375,6 +392,8 @@ export function isConnected(
       return statuses.jitsi.enabled && Boolean(statuses.jitsi.baseUrl);
     case "docuseal":
       return statuses.docuseal.enabled && statuses.docuseal.hasToken;
+    case "tao":
+      return statuses.lti.enabled && Boolean(statuses.lti.registrationId);
     case "harly-sign":
       // Built-in, no external connection required — always on.
       return true;
