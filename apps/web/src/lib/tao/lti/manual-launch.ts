@@ -11,6 +11,11 @@ import {
   createOauthStateNonce,
   verifyAndConsumeOauthStateNonce,
 } from "@/server/oauth-state";
+import {
+  buildTaoLaunchResponseUri,
+  buildTaoTargetLinkUri,
+  isTrustedTaoLaunchResponseUri,
+} from "./config";
 import { createLtiFormPostHtml } from "./html";
 import { signManualTaoLtiLaunch } from "./jwt";
 import type { OidcAuthorizationInput } from "./state";
@@ -23,8 +28,6 @@ export const MANUAL_TAO_TEST = {
   oidcInitiationUrl:
     "https://assessment.keepyjalive.org/auth-server/lti1p3/oidc/initiation",
   deliveryId: "9ddca443197e",
-  targetLinkUri:
-    "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
   assessmentName: "Production Test",
   tenantId: "1",
   messageHint: "harly-tao-manual-production-test-v1",
@@ -86,21 +89,11 @@ export function validateManualTaoAuthorizationRequest(
   if (input.messageHint !== MANUAL_TAO_TEST.messageHint) {
     return "Invalid lti_message_hint.";
   }
-  if (input.redirectUri !== MANUAL_TAO_TEST.targetLinkUri) {
-    return "Untrusted redirect_uri.";
-  }
-  let redirect: URL;
-  let configured: URL;
-  try {
-    redirect = new URL(input.redirectUri);
-    configured = new URL(registration.instanceUrl);
-  } catch {
-    return "Invalid redirect_uri.";
-  }
   if (
-    redirect.origin !== configured.origin ||
-    redirect.origin !== MANUAL_TAO_TEST.taoOrigin ||
-    redirect.protocol !== "https:"
+    !isTrustedTaoLaunchResponseUri(
+      input.redirectUri,
+      registration.instanceUrl,
+    )
   ) {
     return "Untrusted redirect_uri.";
   }
@@ -168,6 +161,13 @@ export async function beginManualTaoTestLaunch(input: {
     throw new ManualTaoLaunchError("Manual TAO test launch is disabled.");
   }
   const registration = await readManualRegistration(input.organizationId);
+  const launchResponseUri = buildTaoLaunchResponseUri(
+    registration.instanceUrl,
+  );
+  const targetLinkUri = buildTaoTargetLinkUri(
+    launchResponseUri,
+    MANUAL_TAO_TEST.deliveryId,
+  );
   const loginHint = await createOauthStateNonce({
     userId: input.userId,
     workspaceId: input.organizationId,
@@ -176,7 +176,7 @@ export async function beginManualTaoTestLaunch(input: {
   const url = new URL(MANUAL_TAO_TEST.oidcInitiationUrl);
   url.searchParams.set("iss", MANUAL_TAO_TEST.issuer);
   url.searchParams.set("login_hint", loginHint);
-  url.searchParams.set("target_link_uri", MANUAL_TAO_TEST.targetLinkUri);
+  url.searchParams.set("target_link_uri", targetLinkUri);
   url.searchParams.set("lti_message_hint", MANUAL_TAO_TEST.messageHint);
   url.searchParams.set("client_id", registration.clientId);
   url.searchParams.set("lti_deployment_id", registration.deploymentId);
@@ -199,6 +199,13 @@ export async function authorizeManualTaoTestLaunch(
   const registration = await readManualRegistration(context.organization.id);
   const requestError = validateManualTaoAuthorizationRequest(input, registration);
   if (requestError) throw new ManualTaoLaunchError(requestError);
+  const launchResponseUri = buildTaoLaunchResponseUri(
+    registration.instanceUrl,
+  );
+  const targetLinkUri = buildTaoTargetLinkUri(
+    launchResponseUri,
+    MANUAL_TAO_TEST.deliveryId,
+  );
 
   const stateCheck = await verifyAndConsumeOauthStateNonce({
     state: input.loginHint,
@@ -215,7 +222,7 @@ export async function authorizeManualTaoTestLaunch(
     clientId: registration.clientId,
     deploymentId: registration.deploymentId,
     nonce: input.nonce,
-    targetLinkUri: MANUAL_TAO_TEST.targetLinkUri,
+    targetLinkUri,
     returnUrl: toHarlyPublicUrl("/settings/integrations/tao"),
     tenantId: MANUAL_TAO_TEST.tenantId,
     deliveryId: MANUAL_TAO_TEST.deliveryId,
@@ -234,7 +241,7 @@ export async function authorizeManualTaoTestLaunch(
     },
   });
   return {
-    redirectUri: MANUAL_TAO_TEST.targetLinkUri,
+    redirectUri: launchResponseUri,
     idToken,
     state: input.state,
   };

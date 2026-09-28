@@ -55,6 +55,10 @@ import {
   validateManualTaoAuthorizationRequest,
   validateManualTaoRegistration,
 } from "./manual-launch";
+import {
+  buildTaoLaunchResponseUri,
+  buildTaoTargetLinkUri,
+} from "./config";
 
 const registration = {
   organizationId: "org-1",
@@ -62,10 +66,15 @@ const registration = {
   deploymentId: MANUAL_TAO_TEST.deploymentId,
   instanceUrl: MANUAL_TAO_TEST.taoOrigin,
 };
+const launchResponseUri = buildTaoLaunchResponseUri(registration.instanceUrl);
+const targetLinkUri = buildTaoTargetLinkUri(
+  launchResponseUri,
+  MANUAL_TAO_TEST.deliveryId,
+);
 
 const authorization = {
   clientId: MANUAL_TAO_TEST.clientId,
-  redirectUri: MANUAL_TAO_TEST.targetLinkUri,
+  redirectUri: launchResponseUri,
   loginHint: "signed-login-hint-" + "a".repeat(50),
   messageHint: MANUAL_TAO_TEST.messageHint,
   nonce: "nonce-issued-by-tao-with-entropy",
@@ -115,7 +124,7 @@ describe("manual TAO Production Test launch", () => {
       MANUAL_TAO_TEST.deploymentId,
     );
     expect(url.searchParams.get("target_link_uri")).toBe(
-      MANUAL_TAO_TEST.targetLinkUri,
+      targetLinkUri,
     );
     expect(url.searchParams.get("login_hint")).toBe(authorization.loginHint);
   });
@@ -130,10 +139,15 @@ describe("manual TAO Production Test launch", () => {
   });
 
   it.each([
-    "https://evil.example/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
-    "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/other",
-    "http://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
-  ])("rejects an untrusted target/redirect URI: %s", (redirectUri) => {
+    "https://evil.example/deliver/api/v1/auth/launch-lti-1p3",
+    "https://assessment.keepyjalive.org.evil.example/deliver/api/v1/auth/launch-lti-1p3",
+    "http://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3",
+    "https://assessment.keepyjalive.org/other/path",
+    "https://user:pass@assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3",
+    "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3?delivery=9ddca443197e",
+    "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3#fragment",
+    targetLinkUri,
+  ])("rejects an untrusted redirect URI: %s", (redirectUri) => {
     expect(
       validateManualTaoAuthorizationRequest(
         { ...authorization, redirectUri },
@@ -181,14 +195,14 @@ describe("manual TAO Production Test launch", () => {
         nonce: authorization.nonce,
         clientId: MANUAL_TAO_TEST.clientId,
         deploymentId: MANUAL_TAO_TEST.deploymentId,
-        targetLinkUri: MANUAL_TAO_TEST.targetLinkUri,
+        targetLinkUri,
         tenantId: "1",
         deliveryId: MANUAL_TAO_TEST.deliveryId,
         assessmentName: MANUAL_TAO_TEST.assessmentName,
       }),
     );
     expect(result).toEqual({
-      redirectUri: MANUAL_TAO_TEST.targetLinkUri,
+      redirectUri: launchResponseUri,
       idToken: "signed-id-token",
       state: authorization.state,
     });

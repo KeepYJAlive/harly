@@ -12,7 +12,12 @@ import {
 import { logAuditEvent } from "@/lib/audit-log";
 import { toHarlyPublicUrl } from "@/lib/public-origin";
 import { createLogger } from "@/lib/logger";
-import { buildTaoTargetLinkUri, getTaoLtiPlatformConfig } from "./config";
+import {
+  buildTaoLaunchResponseUri,
+  buildTaoTargetLinkUri,
+  getTaoLtiPlatformConfig,
+  isTrustedTaoLaunchResponseUri,
+} from "./config";
 import { signTaoLtiLaunch } from "./jwt";
 import { assignmentLaunchBlockReason } from "./eligibility";
 import {
@@ -229,13 +234,16 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
   if (!config || config.clientId !== input.clientId) {
     authorizationFailure("LTI registration does not match.");
   }
-  const expectedRedirect = buildTaoTargetLinkUri(
+  if (!isTrustedTaoLaunchResponseUri(input.redirectUri, config.launchUrl)) {
+    authorizationFailure(
+      "redirect_uri does not match the TAO launch response endpoint.",
+    );
+  }
+  const launchResponseUri = buildTaoLaunchResponseUri(config.launchUrl);
+  const targetLinkUri = buildTaoTargetLinkUri(
     config.launchUrl,
     row.externalId,
   );
-  if (input.redirectUri !== expectedRedirect) {
-    authorizationFailure("redirect_uri does not match the assessment target.");
-  }
 
   const [launchSession] = await db
     .select({
@@ -259,7 +267,7 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
     clientId: config.clientId,
     deploymentId: config.deploymentId,
     nonce: input.nonce,
-    targetLinkUri: expectedRedirect,
+    targetLinkUri,
     returnUrl,
   });
 
@@ -305,7 +313,7 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
     metadata: { provider: "tao" },
   });
 
-  return { redirectUri: expectedRedirect, idToken, state: input.state };
+  return { redirectUri: launchResponseUri, idToken, state: input.state };
 }
 
 function inArrayStatus(status: string): status is "assigned" | "started" {
