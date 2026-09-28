@@ -12,7 +12,7 @@ import { getWorkspaceSlackStatus } from "@/lib/slack/config";
 import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getWorkspaceTelegramStatus } from "@/lib/telegram/config";
 import { getZoomConfig } from "@/lib/zoom/config";
-import { getWorkspaceLtiStatus } from "@/lib/lti/config";
+import { getWorkspaceTaoStatus } from "@/lib/lti/config";
 
 /**
  * Central registry for connectable integrations (OAuth / persistent
@@ -338,14 +338,14 @@ export type IntegrationStatuses = {
   jitsi: Awaited<ReturnType<typeof getWorkspaceJitsiStatus>>;
   docuseal: Awaited<ReturnType<typeof getWorkspaceEsignStatus>>;
   captcha: Awaited<ReturnType<typeof getWorkspaceCaptchaStatus>>;
-  lti: Awaited<ReturnType<typeof getWorkspaceLtiStatus>>;
+  tao: Awaited<ReturnType<typeof getWorkspaceTaoStatus>>;
 };
 
 /** Fetch every connectable integration's status for a workspace in parallel. */
 export async function getIntegrationStatuses(
   workspaceId: string,
 ): Promise<IntegrationStatuses> {
-  const [email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, lti] =
+  const [email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, tao] =
     await Promise.all([
       getWorkspaceEmailStatus(workspaceId),
       getWorkspaceCalStatus(workspaceId),
@@ -358,9 +358,9 @@ export async function getIntegrationStatuses(
       getWorkspaceJitsiStatus(workspaceId),
       getWorkspaceEsignStatus(workspaceId),
       getWorkspaceCaptchaStatus(workspaceId),
-      getWorkspaceLtiStatus(workspaceId),
+      getWorkspaceTaoStatus(workspaceId),
     ]);
-  return { email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, lti };
+  return { email, cal, gcal, slack, outlook, zoom, chat, telegram, jitsi, docuseal, captcha, tao };
 }
 
 /** Resolve whether a given integration slug is currently connected. */
@@ -393,7 +393,7 @@ export function isConnected(
     case "docuseal":
       return statuses.docuseal.enabled && statuses.docuseal.hasToken;
     case "tao":
-      return statuses.lti.enabled && Boolean(statuses.lti.registrationId);
+      return statuses.tao.connectionState === "connected";
     case "harly-sign":
       // Built-in, no external connection required — always on.
       return true;

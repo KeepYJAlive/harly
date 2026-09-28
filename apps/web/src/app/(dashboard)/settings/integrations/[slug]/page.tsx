@@ -10,7 +10,10 @@ import {
   HCaptchaLogo,
   ReCaptchaLogo,
 } from "@/components/ui/icons/brands";
-import { CaretLeftIcon, SealCheckDuotoneIcon } from "@/components/ui/icons/phosphor";
+import {
+  CaretLeftIcon,
+  SealCheckDuotoneIcon,
+} from "@/components/ui/icons/phosphor";
 import { cn } from "@/lib/utils";
 import { DemoLockedNotice } from "@/features/demo/DemoLockedNotice";
 import { CalConnectPanel } from "@/features/workspaces/CalConnectPanel";
@@ -26,6 +29,7 @@ import { SlackConnectPanel } from "@/features/workspaces/SlackConnectPanel";
 import { TelegramConnectPanel } from "@/features/workspaces/TelegramConnectPanel";
 import { CaptchaConnectPanel } from "@/features/workspaces/CaptchaConnectPanel";
 import { ZoomConnectPanel } from "@/features/workspaces/ZoomConnectPanel";
+import { TaoConnectPanel } from "@/features/workspaces/TaoConnectPanel";
 import {
   getIntegration,
   getWorkspaceContext,
@@ -43,16 +47,15 @@ import { getWorkspaceSlackStatus } from "@/lib/slack/config";
 import { getWorkspaceTelegramStatus } from "@/lib/telegram/config";
 import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getZoomConfig } from "@/lib/zoom/config";
+import { getWorkspaceTaoStatus } from "@/lib/lti/config";
+import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
 import {
   getEsignWebhookBaseUrl,
   getHarlyPublicOrigin,
 } from "@/lib/public-origin";
 import { buildEsignWebhookUrl } from "@/lib/esign/webhook-url";
 import { isDemoMode } from "@harly/config";
-import {
-  WEBHOOK_EVENTS,
-  WEBHOOK_EVENT_LABELS,
-} from "@/server/webhooks/events";
+import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS } from "@/server/webhooks/events";
 import { ClipboardCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +65,12 @@ type Logo = ComponentType<{ className?: string }>;
 function svgBrand(slug: string, alt: string, variant = "default"): Logo {
   return function SvgBrand({ className }: { className?: string }) {
     return (
-      <TheSvgLogo slug={slug} alt={alt} variant={variant} className={className} />
+      <TheSvgLogo
+        slug={slug}
+        alt={alt}
+        variant={variant}
+        className={className}
+      />
     );
   };
 }
@@ -149,7 +157,8 @@ export default async function IntegrationDetailPage({
 
       {demoLocked ? (
         <DemoLockedNotice>
-          Integration credentials and outbound chat webhooks are locked in the demo.
+          Integration credentials and outbound chat webhooks are locked in the
+          demo.
         </DemoLockedNotice>
       ) : null}
 
@@ -318,6 +327,21 @@ async function renderPanel(
           config={config}
           canEdit={ctx.canEdit}
           workspaceId={ctx.organizationId}
+          tileClassName={integration.tileClassName}
+          description={integration.detail}
+        />
+      );
+    }
+    case "tao": {
+      const [status, assessments] = await Promise.all([
+        getWorkspaceTaoStatus(ctx.organizationId),
+        listTaoAssessmentDefinitions(ctx.organizationId),
+      ]);
+      return (
+        <TaoConnectPanel
+          status={status}
+          assessments={assessments}
+          canEdit={ctx.canEdit}
           tileClassName={integration.tileClassName}
           description={integration.detail}
         />

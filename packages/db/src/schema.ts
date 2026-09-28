@@ -72,6 +72,11 @@ export const applicationStatusEnum = pgEnum("application_status", [
   "withdrawn",
 ]);
 
+export const assessmentAssignmentStatusEnum = pgEnum(
+  "assessment_assignment_status",
+  ["assigned", "started", "completed", "expired", "cancelled", "error"],
+);
+
 export const activityEntityTypeEnum = pgEnum("activity_entity_type", [
   "candidate",
   "application",
@@ -524,9 +529,7 @@ export const ssoProvider = pgTable(
     }),
     domainVerified: boolean("domain_verified").default(false).notNull(),
     enabled: boolean("enabled").default(true).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -936,6 +939,23 @@ export const workspaceSettings = pgTable("workspace_settings", {
   // URL is the only config; rooms are random slugs composed per interview.
   jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
   jitsiBaseUrl: text("jitsi_base_url"),
+  // TAO connection and LTI 1.3 registration values. Assessment definitions and
+  // assignments live in the dedicated domain tables below. The optional client
+  // secret uses the shared AES-256-GCM integration-secret encryption helper.
+  taoEnabled: boolean("tao_enabled").default(false).notNull(),
+  taoInstanceUrl: text("tao_instance_url"),
+  taoClientId: text("tao_client_id"),
+  taoClientSecretCiphertext: text("tao_client_secret_ciphertext"),
+  taoClientSecretIv: text("tao_client_secret_iv"),
+  taoClientSecretTag: text("tao_client_secret_tag"),
+  taoDeploymentId: text("tao_deployment_id"),
+  taoOidcAuthUrl: text("tao_oidc_auth_url"),
+  taoOauthTokenUrl: text("tao_oauth_token_url"),
+  taoJwksUrl: text("tao_jwks_url"),
+  taoLaunchUrl: text("tao_launch_url"),
+  taoLastConnectionStatus: text("tao_last_connection_status"),
+  taoLastConnectionError: text("tao_last_connection_error"),
+  taoLastTestedAt: timestamp("tao_last_tested_at", { withTimezone: true }),
   // DocuSeal (self-hosted e-signature). Base instance URL + an API token
   // (X-Auth-Token, encrypted at rest) is all that's needed — no OAuth. The
   // webhook secret is a plaintext shared token appended to the callback URL and
@@ -1653,146 +1673,169 @@ export const applications = pgTable(
   ],
 );
 
-/**
- * LTI 1.3 tool registration for a workspace. Harly is the LTI Platform and
- * TAO is the Tool. The private signing key is encrypted at rest; only the
- * public JWK is exposed through the workspace-specific JWKS endpoint.
- */
-export const ltiRegistrations = pgTable(
-  "lti_registrations",
+/** Workspace-owned mapping to an assessment/delivery authored in TAO. */
+export const assessmentDefinitions = pgTable(
+  "assessment_definitions",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    workspaceId: text("workspace_id")
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    enabled: boolean("enabled").default(true).notNull(),
-    toolName: text("tool_name").default("TAO").notNull(),
-    clientId: text("client_id").notNull(),
-    deploymentId: text("deployment_id").notNull(),
-    toolAudience: text("tool_audience"),
-    oidcInitiationUrl: text("oidc_initiation_url").notNull(),
-    jwksUrl: text("jwks_url").notNull(),
-    keyId: text("key_id").notNull(),
-    publicJwk: jsonb("public_jwk")
+    provider: text("provider").default("tao").notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    active: boolean("active").default(true).notNull(),
+    metadata: jsonb("metadata")
       .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
       .notNull(),
-    privateKeyCiphertext: text("private_key_ciphertext").notNull(),
-    privateKeyIv: text("private_key_iv").notNull(),
-    privateKeyTag: text("private_key_tag").notNull(),
     ...timestamps(),
   },
   (table) => [
-    uniqueIndex("lti_registrations_workspace_uidx").on(table.workspaceId),
-    uniqueIndex("lti_registrations_client_id_uidx").on(table.clientId),
+    check(
+      "assessment_definitions_provider_check",
+      sql`${table.provider} = 'tao'`,
+    ),
+    uniqueIndex("assessment_definitions_org_provider_external_uidx").on(
+      table.organizationId,
+      table.provider,
+      table.externalId,
+    ),
+    uniqueIndex("assessment_definitions_org_id_uidx").on(
+      table.organizationId,
+      table.id,
+    ),
+    index("assessment_definitions_org_active_idx").on(
+      table.organizationId,
+      table.active,
+    ),
   ],
 );
 
-/** A candidate-facing TAO delivery tied to one concrete application. */
-export const ltiAssessmentAttempts = pgTable(
-  "lti_assessment_attempts",
+/** A TAO execution belongs to one concrete Harly application. */
+export const assessmentAssignments = pgTable(
+  "assessment_assignments",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    workspaceId: text("workspace_id")
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    registrationId: uuid("registration_id")
-      .notNull()
-      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
     applicationId: uuid("application_id")
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" }),
-    candidateId: uuid("candidate_id")
+    assessmentDefinitionId: uuid("assessment_definition_id")
       .notNull()
-      .references(() => candidates.id, { onDelete: "cascade" }),
-    createdById: text("created_by_id").references(() => user.id, {
+      .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    externalExecutionId: text("external_execution_id"),
+    status: assessmentAssignmentStatusEnum("status")
+      .default("assigned")
+      .notNull(),
+    score: doublePrecision("score"),
+    maxScore: doublePrecision("max_score"),
+    assignedAt: timestamp("assigned_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    launchTokenHash: text("launch_token_hash").notNull().unique(),
+    assignedById: text("assigned_by_id").references(() => user.id, {
       onDelete: "set null",
     }),
-    title: text("title").notNull(),
-    deliveryId: text("delivery_id"),
-    targetLinkUri: text("target_link_uri").notNull(),
-    subject: text("subject").notNull(),
-    loginHintHash: text("login_hint_hash"),
-    status: text("status").default("assigned").notNull(),
-    scoreGiven: doublePrecision("score_given"),
-    scoreMaximum: doublePrecision("score_maximum"),
-    normalizedScore: integer("normalized_score"),
-    activityProgress: text("activity_progress"),
-    gradingProgress: text("grading_progress"),
-    lastScorePayload: jsonb("last_score_payload"),
-    launchedAt: timestamp("launched_at", { withTimezone: true }),
-    lastScoreAt: timestamp("last_score_at", { withTimezone: true }),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     ...timestamps(),
   },
   (table) => [
-    index("lti_attempts_workspace_application_idx").on(
-      table.workspaceId,
-      table.applicationId,
-      table.createdAt,
-    ),
-    index("lti_attempts_candidate_idx").on(table.candidateId),
-    index("lti_attempts_registration_status_idx").on(
-      table.registrationId,
+    // Reassessment remains possible after a terminal state, while duplicate
+    // concurrently-active assignments are prevented.
+    uniqueIndex("assessment_assignments_active_application_definition_uidx")
+      .on(
+        table.organizationId,
+        table.applicationId,
+        table.assessmentDefinitionId,
+      )
+      .where(sql`${table.status} in ('assigned', 'started')`),
+    index("assessment_assignments_org_idx").on(table.organizationId),
+    index("assessment_assignments_application_idx").on(table.applicationId),
+    index("assessment_assignments_status_idx").on(
+      table.organizationId,
       table.status,
     ),
-    check(
-      "lti_attempts_normalized_score_check",
-      sql`${table.normalizedScore} is null or (${table.normalizedScore} >= 0 and ${table.normalizedScore} <= 100)`,
+    index("assessment_assignments_definition_idx").on(
+      table.assessmentDefinitionId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.assessmentDefinitionId],
+      foreignColumns: [
+        assessmentDefinitions.organizationId,
+        assessmentDefinitions.id,
+      ],
+      name: "assessment_assignments_org_definition_fk",
+    }).onDelete("restrict"),
   ],
 );
 
-/** Short-lived bearer tokens issued to an authenticated LTI tool. */
-export const ltiAccessTokens = pgTable(
-  "lti_access_tokens",
+/** Short-lived, single-use correlation for TAO's OIDC initiation callback. */
+export const assessmentLtiLaunches = pgTable(
+  "assessment_lti_launches",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    registrationId: uuid("registration_id")
+    assignmentId: uuid("assignment_id")
       .notNull()
-      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull(),
-    scope: text("scope").notNull(),
+      .references(() => assessmentAssignments.id, { onDelete: "cascade" }),
+    loginHintHash: text("login_hint_hash").notNull().unique(),
+    stateHash: text("state_hash").unique(),
+    nonceHash: text("nonce_hash").unique(),
+    returnTokenHash: text("return_token_hash").notNull().unique(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    returnExpiresAt: timestamp("return_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    ...timestamps(),
   },
   (table) => [
-    uniqueIndex("lti_access_tokens_hash_uidx").on(table.tokenHash),
-    index("lti_access_tokens_registration_expiry_idx").on(
-      table.registrationId,
-      table.expiresAt,
-    ),
+    index("assessment_lti_launches_assignment_idx").on(table.assignmentId),
+    index("assessment_lti_launches_expires_idx").on(table.expiresAt),
   ],
 );
 
-/** Durable replay protection for OAuth private_key_jwt assertions. */
-export const ltiClientAssertions = pgTable(
-  "lti_client_assertions",
+/** Persistent per-workspace signing keys. Private PKCS#8 material is AES-GCM
+ * encrypted; only public JWK data is served by the JWKS route. */
+export const taoLtiSigningKeys = pgTable(
+  "tao_lti_signing_keys",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    registrationId: uuid("registration_id")
+    organizationId: text("organization_id")
       .notNull()
-      .references(() => ltiRegistrations.id, { onDelete: "cascade" }),
-    jti: text("jti").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kid: text("kid").notNull().unique(),
+    privateKeyCiphertext: text("private_key_ciphertext").notNull(),
+    privateKeyIv: text("private_key_iv").notNull(),
+    privateKeyTag: text("private_key_tag").notNull(),
+    publicJwk: jsonb("public_jwk").$type<Record<string, unknown>>().notNull(),
+    active: boolean("active").default(true).notNull(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    ...timestamps(),
   },
   (table) => [
-    uniqueIndex("lti_client_assertions_registration_jti_uidx").on(
-      table.registrationId,
-      table.jti,
-    ),
-    index("lti_client_assertions_expiry_idx").on(table.expiresAt),
+    uniqueIndex("tao_lti_signing_keys_active_org_uidx")
+      .on(table.organizationId)
+      .where(sql`${table.active} = true`),
+    index("tao_lti_signing_keys_org_idx").on(table.organizationId),
   ],
 );
 
-export type LtiRegistration = typeof ltiRegistrations.$inferSelect;
-export type NewLtiRegistration = typeof ltiRegistrations.$inferInsert;
-export type LtiAssessmentAttempt = typeof ltiAssessmentAttempts.$inferSelect;
-export type NewLtiAssessmentAttempt = typeof ltiAssessmentAttempts.$inferInsert;
+export type AssessmentDefinition = typeof assessmentDefinitions.$inferSelect;
+export type NewAssessmentDefinition = typeof assessmentDefinitions.$inferInsert;
+export type AssessmentAssignment = typeof assessmentAssignments.$inferSelect;
+export type NewAssessmentAssignment = typeof assessmentAssignments.$inferInsert;
 
 /** Optional self-identification data, kept separate from candidate PII. */
 export const candidateDemographics = pgTable(
@@ -3441,7 +3484,9 @@ export const aiEvaluationRevisions = pgTable(
       .references(() => applications.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull(),
     snapshot: jsonb("snapshot").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("ai_evaluation_revisions_evaluation_revision_idx").on(

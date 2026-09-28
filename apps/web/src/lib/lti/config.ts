@@ -2,122 +2,86 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { db, ltiRegistrations } from "@harly/db";
+import { db, workspaceSettings } from "@harly/db";
 
-import { decryptSecret, isEncryptionConfigured } from "@/lib/crypto";
+import { isEncryptionConfigured } from "@/lib/crypto";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
 
-export type WorkspaceLtiStatus = {
-  registrationId: string | null;
+export type TaoConnectionState =
+  | "not_configured"
+  | "configured"
+  | "connected"
+  | "error";
+
+export type WorkspaceTaoStatus = {
   enabled: boolean;
+  configured: boolean;
+  connectionState: TaoConnectionState;
+  instanceUrl: string | null;
   clientId: string | null;
+  hasClientSecret: boolean;
   deploymentId: string | null;
-  toolAudience: string | null;
-  oidcInitiationUrl: string | null;
+  oidcAuthUrl: string | null;
+  oauthTokenUrl: string | null;
   jwksUrl: string | null;
+  launchUrl: string | null;
+  lastConnectionError: string | null;
+  lastTestedAt: string | null;
   encryptionReady: boolean;
   platformIssuer: string;
-  authenticationUrl: string;
-  accessTokenUrl: string;
-  platformJwksUrl: string | null;
+  platformAuthorizationUrl: string;
+  platformJwksUrl: string;
 };
 
-export type LtiRegistrationConfig = {
-  id: string;
-  workspaceId: string;
-  enabled: boolean;
-  clientId: string;
-  deploymentId: string;
-  toolAudience: string | null;
-  oidcInitiationUrl: string;
-  jwksUrl: string;
-  keyId: string;
-  publicJwk: Record<string, unknown>;
-  privateKeyPem: string;
-};
-
-function platformUrls(registrationId?: string | null) {
-  const platformIssuer = getHarlyPublicOrigin();
-  return {
-    platformIssuer,
-    authenticationUrl: `${platformIssuer}/api/lti/authorize`,
-    accessTokenUrl: `${platformIssuer}/api/lti/token`,
-    platformJwksUrl: registrationId
-      ? `${platformIssuer}/api/lti/jwks/${registrationId}`
-      : null,
-  };
-}
-
-export async function getWorkspaceLtiStatus(
+export async function getWorkspaceTaoStatus(
   workspaceId: string,
-): Promise<WorkspaceLtiStatus> {
+): Promise<WorkspaceTaoStatus> {
   const [row] = await db
     .select({
-      id: ltiRegistrations.id,
-      enabled: ltiRegistrations.enabled,
-      clientId: ltiRegistrations.clientId,
-      deploymentId: ltiRegistrations.deploymentId,
-      toolAudience: ltiRegistrations.toolAudience,
-      oidcInitiationUrl: ltiRegistrations.oidcInitiationUrl,
-      jwksUrl: ltiRegistrations.jwksUrl,
+      enabled: workspaceSettings.taoEnabled,
+      instanceUrl: workspaceSettings.taoInstanceUrl,
+      clientId: workspaceSettings.taoClientId,
+      clientSecretCiphertext: workspaceSettings.taoClientSecretCiphertext,
+      deploymentId: workspaceSettings.taoDeploymentId,
+      oidcAuthUrl: workspaceSettings.taoOidcAuthUrl,
+      oauthTokenUrl: workspaceSettings.taoOauthTokenUrl,
+      jwksUrl: workspaceSettings.taoJwksUrl,
+      launchUrl: workspaceSettings.taoLaunchUrl,
+      lastConnectionStatus: workspaceSettings.taoLastConnectionStatus,
+      lastConnectionError: workspaceSettings.taoLastConnectionError,
+      lastTestedAt: workspaceSettings.taoLastTestedAt,
     })
-    .from(ltiRegistrations)
-    .where(eq(ltiRegistrations.workspaceId, workspaceId))
+    .from(workspaceSettings)
+    .where(eq(workspaceSettings.organizationId, workspaceId))
     .limit(1);
 
+  const configured = Boolean(row?.enabled && row.instanceUrl);
+  const connectionState: TaoConnectionState = !configured
+    ? "not_configured"
+    : row?.lastConnectionStatus === "connected"
+      ? "connected"
+      : row?.lastConnectionStatus === "error"
+        ? "error"
+        : "configured";
+
+  const origin = getHarlyPublicOrigin();
   return {
-    registrationId: row?.id ?? null,
     enabled: row?.enabled ?? false,
+    configured,
+    connectionState,
+    instanceUrl: row?.instanceUrl ?? null,
     clientId: row?.clientId ?? null,
+    hasClientSecret: Boolean(row?.clientSecretCiphertext),
     deploymentId: row?.deploymentId ?? null,
-    toolAudience: row?.toolAudience ?? null,
-    oidcInitiationUrl: row?.oidcInitiationUrl ?? null,
+    oidcAuthUrl: row?.oidcAuthUrl ?? null,
+    oauthTokenUrl: row?.oauthTokenUrl ?? null,
     jwksUrl: row?.jwksUrl ?? null,
+    launchUrl: row?.launchUrl ?? null,
+    lastConnectionError: row?.lastConnectionError ?? null,
+    lastTestedAt: row?.lastTestedAt?.toISOString() ?? null,
     encryptionReady: isEncryptionConfigured(),
-    ...platformUrls(row?.id),
+    platformIssuer: origin,
+    platformAuthorizationUrl: `${origin}/api/integrations/tao/lti/authorize`,
+    platformJwksUrl: `${origin}/api/integrations/tao/lti/jwks`,
   };
-}
-
-export async function getLtiRegistrationConfigById(
-  registrationId: string,
-): Promise<LtiRegistrationConfig | null> {
-  const [row] = await db
-    .select()
-    .from(ltiRegistrations)
-    .where(eq(ltiRegistrations.id, registrationId))
-    .limit(1);
-  if (!row || !row.enabled || !isEncryptionConfigured()) return null;
-
-  try {
-    return {
-      id: row.id,
-      workspaceId: row.workspaceId,
-      enabled: row.enabled,
-      clientId: row.clientId,
-      deploymentId: row.deploymentId,
-      toolAudience: row.toolAudience,
-      oidcInitiationUrl: row.oidcInitiationUrl,
-      jwksUrl: row.jwksUrl,
-      keyId: row.keyId,
-      publicJwk: row.publicJwk,
-      privateKeyPem: decryptSecret({
-        ciphertext: row.privateKeyCiphertext,
-        iv: row.privateKeyIv,
-        tag: row.privateKeyTag,
-      }),
-    };
-  } catch {
-    return null;
-  }
-}
-
-export async function getLtiRegistrationConfigForWorkspace(
-  workspaceId: string,
-): Promise<LtiRegistrationConfig | null> {
-  const [row] = await db
-    .select({ id: ltiRegistrations.id })
-    .from(ltiRegistrations)
-    .where(eq(ltiRegistrations.workspaceId, workspaceId))
-    .limit(1);
-  return row ? getLtiRegistrationConfigById(row.id) : null;
 }

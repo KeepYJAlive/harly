@@ -70,6 +70,7 @@
     "geist": "^1.7.1",
     "html-react-parser": "^6.1.2",
     "imapflow": "^1.4.7",
+    "jose": "^6.2.3",
     "lucide-react": "^1.17.0",
     "mailparser": "^3.9.14",
     "mammoth": "^1.12.0",
