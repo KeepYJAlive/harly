@@ -2,6 +2,11 @@ import { createLogger } from "@/lib/logger";
 import { createLtiFormPostHtml } from "@/lib/tao/lti/html";
 import { authorizeTaoLtiLaunch } from "@/lib/tao/lti/launch";
 import type { OidcAuthorizationInput } from "@/lib/tao/lti/state";
+import {
+  authorizeManualTaoTestLaunch,
+  createManualLtiFormPost,
+  MANUAL_TAO_TEST,
+} from "@/lib/tao/lti/manual-launch";
 
 const log = createLogger("tao-lti-authorize");
 
@@ -26,13 +31,23 @@ function parseInput(params: URLSearchParams): OidcAuthorizationInput {
 
 async function respond(params: URLSearchParams) {
   try {
-    const launch = await authorizeTaoLtiLaunch(parseInput(params));
+    const input = parseInput(params);
+    const launch =
+      input.messageHint === MANUAL_TAO_TEST.messageHint
+        ? await authorizeManualTaoTestLaunch(input)
+        : await authorizeTaoLtiLaunch(input);
     return new Response(
-      createLtiFormPostHtml({
-        target: launch.redirectUri,
-        idToken: launch.idToken,
-        state: launch.state,
-      }),
+      input.messageHint === MANUAL_TAO_TEST.messageHint
+        ? createManualLtiFormPost({
+            redirectUri: launch.redirectUri,
+            idToken: launch.idToken,
+            state: launch.state,
+          })
+        : createLtiFormPostHtml({
+            target: launch.redirectUri,
+            idToken: launch.idToken,
+            state: launch.state,
+          }),
       {
         status: 200,
         headers: {

@@ -25,6 +25,7 @@ describe("TaoConnectPanel", () => {
         canEdit: true,
         tileClassName: "bg-violet-600 text-white",
         description: "Connect TAO over LTI 1.3.",
+        manualTestLaunchEnabled: true,
         status: {
           enabled: true,
           configured: true,
@@ -70,8 +71,56 @@ describe("TaoConnectPanel", () => {
     expect(markup).toContain("Not yet available");
     expect(markup).toContain("LTI 1.3 Assignment and Grade Services (AGS)");
     expect(markup).toContain("Harly application ID");
+    expect(markup).toContain("Manual LTI test");
+    expect(markup).toContain("Launch Production Test");
+    expect(markup).toContain(
+      'href="/api/integrations/tao/lti/test-launch"',
+    );
     expect(markup).toContain("https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}");
     expect(markup).not.toContain("Map friendly Harly names to deliveries");
     expect(markup).not.toContain("Coming soon");
+  });
+
+  it("disables the manual launch button when the server-side gate is off", () => {
+    const markup = renderToStaticMarkup(
+      createElement(TaoConnectPanel, {
+        canEdit: true,
+        tileClassName: "bg-violet-600 text-white",
+        description: "Connect TAO over LTI 1.3.",
+        manualTestLaunchEnabled: false,
+        status: {
+          enabled: true,
+          configured: true,
+          connectionState: "configured",
+          instanceUrl: "https://assessment.keepyjalive.org",
+          clientId: "harly-tao-client-1",
+          deploymentId: "deployment-1",
+          lastConnectionError: null,
+          lastTestedAt: null,
+          encryptionReady: true,
+          platformIssuer: "https://opportunities.keepyjalive.org",
+          platformAuthorizationUrl:
+            "https://opportunities.keepyjalive.org/api/integrations/tao/lti/authorize",
+          platformTokenUrl:
+            "https://opportunities.keepyjalive.org/api/integrations/tao/lti/token",
+          platformJwksUrl:
+            "https://opportunities.keepyjalive.org/api/integrations/tao/lti/jwks",
+          taoOidcInitiationUrl:
+            "https://assessment.keepyjalive.org/auth-server/lti1p3/oidc/initiation",
+          taoJwksUrl:
+            "https://assessment.keepyjalive.org/auth-server/.well-known/jwks.json",
+          taoToolAudience: "https://assessment.keepyjalive.org/deliver",
+          taoDeliveryTargetLinkPattern:
+            "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",
+        },
+      }),
+    );
+
+    expect(markup).toContain("Launch Production Test");
+    expect(markup).toContain("disabled");
+    expect(markup).not.toContain(
+      'href="/api/integrations/tao/lti/test-launch"',
+    );
+    expect(markup).toContain("HARLY_TAO_MANUAL_TEST_LAUNCH=true");
   });
 });

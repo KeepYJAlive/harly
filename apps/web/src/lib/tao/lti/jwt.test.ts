@@ -4,7 +4,10 @@ import { exportJWK, generateKeyPair, importJWK, jwtVerify } from "jose";
 vi.mock("@harly/db", () => ({ db: {}, taoLtiSigningKeys: {} }));
 
 import { LTI_CLAIM, LTI_LEARNER_ROLE } from "./claims";
-import { signTaoLtiLaunchWithKey } from "./jwt";
+import {
+  signManualTaoLtiLaunchWithKey,
+  signTaoLtiLaunchWithKey,
+} from "./jwt";
 import { generateTaoSigningKeyMaterial } from "./keys";
 
 describe("TAO LTI launch JWT", () => {
@@ -77,5 +80,68 @@ describe("TAO LTI launch JWT", () => {
     expect(JSON.stringify(material.publicJwk)).not.toContain(
       material.privatePkcs8,
     );
+  });
+
+  it("signs the manual Production Test as an LTI Resource Link launch", async () => {
+    const { privateKey, publicKey } = await generateKeyPair("RS256", {
+      extractable: true,
+    });
+    const publicJwk = {
+      ...(await exportJWK(publicKey)),
+      kid: "manual-key-1",
+      alg: "RS256",
+      use: "sig",
+    };
+    const token = await signManualTaoLtiLaunchWithKey(
+      {
+        organizationId: "org-1",
+        clientId: "harly-tao-f3695cee-3122-4e89-a2ce-c0c4ef364718",
+        deploymentId: "f0d717d2-02ff-468e-bfea-e59c65ce4e75",
+        nonce: "nonce-issued-by-tao",
+        targetLinkUri:
+          "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
+        returnUrl: "https://opportunities.keepyjalive.org/settings/integrations/tao",
+        tenantId: "1",
+        deliveryId: "9ddca443197e",
+        assessmentName: "Production Test",
+      },
+      {
+        kid: "manual-key-1",
+        privateKey,
+        issuer: "https://opportunities.keepyjalive.org",
+      },
+    );
+    const { payload, protectedHeader } = await jwtVerify(
+      token,
+      await importJWK(publicJwk, "RS256"),
+      {
+        issuer: "https://opportunities.keepyjalive.org",
+        audience: "harly-tao-f3695cee-3122-4e89-a2ce-c0c4ef364718",
+      },
+    );
+
+    expect(protectedHeader).toMatchObject({
+      alg: "RS256",
+      kid: "manual-key-1",
+    });
+    expect(payload.nonce).toBe("nonce-issued-by-tao");
+    expect(payload.tenant_id).toBe("1");
+    expect(payload[LTI_CLAIM.deploymentId]).toBe(
+      "f0d717d2-02ff-468e-bfea-e59c65ce4e75",
+    );
+    expect(payload[LTI_CLAIM.messageType]).toBe("LtiResourceLinkRequest");
+    expect(payload[LTI_CLAIM.version]).toBe("1.3.0");
+    expect(payload[LTI_CLAIM.targetLinkUri]).toBe(
+      "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
+    );
+    expect(payload[LTI_CLAIM.roles]).toEqual([LTI_LEARNER_ROLE]);
+    expect(payload[LTI_CLAIM.resourceLink]).toMatchObject({
+      title: "Production Test",
+    });
+    expect(payload[LTI_CLAIM.context]).toMatchObject({
+      label: "Harly manual TAO test",
+    });
+    expect(payload.sub).toMatch(/^harly:application:/);
+    expect(Object.keys(payload).join(" ")).not.toContain("ags");
   });
 });

@@ -48,6 +48,7 @@ import { getWorkspaceTelegramStatus } from "@/lib/telegram/config";
 import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getZoomConfig } from "@/lib/zoom/config";
 import { getWorkspaceTaoStatus } from "@/lib/lti/config";
+import { isManualTaoTestLaunchEnabled } from "@/lib/tao/lti/manual-launch";
 import {
   getEsignWebhookBaseUrl,
   getHarlyPublicOrigin,
@@ -339,6 +340,7 @@ async function renderPanel(
           canEdit={ctx.canEdit}
           tileClassName={integration.tileClassName}
           description={integration.detail}
+          manualTestLaunchEnabled={isManualTaoTestLaunchEnabled()}
         />
       );
     }
