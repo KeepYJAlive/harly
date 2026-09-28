@@ -282,7 +282,7 @@ export function TaoConnectPanel({
           />
           {manualTestLaunchReady ? (
             <Button asChild className="self-start sm:self-auto">
-              <a href="/api/integrations/tao/lti/test-launch">
+              <a href="/assessments/take-assessment">
                 <Rocket className="size-4" />
                 Launch Production Test
               </a>
