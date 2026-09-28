@@ -124,4 +124,3 @@ jobs:
             docker compose --env-file "$ENV_FILE" ps
 
             echo "Deployment completed successfully."
-EOF
