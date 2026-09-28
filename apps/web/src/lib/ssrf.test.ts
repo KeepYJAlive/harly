@@ -4,7 +4,12 @@ const mocks = vi.hoisted(() => ({ lookup: vi.fn() }));
 
 vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 
-import { isBlockedHost, resolveSafeAddress, safeFetchHttp } from "./ssrf";
+import {
+  createPinnedLookup,
+  isBlockedHost,
+  resolveSafeAddress,
+  safeFetchHttp,
+} from "./ssrf";
 
 describe("SSRF host filtering", () => {
   beforeEach(() => {
@@ -64,6 +69,20 @@ describe("SSRF host filtering", () => {
       all: true,
       verbatim: true,
     });
+  });
+
+  it("returns the pinned address in the lookup shape requested by Node", () => {
+    const lookup = createPinnedLookup({ address: "93.184.216.34", family: 4 });
+    const scalarCallback = vi.fn();
+    const allCallback = vi.fn();
+
+    lookup("public.example", { all: false }, scalarCallback);
+    lookup("public.example", { all: true }, allCallback);
+
+    expect(scalarCallback).toHaveBeenCalledWith(null, "93.184.216.34", 4);
+    expect(allCallback).toHaveBeenCalledWith(null, [
+      { address: "93.184.216.34", family: 4 },
+    ]);
   });
 
   it("permits private DNS only for the explicit development opt-in", async () => {

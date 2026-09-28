@@ -56,6 +56,11 @@ const PUBLIC_PATHS = [
   "/sign",
   "/api/native-sign",
   "/api/pdfjs",
+  // Opaque candidate assessment links and the LTI OIDC/JWKS boundary perform
+  // their own token/state validation and must not require a staff session.
+  "/assessment",
+  "/assessments/complete",
+  "/api/integrations/tao/lti",
 ];
 
 const PROTECTED_PATH_PREFIXES = ["/dashboard", "/settings"];

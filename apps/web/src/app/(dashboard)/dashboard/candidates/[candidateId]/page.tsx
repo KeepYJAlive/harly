@@ -51,6 +51,10 @@ import { listJobOptions } from "@/features/jobs/data";
 import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getWorkspaceCalStatus } from "@/lib/cal/config";
 import { getWorkspaceEsignStatus } from "@/lib/esign/config";
+import {
+  listAssessmentAssignmentsForCandidate,
+  listTaoAssessmentDefinitions,
+} from "@/features/assessments/data";
 import { candidateAvatarFallbackSrcs } from "@/lib/candidate-avatar";
 
 export const dynamic = "force-dynamic";
@@ -198,6 +202,10 @@ export default async function CandidateDetailPage({
   const latestResume = files[0] ?? null;
   const latestApplication = applications[0] ?? null;
   const avatarFallbackSrcs = candidateAvatarFallbackSrcs(candidate.email, candidate.githubUrl);
+  const [assessmentDefinitions, assessmentAssignments] = await Promise.all([
+    listTaoAssessmentDefinitions(workspaceId, { activeOnly: true }),
+    listAssessmentAssignmentsForCandidate(workspaceId, candidate.id),
+  ]);
 
   const [suspectCandidates, moveTargets] = await Promise.all([
     // Fuzzy duplicate check (heuristic only, no AI at load time)
@@ -543,6 +551,9 @@ export default async function CandidateDetailPage({
             interviews={interviews}
             members={members}
             aiEvaluations={aiEvaluations}
+            assessmentDefinitions={assessmentDefinitions}
+            assessmentAssignments={assessmentAssignments}
+            canManageAssessments={canEditCandidates}
             scheduleApplications={scheduleApplications}
             scheduleMembers={members}
             scheduleCal={{

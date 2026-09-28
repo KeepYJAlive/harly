@@ -72,6 +72,11 @@ export const applicationStatusEnum = pgEnum("application_status", [
   "withdrawn",
 ]);
 
+export const assessmentAssignmentStatusEnum = pgEnum(
+  "assessment_assignment_status",
+  ["assigned", "started", "completed", "expired", "cancelled", "error"],
+);
+
 export const activityEntityTypeEnum = pgEnum("activity_entity_type", [
   "candidate",
   "application",
@@ -524,9 +529,7 @@ export const ssoProvider = pgTable(
     }),
     domainVerified: boolean("domain_verified").default(false).notNull(),
     enabled: boolean("enabled").default(true).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -936,6 +939,17 @@ export const workspaceSettings = pgTable("workspace_settings", {
   // URL is the only config; rooms are random slugs composed per interview.
   jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
   jitsiBaseUrl: text("jitsi_base_url"),
+  // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
+  // Existing launch settings remain until the launch flow is migrated.
+  taoEnabled: boolean("tao_enabled").default(false).notNull(),
+  taoInstanceUrl: text("tao_instance_url"),
+  taoClientId: text("tao_client_id"),
+  taoDeploymentId: text("tao_deployment_id"),
+  taoOidcAuthUrl: text("tao_oidc_auth_url"),
+  taoLaunchUrl: text("tao_launch_url"),
+  taoLastConnectionStatus: text("tao_last_connection_status"),
+  taoLastConnectionError: text("tao_last_connection_error"),
+  taoLastTestedAt: timestamp("tao_last_tested_at", { withTimezone: true }),
   // DocuSeal (self-hosted e-signature). Base instance URL + an API token
   // (X-Auth-Token, encrypted at rest) is all that's needed — no OAuth. The
   // webhook secret is a plaintext shared token appended to the callback URL and
@@ -977,7 +991,11 @@ export const workspaceSettings = pgTable("workspace_settings", {
     .default("email")
     .notNull(),
   ...timestamps(),
-});
+}, (table) => [
+  uniqueIndex("workspace_settings_tao_client_id_uidx")
+    .on(table.taoClientId)
+    .where(sql`${table.taoClientId} IS NOT NULL`),
+]);
 
 /**
  * Durable Slack notification queue. Slack is an external side effect, so the
@@ -1652,6 +1670,190 @@ export const applications = pgTable(
     ),
   ],
 );
+
+/** Workspace-owned mapping to an assessment/delivery authored in TAO. */
+export const assessmentDefinitions = pgTable(
+  "assessment_definitions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider").default("tao").notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    active: boolean("active").default(true).notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    check(
+      "assessment_definitions_provider_check",
+      sql`${table.provider} = 'tao'`,
+    ),
+    uniqueIndex("assessment_definitions_org_provider_external_uidx").on(
+      table.organizationId,
+      table.provider,
+      table.externalId,
+    ),
+    uniqueIndex("assessment_definitions_org_id_uidx").on(
+      table.organizationId,
+      table.id,
+    ),
+    index("assessment_definitions_org_active_idx").on(
+      table.organizationId,
+      table.active,
+    ),
+  ],
+);
+
+/** A TAO execution belongs to one concrete Harly application. */
+export const assessmentAssignments = pgTable(
+  "assessment_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    applicationId: uuid("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    assessmentDefinitionId: uuid("assessment_definition_id")
+      .notNull()
+      .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    externalExecutionId: text("external_execution_id"),
+    status: assessmentAssignmentStatusEnum("status")
+      .default("assigned")
+      .notNull(),
+    score: doublePrecision("score"),
+    maxScore: doublePrecision("max_score"),
+    assignedAt: timestamp("assigned_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    launchTokenHash: text("launch_token_hash").notNull().unique(),
+    assignedById: text("assigned_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    // Reassessment remains possible after a terminal state, while duplicate
+    // concurrently-active assignments are prevented.
+    uniqueIndex("assessment_assignments_active_application_definition_uidx")
+      .on(
+        table.organizationId,
+        table.applicationId,
+        table.assessmentDefinitionId,
+      )
+      .where(sql`${table.status} in ('assigned', 'started')`),
+    index("assessment_assignments_org_idx").on(table.organizationId),
+    index("assessment_assignments_application_idx").on(table.applicationId),
+    index("assessment_assignments_status_idx").on(
+      table.organizationId,
+      table.status,
+    ),
+    index("assessment_assignments_definition_idx").on(
+      table.assessmentDefinitionId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.assessmentDefinitionId],
+      foreignColumns: [
+        assessmentDefinitions.organizationId,
+        assessmentDefinitions.id,
+      ],
+      name: "assessment_assignments_org_definition_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+/** Short-lived, single-use correlation for TAO's OIDC initiation callback. */
+export const assessmentLtiLaunches = pgTable(
+  "assessment_lti_launches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    assignmentId: uuid("assignment_id")
+      .notNull()
+      .references(() => assessmentAssignments.id, { onDelete: "cascade" }),
+    loginHintHash: text("login_hint_hash").notNull().unique(),
+    stateHash: text("state_hash").unique(),
+    nonceHash: text("nonce_hash").unique(),
+    returnTokenHash: text("return_token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    returnExpiresAt: timestamp("return_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (table) => [
+    index("assessment_lti_launches_assignment_idx").on(table.assignmentId),
+    index("assessment_lti_launches_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/** Persistent per-workspace signing keys. Private PKCS#8 material is AES-GCM
+ * encrypted; only public JWK data is served by the JWKS route. */
+export const taoLtiSigningKeys = pgTable(
+  "tao_lti_signing_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kid: text("kid").notNull().unique(),
+    privateKeyCiphertext: text("private_key_ciphertext").notNull(),
+    privateKeyIv: text("private_key_iv").notNull(),
+    privateKeyTag: text("private_key_tag").notNull(),
+    publicJwk: jsonb("public_jwk").$type<Record<string, unknown>>().notNull(),
+    active: boolean("active").default(true).notNull(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("tao_lti_signing_keys_active_org_uidx")
+      .on(table.organizationId)
+      .where(sql`${table.active} = true`),
+    index("tao_lti_signing_keys_org_idx").on(table.organizationId),
+  ],
+);
+
+export const taoLtiClientAssertions = pgTable(
+  "tao_lti_client_assertions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: text("client_id").notNull(),
+    jti: text("jti").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("tao_lti_client_assertions_client_jti_uidx").on(
+      table.clientId,
+      table.jti,
+    ),
+    index("tao_lti_client_assertions_expires_idx").on(table.expiresAt),
+  ],
+);
+
+export type AssessmentDefinition = typeof assessmentDefinitions.$inferSelect;
+export type NewAssessmentDefinition = typeof assessmentDefinitions.$inferInsert;
+export type AssessmentAssignment = typeof assessmentAssignments.$inferSelect;
+export type NewAssessmentAssignment = typeof assessmentAssignments.$inferInsert;
 
 /** Optional self-identification data, kept separate from candidate PII. */
 export const candidateDemographics = pgTable(
@@ -3300,7 +3502,9 @@ export const aiEvaluationRevisions = pgTable(
       .references(() => applications.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull(),
     snapshot: jsonb("snapshot").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("ai_evaluation_revisions_evaluation_revision_idx").on(

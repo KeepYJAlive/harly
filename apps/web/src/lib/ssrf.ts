@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -115,6 +115,17 @@ export function isBlockedHost(hostname: string): boolean {
 
 type ResolvedAddress = { address: string; family: 4 | 6 };
 
+/** Return a DNS lookup callback pinned to the address that was already validated. */
+export function createPinnedLookup(resolved: ResolvedAddress): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [resolved]);
+      return;
+    }
+    callback(null, resolved.address, resolved.family);
+  };
+}
+
 /** Resolve once, validate every answer, then use the chosen address for TCP. */
 export async function resolveSafeAddress(
   hostname: string,
@@ -160,7 +171,7 @@ async function fetchPinned(
       method: init.method ?? "GET",
       headers,
       signal: init.signal ?? undefined,
-      lookup: (_hostname, _options, callback) => callback(null, resolved.address, resolved.family),
+      lookup: createPinnedLookup(resolved),
     }, (incoming) => {
       resolve(new Response(Readable.toWeb(incoming) as ReadableStream, {
         status: incoming.statusCode ?? 502,

@@ -16,6 +16,7 @@ import { EvaluationDrawer } from "@/features/candidates/EvaluationDrawer";
 import { NoteForm } from "@/features/candidates/NoteForm";
 import { ScheduleDrawer } from "@/features/candidates/ScheduleDrawer";
 import { OffersPanel } from "@/features/offers/OffersPanel";
+import { ApplicationAssessmentsPanel } from "@/features/assessments/ApplicationAssessmentsPanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -80,6 +81,9 @@ export function CandidateProfileTabs({
   currentUserId,
   privacyRequests = [],
   canFulfilErasure = false,
+  assessmentDefinitions,
+  assessmentAssignments,
+  canManageAssessments,
 }: CandidateProfileTabsProps) {
   const [tab, setTab] = useState("profile");
   const conversations = groupIntoConversations(messages);
@@ -115,6 +119,10 @@ export function CandidateProfileTabs({
         <TabsTrigger value="evaluation">
           Evaluation
           <TabCount value={scorecards.length} />
+        </TabsTrigger>
+        <TabsTrigger value="assessments">
+          Assessments
+          <TabCount value={assessmentAssignments.length} />
         </TabsTrigger>
         <TabsTrigger value="offers">
           Offers
@@ -156,6 +164,15 @@ export function CandidateProfileTabs({
           summary={candidateSummary}
           educationEntries={candidateEducationEntries}
           experienceEntries={candidateExperienceEntries}
+        />
+      </TabsContent>
+
+      <TabsContent value="assessments" className="mt-4">
+        <ApplicationAssessmentsPanel
+          applications={jobOptions}
+          definitions={assessmentDefinitions}
+          assignments={assessmentAssignments}
+          canManage={canManageAssessments}
         />
       </TabsContent>
 
@@ -230,7 +247,9 @@ export function CandidateProfileTabs({
           <div className="space-y-4 duration-300 animate-in fade-in slide-in-from-bottom-1">
             {conversations.map((conversation) => (
               <ConversationThread
-                key={conversation[0]!.threadId ?? `legacy:${conversation[0]!.id}`}
+                key={
+                  conversation[0]!.threadId ?? `legacy:${conversation[0]!.id}`
+                }
                 conversation={conversation}
                 candidateId={candidateId}
                 candidateName={candidateName}
@@ -270,7 +289,11 @@ export function CandidateProfileTabs({
               }
             />
           ) : (
-            <Button size="sm" disabled title="This candidate has no application to score">
+            <Button
+              size="sm"
+              disabled
+              title="This candidate has no application to score"
+            >
               <ClipboardCheck className="size-4" />
               Add evaluation
             </Button>

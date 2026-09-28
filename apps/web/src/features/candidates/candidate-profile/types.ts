@@ -21,6 +21,10 @@ import type {
   CandidatePrivacyRequestItem,
   NoteMention,
 } from "@/features/candidates/data";
+import type {
+  AssessmentAssignmentItem,
+  TaoAssessmentDefinitionItem,
+} from "@/features/assessments/types";
 
 export type CandidateProfileApplication = {
   id: string;
@@ -134,6 +138,9 @@ export type CandidateProfileTabsProps = {
   currentUserId?: string;
   privacyRequests?: CandidatePrivacyRow[];
   canFulfilErasure?: boolean;
+  assessmentDefinitions: TaoAssessmentDefinitionItem[];
+  assessmentAssignments: AssessmentAssignmentItem[];
+  canManageAssessments: boolean;
 };
 
 /** How many linked records an erasure request would destroy, by kind. */
