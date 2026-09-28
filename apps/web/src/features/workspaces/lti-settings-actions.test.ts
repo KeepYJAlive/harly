@@ -4,8 +4,8 @@ const mocks = vi.hoisted(() => ({
   assertNotDemo: vi.fn(),
   requirePermission: vi.fn(),
   logAuditEvent: vi.fn(),
-  encryptSecret: vi.fn(),
   safeFetchHttp: vi.fn(),
+  warn: vi.fn(),
   selectLimit: vi.fn(),
   insertValues: vi.fn(),
   insertOnConflict: vi.fn(),
@@ -17,7 +17,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(() => "where") }));
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn(() => "where"),
+  sql: vi.fn(() => "sql"),
+}));
 vi.mock("@harly/db", () => ({
   db: {
     select: vi.fn(() => ({
@@ -41,14 +44,7 @@ vi.mock("@harly/db", () => ({
     taoEnabled: "taoEnabled",
     taoInstanceUrl: "taoInstanceUrl",
     taoClientId: "taoClientId",
-    taoClientSecretCiphertext: "taoClientSecretCiphertext",
-    taoClientSecretIv: "taoClientSecretIv",
-    taoClientSecretTag: "taoClientSecretTag",
     taoDeploymentId: "taoDeploymentId",
-    taoOidcAuthUrl: "taoOidcAuthUrl",
-    taoOauthTokenUrl: "taoOauthTokenUrl",
-    taoJwksUrl: "taoJwksUrl",
-    taoLaunchUrl: "taoLaunchUrl",
     taoLastConnectionStatus: "taoLastConnectionStatus",
     taoLastConnectionError: "taoLastConnectionError",
     taoLastTestedAt: "taoLastTestedAt",
@@ -61,9 +57,8 @@ vi.mock("@/features/workspaces/permissions-server", () => ({
   requirePermission: mocks.requirePermission,
 }));
 vi.mock("@/lib/audit-log", () => ({ logAuditEvent: mocks.logAuditEvent }));
-vi.mock("@/lib/crypto", () => ({ encryptSecret: mocks.encryptSecret }));
 vi.mock("@/lib/logger", () => ({
-  createLogger: () => ({ warn: vi.fn() }),
+  createLogger: () => ({ warn: mocks.warn }),
 }));
 vi.mock("@/lib/ssrf", () => ({ safeFetchHttp: mocks.safeFetchHttp }));
 vi.mock("@/lib/tao/lti/keys", () => ({
@@ -78,13 +73,6 @@ import {
 
 const validInput = {
   instanceUrl: "https://tao.example.com/",
-  clientId: "client-1",
-  clientSecret: "",
-  deploymentId: "deployment-1",
-  oidcAuthUrl: "https://tao.example.com/custom/authorize",
-  oauthTokenUrl: "https://tao.example.com/custom/token",
-  jwksUrl: "https://tao.example.com/custom/jwks",
-  launchUrl: "https://tao.example.com/custom/launch",
 };
 
 describe("TAO settings actions", () => {
@@ -105,11 +93,6 @@ describe("TAO settings actions", () => {
     mocks.updateWhere.mockResolvedValue([]);
     mocks.updateSet.mockReturnValue({ where: mocks.updateWhere });
     mocks.deleteWhere.mockResolvedValue([]);
-    mocks.encryptSecret.mockReturnValue({
-      ciphertext: "encrypted-secret",
-      iv: "encrypted-iv",
-      tag: "encrypted-tag",
-    });
   });
 
   it.each([
@@ -127,44 +110,28 @@ describe("TAO settings actions", () => {
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 
-  it("validates settings and normalizes URLs before storage", async () => {
+  it("generates distinct Harly registration IDs and persists them", async () => {
     const result = await saveTaoSettingsAction(validInput);
 
     expect(result).toEqual({ ok: true });
-    expect(mocks.insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId: "workspace-1",
-        taoInstanceUrl: "https://tao.example.com",
-        taoOidcAuthUrl: "https://tao.example.com/custom/authorize",
-        taoOauthTokenUrl: "https://tao.example.com/custom/token",
-        taoJwksUrl: "https://tao.example.com/custom/jwks",
-        taoLaunchUrl: "https://tao.example.com/custom/launch",
-      }),
-    );
-  });
-
-  it("encrypts a supplied credential and never stores its plaintext", async () => {
-    await saveTaoSettingsAction({ ...validInput, clientSecret: "top-secret" });
-
-    expect(mocks.encryptSecret).toHaveBeenCalledWith("top-secret");
     const stored = mocks.insertValues.mock.calls[0]?.[0];
     expect(stored).toEqual(
       expect.objectContaining({
-        taoClientSecretCiphertext: "encrypted-secret",
-        taoClientSecretIv: "encrypted-iv",
-        taoClientSecretTag: "encrypted-tag",
+        organizationId: "workspace-1",
+        taoInstanceUrl: "https://tao.example.com",
+        taoClientId: expect.stringMatching(/^harly-tao-[0-9a-f-]{36}$/),
+        taoDeploymentId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       }),
     );
-    expect(JSON.stringify(stored)).not.toContain("top-secret");
+    expect(stored.taoClientId).not.toBe(stored.taoDeploymentId);
   });
 
-  it("preserves an existing encrypted credential when the edit field is blank", async () => {
+  it("preserves existing generated IDs on subsequent saves", async () => {
     mocks.selectLimit.mockResolvedValueOnce([
       {
         instanceUrl: "https://tao.example.com",
-        clientSecretCiphertext: "stored-ciphertext",
-        clientSecretIv: "stored-iv",
-        clientSecretTag: "stored-tag",
+        clientId: "harly-tao-stable-id",
+        deploymentId: "stable-deployment-id",
         lastConnectionStatus: "connected",
         lastConnectionError: null,
         lastTestedAt: new Date("2026-09-27T12:00:00Z"),
@@ -173,12 +140,10 @@ describe("TAO settings actions", () => {
 
     await saveTaoSettingsAction(validInput);
 
-    expect(mocks.encryptSecret).not.toHaveBeenCalled();
     expect(mocks.insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
-        taoClientSecretCiphertext: "stored-ciphertext",
-        taoClientSecretIv: "stored-iv",
-        taoClientSecretTag: "stored-tag",
+        taoClientId: "harly-tao-stable-id",
+        taoDeploymentId: "stable-deployment-id",
         taoLastConnectionStatus: "connected",
       }),
     );
@@ -224,14 +189,12 @@ describe("TAO settings actions", () => {
       ok: false,
       state: "error",
       statusCode: 503,
-      error:
-        "TAO returned HTTP 503; expected a successful response or redirect.",
+      error: "TAO base URL returned HTTP 503.",
     });
     expect(mocks.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({
         taoLastConnectionStatus: "error",
-        taoLastConnectionError:
-          "TAO returned HTTP 503; expected a successful response or redirect.",
+        taoLastConnectionError: "TAO base URL returned HTTP 503.",
       }),
     );
   });
@@ -276,7 +239,73 @@ describe("TAO settings actions", () => {
     },
   );
 
-  it("clears all TAO configuration and encrypted credentials on Disconnect", async () => {
+  it("checks the derived OIDC route and validates TAO's public JWKS", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([
+      { instanceUrl: "https://tao.example.com" },
+    ]);
+    mocks.safeFetchHttp
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          keys: [
+            {
+              kty: "RSA",
+              kid: "tao-signing-key",
+              n: "public-modulus",
+              e: "AQAB",
+              use: "sig",
+            },
+          ],
+        }),
+      );
+
+    const result = await testTaoConnectionAction({
+      instanceUrl: "https://tao.example.com",
+    });
+    expect(result).toEqual({
+      ok: true,
+      state: "connected",
+      statusCode: 200,
+    });
+    expect(mocks.safeFetchHttp.mock.calls.map(([url]) => url)).toEqual([
+      "https://tao.example.com",
+      "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
+      "https://tao.example.com/auth-server/.well-known/jwks.json",
+    ]);
+  });
+
+  it("rejects a TAO JWKS that contains no valid public signing key", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([
+      { instanceUrl: "https://tao.example.com" },
+    ]);
+    mocks.safeFetchHttp
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          keys: [
+            {
+              kty: "RSA",
+              kid: "private-key-leak",
+              n: "modulus",
+              e: "AQAB",
+              d: "private-exponent",
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      testTaoConnectionAction({ instanceUrl: "https://tao.example.com" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      state: "error",
+      error: "TAO JWKS response contains no valid public RSA key.",
+    });
+  });
+
+  it("clears TAO registration values on Disconnect", async () => {
     await expect(disconnectTaoAction()).resolves.toEqual({ ok: true });
 
     expect(mocks.updateSet).toHaveBeenCalledWith(
@@ -284,14 +313,7 @@ describe("TAO settings actions", () => {
         taoEnabled: false,
         taoInstanceUrl: null,
         taoClientId: null,
-        taoClientSecretCiphertext: null,
-        taoClientSecretIv: null,
-        taoClientSecretTag: null,
         taoDeploymentId: null,
-        taoOidcAuthUrl: null,
-        taoOauthTokenUrl: null,
-        taoJwksUrl: null,
-        taoLaunchUrl: null,
         taoLastConnectionStatus: null,
         taoLastConnectionError: null,
         taoLastTestedAt: null,

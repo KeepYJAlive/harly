@@ -39,7 +39,8 @@ export function getHarlyPublicOrigin(): string {
     process.env.BETTER_AUTH_URL ??
     DEFAULT_PUBLIC_ORIGIN;
 
-  const allowLocalUrl = process.env.HARLY_ALLOW_LOCAL_URL === "true";
+  const allowLocalUrl =
+    process.env.HARLY_ALLOW_LOCAL_URL === "true";
 
   let url: URL;
   try {

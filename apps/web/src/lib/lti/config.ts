@@ -19,19 +19,37 @@ export type WorkspaceTaoStatus = {
   connectionState: TaoConnectionState;
   instanceUrl: string | null;
   clientId: string | null;
-  hasClientSecret: boolean;
   deploymentId: string | null;
-  oidcAuthUrl: string | null;
-  oauthTokenUrl: string | null;
-  jwksUrl: string | null;
-  launchUrl: string | null;
+  taoOidcInitiationUrl: string | null;
+  taoJwksUrl: string | null;
+  taoToolAudience: string | null;
+  taoDeliveryTargetLinkPattern: string | null;
   lastConnectionError: string | null;
   lastTestedAt: string | null;
   encryptionReady: boolean;
   platformIssuer: string;
   platformAuthorizationUrl: string;
+  platformTokenUrl: string;
   platformJwksUrl: string;
 };
+
+export function getTaoToolConfiguration(instanceUrl: string | null) {
+  if (!instanceUrl) {
+    return {
+      oidcInitiationUrl: null,
+      jwksUrl: null,
+      audience: null,
+      deliveryTargetLinkPattern: null,
+    };
+  }
+  const origin = new URL(instanceUrl).origin;
+  return {
+    oidcInitiationUrl: `${origin}/auth-server/lti1p3/oidc/initiation`,
+    jwksUrl: `${origin}/auth-server/.well-known/jwks.json`,
+    audience: `${origin}/deliver`,
+    deliveryTargetLinkPattern: `${origin}/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}`,
+  };
+}
 
 export async function getWorkspaceTaoStatus(
   workspaceId: string,
@@ -41,12 +59,7 @@ export async function getWorkspaceTaoStatus(
       enabled: workspaceSettings.taoEnabled,
       instanceUrl: workspaceSettings.taoInstanceUrl,
       clientId: workspaceSettings.taoClientId,
-      clientSecretCiphertext: workspaceSettings.taoClientSecretCiphertext,
       deploymentId: workspaceSettings.taoDeploymentId,
-      oidcAuthUrl: workspaceSettings.taoOidcAuthUrl,
-      oauthTokenUrl: workspaceSettings.taoOauthTokenUrl,
-      jwksUrl: workspaceSettings.taoJwksUrl,
-      launchUrl: workspaceSettings.taoLaunchUrl,
       lastConnectionStatus: workspaceSettings.taoLastConnectionStatus,
       lastConnectionError: workspaceSettings.taoLastConnectionError,
       lastTestedAt: workspaceSettings.taoLastTestedAt,
@@ -65,23 +78,26 @@ export async function getWorkspaceTaoStatus(
         : "configured";
 
   const origin = getHarlyPublicOrigin();
+  const deploymentId = row?.deploymentId ?? null;
+  const tool = getTaoToolConfiguration(row?.instanceUrl ?? null);
+
   return {
     enabled: row?.enabled ?? false,
     configured,
     connectionState,
     instanceUrl: row?.instanceUrl ?? null,
     clientId: row?.clientId ?? null,
-    hasClientSecret: Boolean(row?.clientSecretCiphertext),
-    deploymentId: row?.deploymentId ?? null,
-    oidcAuthUrl: row?.oidcAuthUrl ?? null,
-    oauthTokenUrl: row?.oauthTokenUrl ?? null,
-    jwksUrl: row?.jwksUrl ?? null,
-    launchUrl: row?.launchUrl ?? null,
+    deploymentId,
+    taoOidcInitiationUrl: tool.oidcInitiationUrl,
+    taoJwksUrl: tool.jwksUrl,
+    taoToolAudience: tool.audience,
+    taoDeliveryTargetLinkPattern: tool.deliveryTargetLinkPattern,
     lastConnectionError: row?.lastConnectionError ?? null,
     lastTestedAt: row?.lastTestedAt?.toISOString() ?? null,
     encryptionReady: isEncryptionConfigured(),
     platformIssuer: origin,
     platformAuthorizationUrl: `${origin}/api/integrations/tao/lti/authorize`,
+    platformTokenUrl: `${origin}/api/integrations/tao/lti/token`,
     platformJwksUrl: `${origin}/api/integrations/tao/lti/jwks`,
   };
 }

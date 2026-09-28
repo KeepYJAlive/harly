@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exportJWK, generateKeyPair, importJWK, jwtVerify } from "jose";
+
+vi.mock("@harly/db", () => ({ db: {}, taoLtiSigningKeys: {} }));
 
 import { LTI_CLAIM, LTI_LEARNER_ROLE } from "./claims";
 import { signTaoLtiLaunchWithKey } from "./jwt";
+import { generateTaoSigningKeyMaterial } from "./keys";
 
 describe("TAO LTI launch JWT", () => {
   const previous = process.env.AI_ENCRYPTION_KEY;
@@ -55,6 +58,24 @@ describe("TAO LTI launch JWT", () => {
     expect(payload[LTI_CLAIM.roles]).toEqual([LTI_LEARNER_ROLE]);
     expect(payload[LTI_CLAIM.targetLinkUri]).toBe(
       "https://tao.example/launch/delivery-1",
+    );
+  });
+
+  it("keeps generated private key material out of the public JWKS value", async () => {
+    const material = await generateTaoSigningKeyMaterial();
+
+    expect(material.publicJwk).toMatchObject({
+      kty: "RSA",
+      kid: material.kid,
+      use: "sig",
+      alg: "RS256",
+    });
+    expect(material.publicJwk).toHaveProperty("n");
+    expect(material.publicJwk).toHaveProperty("e");
+    expect(material.publicJwk).not.toHaveProperty("d");
+    expect(material.privatePkcs8).toContain("BEGIN PRIVATE KEY");
+    expect(JSON.stringify(material.publicJwk)).not.toContain(
+      material.privatePkcs8,
     );
   });
 });

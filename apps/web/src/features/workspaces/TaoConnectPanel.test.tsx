@@ -23,7 +23,6 @@ describe("TaoConnectPanel", () => {
     const markup = renderToStaticMarkup(
       createElement(TaoConnectPanel, {
         canEdit: true,
-        assessments: [],
         tileClassName: "bg-violet-600 text-white",
         description: "Connect TAO over LTI 1.3.",
         status: {
@@ -31,35 +30,48 @@ describe("TaoConnectPanel", () => {
           configured: true,
           connectionState: "configured",
           instanceUrl: "https://tao.example.com",
-          clientId: "client-1",
-          hasClientSecret: true,
+          clientId: "harly-tao-client-1",
           deploymentId: "deployment-1",
-          oidcAuthUrl: "https://tao.example.com/custom/authorize",
-          oauthTokenUrl: "https://tao.example.com/custom/token",
-          jwksUrl: "https://tao.example.com/custom/jwks",
-          launchUrl: "https://tao.example.com/custom/launch",
           lastConnectionError: null,
           lastTestedAt: null,
           encryptionReady: true,
           platformIssuer: "https://harly.example.com",
           platformAuthorizationUrl:
             "https://harly.example.com/api/integrations/tao/lti/authorize",
+          platformTokenUrl:
+            "https://harly.example.com/api/integrations/tao/lti/token",
           platformJwksUrl:
             "https://harly.example.com/api/integrations/tao/lti/jwks",
+          taoOidcInitiationUrl:
+            "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
+          taoJwksUrl:
+            "https://tao.example.com/auth-server/.well-known/jwks.json",
+          taoToolAudience: "https://tao.example.com/deliver",
+          taoDeliveryTargetLinkPattern:
+            "https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",
         },
       }),
     );
 
     expect(markup).toContain("Configured");
-    expect(markup).toContain("TAO instance URL");
-    expect(markup).toContain("TAO OIDC authentication URL");
-    expect(markup).toContain("TAO OAuth/token URL");
-    expect(markup).toContain("TAO JWKS URL");
-    expect(markup).toContain("TAO LTI launch/target URL");
+    expect(markup).toContain("TAO base URL");
+    expect(markup).toContain("TAO Tool configuration");
+    expect(markup).toContain("Client ID");
+    expect(markup).toContain("OIDC initiation URL");
+    expect(markup).toContain("Tool audience");
+    expect(markup).toContain("Delivery target-link pattern");
+    expect(markup).not.toContain("TAO OAuth/token URL");
+    expect(markup).not.toContain("Provided by TAO");
+    expect(markup).not.toContain("TAO LTI launch/target URL");
+    expect(markup).not.toContain("TAO Client Secret");
     expect(markup).toContain("https://harly.example.com");
+    expect(markup).toContain("OAuth Access Token URL");
+    expect(markup).toContain("Deployment ID");
     expect(markup).toContain("Not yet available");
     expect(markup).toContain("LTI 1.3 Assignment and Grade Services (AGS)");
     expect(markup).toContain("Harly application ID");
+    expect(markup).toContain("https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}");
+    expect(markup).not.toContain("Map friendly Harly names to deliveries");
     expect(markup).not.toContain("Coming soon");
   });
 });

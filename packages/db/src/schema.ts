@@ -939,19 +939,13 @@ export const workspaceSettings = pgTable("workspace_settings", {
   // URL is the only config; rooms are random slugs composed per interview.
   jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
   jitsiBaseUrl: text("jitsi_base_url"),
-  // TAO connection and LTI 1.3 registration values. Assessment definitions and
-  // assignments live in the dedicated domain tables below. The optional client
-  // secret uses the shared AES-256-GCM integration-secret encryption helper.
+  // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
+  // Existing launch settings remain until the launch flow is migrated.
   taoEnabled: boolean("tao_enabled").default(false).notNull(),
   taoInstanceUrl: text("tao_instance_url"),
   taoClientId: text("tao_client_id"),
-  taoClientSecretCiphertext: text("tao_client_secret_ciphertext"),
-  taoClientSecretIv: text("tao_client_secret_iv"),
-  taoClientSecretTag: text("tao_client_secret_tag"),
   taoDeploymentId: text("tao_deployment_id"),
   taoOidcAuthUrl: text("tao_oidc_auth_url"),
-  taoOauthTokenUrl: text("tao_oauth_token_url"),
-  taoJwksUrl: text("tao_jwks_url"),
   taoLaunchUrl: text("tao_launch_url"),
   taoLastConnectionStatus: text("tao_last_connection_status"),
   taoLastConnectionError: text("tao_last_connection_error"),
@@ -997,7 +991,11 @@ export const workspaceSettings = pgTable("workspace_settings", {
     .default("email")
     .notNull(),
   ...timestamps(),
-});
+}, (table) => [
+  uniqueIndex("workspace_settings_tao_client_id_uidx")
+    .on(table.taoClientId)
+    .where(sql`${table.taoClientId} IS NOT NULL`),
+]);
 
 /**
  * Durable Slack notification queue. Slack is an external side effect, so the
@@ -1829,6 +1827,26 @@ export const taoLtiSigningKeys = pgTable(
       .on(table.organizationId)
       .where(sql`${table.active} = true`),
     index("tao_lti_signing_keys_org_idx").on(table.organizationId),
+  ],
+);
+
+export const taoLtiClientAssertions = pgTable(
+  "tao_lti_client_assertions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: text("client_id").notNull(),
+    jti: text("jti").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("tao_lti_client_assertions_client_jti_uidx").on(
+      table.clientId,
+      table.jti,
+    ),
+    index("tao_lti_client_assertions_expires_idx").on(table.expiresAt),
   ],
 );
 

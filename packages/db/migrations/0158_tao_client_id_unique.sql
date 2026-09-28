@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "workspace_settings_tao_client_id_uidx" ON "workspace_settings" USING btree ("tao_client_id") WHERE "workspace_settings"."tao_client_id" IS NOT NULL;

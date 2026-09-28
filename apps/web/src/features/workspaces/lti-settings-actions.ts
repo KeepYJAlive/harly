@@ -1,7 +1,8 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db, taoLtiSigningKeys, workspaceSettings } from "@harly/db";
@@ -9,11 +10,8 @@ import { db, taoLtiSigningKeys, workspaceSettings } from "@harly/db";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { requirePermission } from "@/features/workspaces/permissions-server";
 import { logAuditEvent } from "@/lib/audit-log";
-import { encryptSecret } from "@/lib/crypto";
-import {
-  normalizeOptionalTaoEndpoint,
-  normalizeTaoInstanceUrl,
-} from "@/lib/lti/validation";
+import { getTaoToolConfiguration } from "@/lib/lti/config";
+import { normalizeTaoInstanceUrl } from "@/lib/lti/validation";
 import { createLogger } from "@/lib/logger";
 import { safeFetchHttp } from "@/lib/ssrf";
 import { ensureTaoSigningKey } from "@/lib/tao/lti/keys";
@@ -34,13 +32,6 @@ const saveSchema = z.object({
     .trim()
     .min(1, "TAO instance URL is required.")
     .max(2_000),
-  clientId: z.string().trim().max(500).optional(),
-  clientSecret: z.string().max(4_000).optional(),
-  deploymentId: z.string().trim().max(500).optional(),
-  oidcAuthUrl: z.string().trim().max(2_000).optional(),
-  oauthTokenUrl: z.string().trim().max(2_000).optional(),
-  jwksUrl: z.string().trim().max(2_000).optional(),
-  launchUrl: z.string().trim().max(2_000).optional(),
 });
 
 export type SaveTaoSettingsInput = z.input<typeof saveSchema>;
@@ -63,25 +54,8 @@ export async function saveTaoSettingsAction(
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
 
   let instanceUrl: string;
-  let oidcAuthUrl: string | null;
-  let oauthTokenUrl: string | null;
-  let jwksUrl: string | null;
-  let launchUrl: string | null;
   try {
     instanceUrl = normalizeTaoInstanceUrl(parsed.data.instanceUrl);
-    oidcAuthUrl = normalizeOptionalTaoEndpoint(
-      parsed.data.oidcAuthUrl,
-      "TAO OIDC authentication URL",
-    );
-    oauthTokenUrl = normalizeOptionalTaoEndpoint(
-      parsed.data.oauthTokenUrl,
-      "TAO OAuth/token URL",
-    );
-    jwksUrl = normalizeOptionalTaoEndpoint(parsed.data.jwksUrl, "TAO JWKS URL");
-    launchUrl = normalizeOptionalTaoEndpoint(
-      parsed.data.launchUrl,
-      "TAO LTI launch/target URL",
-    );
   } catch (error) {
     return {
       ok: false,
@@ -92,9 +66,8 @@ export async function saveTaoSettingsAction(
   const [existing] = await db
     .select({
       instanceUrl: workspaceSettings.taoInstanceUrl,
-      clientSecretCiphertext: workspaceSettings.taoClientSecretCiphertext,
-      clientSecretIv: workspaceSettings.taoClientSecretIv,
-      clientSecretTag: workspaceSettings.taoClientSecretTag,
+      clientId: workspaceSettings.taoClientId,
+      deploymentId: workspaceSettings.taoDeploymentId,
       lastConnectionStatus: workspaceSettings.taoLastConnectionStatus,
       lastConnectionError: workspaceSettings.taoLastConnectionError,
       lastTestedAt: workspaceSettings.taoLastTestedAt,
@@ -103,24 +76,8 @@ export async function saveTaoSettingsAction(
     .where(eq(workspaceSettings.organizationId, context.organization.id))
     .limit(1);
 
-  let encryptedSecret = {
-    ciphertext: existing?.clientSecretCiphertext ?? null,
-    iv: existing?.clientSecretIv ?? null,
-    tag: existing?.clientSecretTag ?? null,
-  };
-  if (parsed.data.clientSecret) {
-    try {
-      encryptedSecret = encryptSecret(parsed.data.clientSecret);
-    } catch (error) {
-      return {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not encrypt the client secret.",
-      };
-    }
-  }
+  const clientId = existing?.clientId ?? `harly-tao-${randomUUID()}`;
+  const deploymentId = existing?.deploymentId ?? randomUUID();
 
   const instanceChanged = existing?.instanceUrl !== instanceUrl;
   try {
@@ -137,15 +94,8 @@ export async function saveTaoSettingsAction(
   const values = {
     taoEnabled: true,
     taoInstanceUrl: instanceUrl,
-    taoClientId: parsed.data.clientId || null,
-    taoClientSecretCiphertext: encryptedSecret.ciphertext,
-    taoClientSecretIv: encryptedSecret.iv,
-    taoClientSecretTag: encryptedSecret.tag,
-    taoDeploymentId: parsed.data.deploymentId || null,
-    taoOidcAuthUrl: oidcAuthUrl,
-    taoOauthTokenUrl: oauthTokenUrl,
-    taoJwksUrl: jwksUrl,
-    taoLaunchUrl: launchUrl,
+    taoClientId: clientId,
+    taoDeploymentId: deploymentId,
     taoLastConnectionStatus: instanceChanged
       ? null
       : (existing?.lastConnectionStatus ?? null),
@@ -161,7 +111,11 @@ export async function saveTaoSettingsAction(
     .values({ organizationId: context.organization.id, ...values })
     .onConflictDoUpdate({
       target: workspaceSettings.organizationId,
-      set: values,
+      set: {
+        ...values,
+        taoClientId: sql`COALESCE(${workspaceSettings.taoClientId}, ${clientId})`,
+        taoDeploymentId: sql`COALESCE(${workspaceSettings.taoDeploymentId}, ${deploymentId})`,
+      },
     });
 
   await logAuditEvent({
@@ -194,6 +148,7 @@ function nestedErrorCode(error: unknown): string | null {
 function connectionErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   const code = nestedErrorCode(error);
+  if (message.startsWith("TAO ")) return message;
   if (
     message.includes("blocked host") ||
     message.includes("blocked network") ||
@@ -285,19 +240,20 @@ export async function testTaoConnectionAction(input: {
   }
 
   try {
-    const response = await safeFetchHttp(
+    const allowPrivate = process.env.HARLY_ALLOW_PRIVATE_TAO === "true";
+    const requestInit: RequestInit = {
+      headers: { Accept: "application/json, text/html" },
+      signal: AbortSignal.timeout(8_000),
+    };
+    const baseResponse = await safeFetchHttp(
       target,
-      {
-        method: "GET",
-        headers: { Accept: "text/html,application/xhtml+xml,application/json" },
-        signal: AbortSignal.timeout(8_000),
-      },
-      process.env.HARLY_ALLOW_PRIVATE_TAO === "true",
+      { ...requestInit, method: "GET" },
+      allowPrivate,
     );
-    await response.body?.cancel();
+    await baseResponse.body?.cancel();
 
-    if (response.status < 200 || response.status >= 400) {
-      const error = `TAO returned HTTP ${response.status}; expected a successful response or redirect.`;
+    if (baseResponse.status < 200 || baseResponse.status >= 400) {
+      const error = `TAO base URL returned HTTP ${baseResponse.status}.`;
       await recordConnectionTest(
         context.organization.id,
         target,
@@ -305,8 +261,72 @@ export async function testTaoConnectionAction(input: {
         error,
       );
       revalidateTaoSettings();
-      return { ok: false, state: "error", statusCode: response.status, error };
+      return {
+        ok: false,
+        state: "error",
+        statusCode: baseResponse.status,
+        error,
+      };
     }
+
+    const tool = getTaoToolConfiguration(target);
+    if (!tool.oidcInitiationUrl || !tool.jwksUrl || !tool.audience) {
+      throw new Error("TAO Tool configuration could not be constructed.");
+    }
+    const oidcResponse = await safeFetchHttp(
+      tool.oidcInitiationUrl,
+      { ...requestInit, method: "GET" },
+      allowPrivate,
+    );
+    await oidcResponse.body?.cancel();
+    if (
+      oidcResponse.status === 404 ||
+      oidcResponse.status < 200 ||
+      oidcResponse.status >= 500
+    ) {
+      throw new Error(
+        `TAO OIDC initiation route returned HTTP ${oidcResponse.status}.`,
+      );
+    }
+
+    const jwksResponse = await safeFetchHttp(
+      tool.jwksUrl,
+      { ...requestInit, method: "GET" },
+      allowPrivate,
+    );
+    if (jwksResponse.status < 200 || jwksResponse.status >= 300) {
+      await jwksResponse.body?.cancel();
+      throw new Error(`TAO JWKS endpoint returned HTTP ${jwksResponse.status}.`);
+    }
+    let jwks: unknown;
+    try {
+      jwks = await jwksResponse.json();
+    } catch {
+      throw new Error("TAO JWKS endpoint returned invalid JSON.");
+    }
+    const keys =
+      jwks && typeof jwks === "object" && "keys" in jwks
+        ? (jwks as { keys?: unknown }).keys
+        : null;
+    const hasPublicRsaKey =
+      Array.isArray(keys) &&
+      keys.some((key) => {
+        if (!key || typeof key !== "object") return false;
+        const jwk = key as Record<string, unknown>;
+        return (
+          jwk.kty === "RSA" &&
+          typeof jwk.kid === "string" &&
+          typeof jwk.n === "string" &&
+          typeof jwk.e === "string" &&
+          !("d" in jwk) &&
+          (jwk.use === undefined || jwk.use === "sig") &&
+          (jwk.alg === undefined || jwk.alg === "RS256")
+        );
+      });
+    if (!hasPublicRsaKey) {
+      throw new Error("TAO JWKS response contains no valid public RSA key.");
+    }
+    new URL(tool.audience);
 
     await recordConnectionTest(
       context.organization.id,
@@ -321,10 +341,14 @@ export async function testTaoConnectionAction(input: {
       action: "integrations.tao_connection_tested",
       resourceType: "workspace_integration",
       resourceId: context.organization.id,
-      metadata: { provider: "tao", statusCode: response.status },
+      metadata: { provider: "tao", statusCode: baseResponse.status },
     });
     revalidateTaoSettings();
-    return { ok: true, state: "connected", statusCode: response.status };
+    return {
+      ok: true,
+      state: "connected",
+      statusCode: baseResponse.status,
+    };
   } catch (error) {
     log.warn({ error }, "TAO connection test failed");
     const message = connectionErrorMessage(error);
@@ -349,14 +373,7 @@ export async function disconnectTaoAction(): Promise<TaoSettingsActionResult> {
         taoEnabled: false,
         taoInstanceUrl: null,
         taoClientId: null,
-        taoClientSecretCiphertext: null,
-        taoClientSecretIv: null,
-        taoClientSecretTag: null,
         taoDeploymentId: null,
-        taoOidcAuthUrl: null,
-        taoOauthTokenUrl: null,
-        taoJwksUrl: null,
-        taoLaunchUrl: null,
         taoLastConnectionStatus: null,
         taoLastConnectionError: null,
         taoLastTestedAt: null,

@@ -48,7 +48,6 @@ import { getWorkspaceTelegramStatus } from "@/lib/telegram/config";
 import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getZoomConfig } from "@/lib/zoom/config";
 import { getWorkspaceTaoStatus } from "@/lib/lti/config";
-import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
 import {
   getEsignWebhookBaseUrl,
   getHarlyPublicOrigin,
@@ -333,14 +332,10 @@ async function renderPanel(
       );
     }
     case "tao": {
-      const [status, assessments] = await Promise.all([
-        getWorkspaceTaoStatus(ctx.organizationId),
-        listTaoAssessmentDefinitions(ctx.organizationId),
-      ]);
+      const status = await getWorkspaceTaoStatus(ctx.organizationId);
       return (
         <TaoConnectPanel
           status={status}
-          assessments={assessments}
           canEdit={ctx.canEdit}
           tileClassName={integration.tileClassName}
           description={integration.detail}

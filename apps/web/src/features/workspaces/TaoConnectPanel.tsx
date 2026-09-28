@@ -24,8 +24,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TaoAssessmentsSection } from "@/features/assessments/TaoAssessmentsSection";
-import type { TaoAssessmentDefinitionItem } from "@/features/assessments/types";
 
 function TaoLogo({ className }: { className?: string }) {
   return <ClipboardCheck className={className} />;
@@ -52,28 +50,17 @@ type LocalTestState = {
 
 export function TaoConnectPanel({
   status,
-  assessments,
   canEdit,
   tileClassName,
   description,
 }: {
   status: WorkspaceTaoStatus;
-  assessments: TaoAssessmentDefinitionItem[];
   canEdit: boolean;
   tileClassName: string;
   description: string;
 }) {
   const router = useRouter();
   const [instanceUrl, setInstanceUrl] = useState(status.instanceUrl ?? "");
-  const [clientId, setClientId] = useState(status.clientId ?? "");
-  const [clientSecret, setClientSecret] = useState("");
-  const [deploymentId, setDeploymentId] = useState(status.deploymentId ?? "");
-  const [oidcAuthUrl, setOidcAuthUrl] = useState(status.oidcAuthUrl ?? "");
-  const [oauthTokenUrl, setOauthTokenUrl] = useState(
-    status.oauthTokenUrl ?? "",
-  );
-  const [jwksUrl, setJwksUrl] = useState(status.jwksUrl ?? "");
-  const [launchUrl, setLaunchUrl] = useState(status.launchUrl ?? "");
   const [testState, setTestState] = useState<LocalTestState>(null);
   const [saving, startSave] = useTransition();
   const [testing, startTest] = useTransition();
@@ -85,19 +72,11 @@ export function TaoConnectPanel({
     startSave(async () => {
       const result = await saveTaoSettingsAction({
         instanceUrl,
-        clientId,
-        clientSecret,
-        deploymentId,
-        oidcAuthUrl,
-        oauthTokenUrl,
-        jwksUrl,
-        launchUrl,
       });
       if (!result.ok) {
         toast.error(result.error ?? "Could not save TAO settings.");
         return;
       }
-      setClientSecret("");
       setTestState(null);
       toast.success("TAO settings saved");
       router.refresh();
@@ -155,7 +134,7 @@ export function TaoConnectPanel({
 
         <Field
           id="tao-instance-url"
-          label="TAO instance URL"
+          label="TAO base URL"
           value={instanceUrl}
           onChange={(value) => {
             setInstanceUrl(value);
@@ -163,6 +142,7 @@ export function TaoConnectPanel({
           }}
           placeholder="https://tao.example.com"
           required
+          disabled={!canEdit}
         />
 
         {testState || status.lastConnectionError ? (
@@ -224,66 +204,34 @@ export function TaoConnectPanel({
 
       <Card className="space-y-6 p-6">
         <SectionIntro
-          title="LTI 1.3 configuration"
-          description="Enter the exact registration values exposed by your TAO deployment. Endpoint paths are intentionally not inferred."
+          title="TAO Tool configuration"
+          description="TAO is the LTI 1.3 Tool. Its verified endpoints are derived from this base URL."
         />
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field
-            id="tao-client-id"
-            label="Client ID"
-            value={clientId}
-            onChange={setClientId}
-            placeholder="Provided by TAO"
+        <div className="divide-y rounded-xl border">
+          <PlatformValue label="TAO base URL" value={status.instanceUrl} />
+          <PlatformValue
+            label="OIDC initiation URL"
+            value={status.taoOidcInitiationUrl}
           />
-          <Field
-            id="tao-deployment-id"
-            label="Deployment ID"
-            value={deploymentId}
-            onChange={setDeploymentId}
-            placeholder="Deployment identifier"
-          />
-          <Field
-            id="tao-client-secret"
-            label="Client secret (optional)"
-            value={clientSecret}
-            onChange={setClientSecret}
-            placeholder={
-              status.hasClientSecret
-                ? "Stored securely — leave blank to keep it"
-                : "Only if supplied by TAO"
-            }
-            type="password"
-            hint="Encrypted before storage and never returned to this page."
-          />
-          <div className="hidden sm:block" />
-          <Field
-            id="tao-oidc-auth-url"
-            label="TAO OIDC authentication URL"
-            value={oidcAuthUrl}
-            onChange={setOidcAuthUrl}
-            placeholder="https://tao.example.com/…"
-          />
-          <Field
-            id="tao-oauth-token-url"
-            label="TAO OAuth/token URL"
-            value={oauthTokenUrl}
-            onChange={setOauthTokenUrl}
-            placeholder="https://tao.example.com/…"
-          />
-          <Field
-            id="tao-jwks-url"
+          <PlatformValue
             label="TAO JWKS URL"
-            value={jwksUrl}
-            onChange={setJwksUrl}
-            placeholder="https://tao.example.com/…"
+            value={status.taoJwksUrl}
           />
-          <Field
-            id="tao-launch-url"
-            label="TAO LTI launch/target URL"
-            value={launchUrl}
-            onChange={setLaunchUrl}
-            placeholder="https://tao.example.com/…"
+          <PlatformValue
+            label="Tool audience"
+            value={status.taoToolAudience}
           />
+          <div className="flex flex-col gap-2 px-4 py-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              Delivery target-link pattern
+            </p>
+            <p className="break-all font-mono text-xs">
+              {status.taoDeliveryTargetLinkPattern ?? "Not available"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Informational only. A delivery ID is assessment-specific.
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -293,24 +241,29 @@ export function TaoConnectPanel({
           description="Values from Harly that will be entered into TAO during platform registration."
         />
         <div className="divide-y rounded-xl border">
-          <PlatformValue label="Harly issuer" value={status.platformIssuer} />
+          <PlatformValue label="Issuer" value={status.platformIssuer} />
           <PlatformValue
-            label="Harly OIDC authentication URL"
+            label="Client ID"
+            value={status.clientId}
+          />
+          <PlatformValue
+            label="Deployment ID"
+            value={status.deploymentId}
+          />
+          <PlatformValue
+            label="OIDC Authentication URL"
             value={status.platformAuthorizationUrl}
           />
           <PlatformValue
-            label="Harly JWKS URL"
-            value={status.platformJwksUrl}
+            label="OAuth Access Token URL"
+            value={status.platformTokenUrl}
           />
+          <PlatformValue label="JWKS URL" value={status.platformJwksUrl} />
           <UnavailableValue
-            label="AGS endpoints"
-            detail="Available in a later phase"
+            label="AGS service URL"
+            detail="Assessment result storage is a later phase"
           />
         </div>
-      </Card>
-
-      <Card className="space-y-5 p-6">
-        <TaoAssessmentsSection assessments={assessments} canEdit={canEdit} />
       </Card>
 
       <Card className="space-y-5 p-6">
@@ -356,6 +309,7 @@ function Field({
   onChange,
   placeholder,
   required = false,
+  disabled = false,
   type = "url",
   hint,
 }: {
@@ -365,6 +319,7 @@ function Field({
   onChange: (value: string) => void;
   placeholder: string;
   required?: boolean;
+  disabled?: boolean;
   type?: "url" | "text" | "password";
   hint?: string;
 }) {
@@ -378,7 +333,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}
-        disabled={false}
+        disabled={disabled}
         autoComplete="off"
         className="font-mono text-xs"
       />
@@ -387,26 +342,36 @@ function Field({
   );
 }
 
-function PlatformValue({ label, value }: { label: string; value: string }) {
+function PlatformValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="mt-0.5 truncate font-mono text-xs">{value}</p>
+        <p className="mt-0.5 truncate font-mono text-xs">
+          {value ?? "Generated or derived after saving TAO settings"}
+        </p>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="self-start sm:self-auto"
-        onClick={() => {
-          void navigator.clipboard.writeText(value);
-          toast.success(`${label} copied`);
-        }}
-      >
-        <Copy className="size-3.5" />
-        Copy
-      </Button>
+      {value ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start sm:self-auto"
+          onClick={() => {
+            void navigator.clipboard.writeText(value);
+            toast.success(`${label} copied`);
+          }}
+        >
+          <Copy className="size-3.5" />
+          Copy
+        </Button>
+      ) : null}
     </div>
   );
 }

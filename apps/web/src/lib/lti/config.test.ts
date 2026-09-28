@@ -20,12 +20,7 @@ vi.mock("@harly/db", () => ({
     taoEnabled: "taoEnabled",
     taoInstanceUrl: "taoInstanceUrl",
     taoClientId: "taoClientId",
-    taoClientSecretCiphertext: "taoClientSecretCiphertext",
     taoDeploymentId: "taoDeploymentId",
-    taoOidcAuthUrl: "taoOidcAuthUrl",
-    taoOauthTokenUrl: "taoOauthTokenUrl",
-    taoJwksUrl: "taoJwksUrl",
-    taoLaunchUrl: "taoLaunchUrl",
     taoLastConnectionStatus: "taoLastConnectionStatus",
     taoLastConnectionError: "taoLastConnectionError",
     taoLastTestedAt: "taoLastTestedAt",
@@ -38,7 +33,7 @@ vi.mock("@/lib/public-origin", () => ({
   getHarlyPublicOrigin: mocks.getHarlyPublicOrigin,
 }));
 
-import { getWorkspaceTaoStatus } from "./config";
+import { getTaoToolConfiguration, getWorkspaceTaoStatus } from "./config";
 
 describe("TAO connection status", () => {
   beforeEach(() => {
@@ -47,18 +42,30 @@ describe("TAO connection status", () => {
     mocks.getHarlyPublicOrigin.mockReturnValue("https://harly.example.com");
   });
 
+  it("derives stable TAO Tool endpoints from the configured base origin", () => {
+    expect(getTaoToolConfiguration("https://tao.example.com/tenant")).toEqual({
+      oidcInitiationUrl:
+        "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
+      jwksUrl: "https://tao.example.com/auth-server/.well-known/jwks.json",
+      audience: "https://tao.example.com/deliver",
+      deliveryTargetLinkPattern:
+        "https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",
+    });
+    expect(getTaoToolConfiguration(null)).toEqual({
+      oidcInitiationUrl: null,
+      jwksUrl: null,
+      audience: null,
+      deliveryTargetLinkPattern: null,
+    });
+  });
+
   it("reports Configured after save but before a successful connection test", async () => {
     mocks.limit.mockResolvedValueOnce([
       {
         enabled: true,
         instanceUrl: "https://tao.example.com",
-        clientId: "client-1",
-        clientSecretCiphertext: "encrypted",
+        clientId: "harly-tao-client-1",
         deploymentId: "deployment-1",
-        oidcAuthUrl: null,
-        oauthTokenUrl: null,
-        jwksUrl: null,
-        launchUrl: null,
         lastConnectionStatus: null,
         lastConnectionError: null,
         lastTestedAt: null,
@@ -68,8 +75,18 @@ describe("TAO connection status", () => {
     await expect(getWorkspaceTaoStatus("workspace-1")).resolves.toMatchObject({
       configured: true,
       connectionState: "configured",
-      hasClientSecret: true,
+      clientId: "harly-tao-client-1",
+      deploymentId: "deployment-1",
       platformIssuer: "https://harly.example.com",
+      platformTokenUrl:
+        "https://harly.example.com/api/integrations/tao/lti/token",
+      taoOidcInitiationUrl:
+        "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
+      taoJwksUrl:
+        "https://tao.example.com/auth-server/.well-known/jwks.json",
+      taoToolAudience: "https://tao.example.com/deliver",
+      taoDeliveryTargetLinkPattern:
+        "https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",
     });
   });
 
