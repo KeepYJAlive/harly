@@ -8,6 +8,7 @@ import {
   Copy,
   Loader2,
   PlugZap,
+  Rocket,
   Unplug,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -53,11 +54,13 @@ export function TaoConnectPanel({
   canEdit,
   tileClassName,
   description,
+  manualTestLaunchEnabled,
 }: {
   status: WorkspaceTaoStatus;
   canEdit: boolean;
   tileClassName: string;
   description: string;
+  manualTestLaunchEnabled: boolean;
 }) {
   const router = useRouter();
   const [instanceUrl, setInstanceUrl] = useState(status.instanceUrl ?? "");
@@ -67,6 +70,11 @@ export function TaoConnectPanel({
   const [disconnecting, startDisconnect] = useTransition();
 
   const displayedState = testState?.state ?? status.connectionState;
+  const manualTestLaunchReady =
+    manualTestLaunchEnabled &&
+    canEdit &&
+    status.configured &&
+    Boolean(status.clientId && status.deploymentId);
 
   function save() {
     startSave(async () => {
@@ -264,6 +272,49 @@ export function TaoConnectPanel({
             detail="Assessment result storage is a later phase"
           />
         </div>
+      </Card>
+
+      <Card className="space-y-4 p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <SectionIntro
+            title="Manual LTI test"
+            description='Launch the registered TAO delivery “Production Test” to verify the OIDC and LTI Resource Link flow. This test does not store a result.'
+          />
+          {manualTestLaunchReady ? (
+            <Button asChild className="self-start sm:self-auto">
+              <a href="/api/integrations/tao/lti/test-launch">
+                <Rocket className="size-4" />
+                Launch Production Test
+              </a>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              disabled
+              className="self-start sm:self-auto"
+            >
+              <Rocket className="size-4" />
+              Launch Production Test
+            </Button>
+          )}
+        </div>
+        {!manualTestLaunchEnabled ? (
+          <p className="text-xs text-muted-foreground">
+            Manual test launch is disabled. Set
+            {" "}
+            <code>HARLY_TAO_MANUAL_TEST_LAUNCH=true</code> to enable it in a
+            production build.
+          </p>
+        ) : !canEdit ? (
+          <p className="text-xs text-muted-foreground">
+            Owner or administrator access is required to run this test.
+          </p>
+        ) : !status.configured || !status.clientId || !status.deploymentId ? (
+          <p className="text-xs text-muted-foreground">
+            Save a complete TAO platform configuration before running this
+            test.
+          </p>
+        ) : null}
       </Card>
 
       <Card className="space-y-5 p-6">
