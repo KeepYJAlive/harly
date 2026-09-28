@@ -73,9 +73,7 @@ describe("TaoConnectPanel", () => {
     expect(markup).toContain("Harly application ID");
     expect(markup).toContain("Manual LTI test");
     expect(markup).toContain("Launch Production Test");
-    expect(markup).toContain(
-      'href="/api/integrations/tao/lti/test-launch"',
-    );
+    expect(markup).toContain('href="/assessments/take-assessment"');
     expect(markup).toContain("https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}");
     expect(markup).not.toContain("Map friendly Harly names to deliveries");
     expect(markup).not.toContain("Coming soon");
@@ -118,9 +116,7 @@ describe("TaoConnectPanel", () => {
 
     expect(markup).toContain("Launch Production Test");
     expect(markup).toContain("disabled");
-    expect(markup).not.toContain(
-      'href="/api/integrations/tao/lti/test-launch"',
-    );
+    expect(markup).not.toContain('href="/assessments/take-assessment"');
     expect(markup).toContain("HARLY_TAO_MANUAL_TEST_LAUNCH=true");
   });
 });
