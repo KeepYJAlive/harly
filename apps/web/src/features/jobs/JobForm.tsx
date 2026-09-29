@@ -58,6 +58,7 @@ type JobFormProps = {
   railActions?: ReactNode;
   previewWorkspace?: (WorkspaceBoardBranding & { id: string }) | null;
   previewConfig?: CareerPageConfig | null;
+  assessmentConfiguration?: ReactNode;
 };
 
 function initialSectionsFor(job?: Job): JobContentSection[] {
@@ -197,6 +198,7 @@ export function JobForm({
   railActions,
   previewWorkspace,
   previewConfig,
+  assessmentConfiguration,
 }: JobFormProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -604,6 +606,7 @@ export function JobForm({
                         workspaceMembers={workspaceMembers}
                         aiConfigured={aiConfigured}
                         candidatePoolCount={candidatePoolCount}
+                        assessmentConfiguration={assessmentConfiguration}
                       />
                     </div>
                   ) : null}

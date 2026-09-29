@@ -27,8 +27,9 @@ vi.mock("@harly/db", () => ({
     jobId: "stage.jobId",
     workspaceId: "stage.workspaceId",
   },
-  pipelineStageAssessments: {
+  jobStageAssessments: {
     organizationId: "configuration.organizationId",
+    jobId: "configuration.jobId",
     stageId: "configuration.stageId",
     assessmentDefinitionId: "configuration.definitionId",
   },
@@ -70,9 +71,12 @@ function prepareQueries(input: {
   integrationEnabled: boolean;
   definitions?: Array<{ id: string; active: boolean }>;
   existingIds?: string[];
+  stageExists?: boolean;
 }) {
   mocks.select
-    .mockReturnValueOnce(limited([{ id: STAGE_ID }]))
+    .mockReturnValueOnce(
+      limited(input.stageExists === false ? [] : [{ id: STAGE_ID }]),
+    )
     .mockReturnValueOnce(limited([{ enabled: input.integrationEnabled }]))
     .mockReturnValueOnce(rows(input.definitions ?? []))
     .mockReturnValueOnce(
@@ -141,6 +145,38 @@ describe("pipeline stage assessment configuration", () => {
     expect(result.error).toContain("active TAO assessments");
   });
 
+  it("rejects an assessment from another organization", async () => {
+    prepareQueries({ integrationEnabled: true, definitions: [] });
+    const result = await saveStageAssessmentConfigurationAction({
+      jobId: JOB_ID,
+      stageId: STAGE_ID,
+      enabled: true,
+      assessmentDefinitionIds: [DEFINITION_A],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("this organization");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stage that does not belong to the selected job", async () => {
+    prepareQueries({
+      integrationEnabled: true,
+      definitions: [{ id: DEFINITION_A, active: true }],
+      stageExists: false,
+    });
+    const result = await saveStageAssessmentConfigurationAction({
+      jobId: JOB_ID,
+      stageId: STAGE_ID,
+      enabled: true,
+      assessmentDefinitionIds: [DEFINITION_A],
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "Pipeline stage not found.",
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it("saves multiple active assessments and scopes every write", async () => {
     prepareQueries({
       integrationEnabled: true,
@@ -169,11 +205,38 @@ describe("pipeline stage assessment configuration", () => {
     expect(insertedValues).toHaveBeenCalledWith([
       expect.objectContaining({
         organizationId: "organization-a",
+        jobId: JOB_ID,
         stageId: STAGE_ID,
         assessmentDefinitionId: DEFINITION_A,
       }),
       expect.objectContaining({ assessmentDefinitionId: DEFINITION_B }),
     ]);
+  });
+
+  it("allows a job stage to have zero assessments by disabling assignment", async () => {
+    mocks.select
+      .mockReturnValueOnce(limited([{ id: STAGE_ID }]))
+      .mockReturnValueOnce(limited([{ enabled: true }]))
+      .mockReturnValueOnce(rows([{ assessmentDefinitionId: DEFINITION_A }]));
+    const tx = {
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      })),
+      delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      insert: vi.fn(),
+    };
+    mocks.transaction.mockImplementationOnce(async (callback) => callback(tx));
+
+    await expect(
+      saveStageAssessmentConfigurationAction({
+        jobId: JOB_ID,
+        stageId: STAGE_ID,
+        enabled: false,
+        assessmentDefinitionIds: [],
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(tx.delete).toHaveBeenCalledOnce();
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
   it("preserves an already configured inactive definition on edit", async () => {

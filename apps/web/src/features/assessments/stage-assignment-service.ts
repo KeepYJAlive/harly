@@ -8,8 +8,8 @@ import {
   assessmentDefinitions,
   candidatePortalNotifications,
   db,
+  jobStageAssessments,
   jobStages,
-  pipelineStageAssessments,
   workspaceSettings,
 } from "@harly/db";
 import { createOpaqueToken, hashOpaqueToken } from "@/lib/tao/lti/tokens";
@@ -25,6 +25,7 @@ export async function createStageAssessmentAssignments(
   tx: DatabaseTransaction,
   input: {
     organizationId: string;
+    jobId: string;
     applicationId: string;
     candidateId: string;
     stageId: string;
@@ -34,15 +35,16 @@ export async function createStageAssessmentAssignments(
   const configured = await tx
     .select({
       stageName: jobStages.name,
-      assessmentDefinitionId: pipelineStageAssessments.assessmentDefinitionId,
+      assessmentDefinitionId: jobStageAssessments.assessmentDefinitionId,
       providerResourceId: assessmentDefinitions.externalId,
     })
-    .from(pipelineStageAssessments)
+    .from(jobStageAssessments)
     .innerJoin(
       jobStages,
       and(
-        eq(jobStages.id, pipelineStageAssessments.stageId),
-        eq(jobStages.workspaceId, pipelineStageAssessments.organizationId),
+        eq(jobStages.id, jobStageAssessments.stageId),
+        eq(jobStages.workspaceId, jobStageAssessments.organizationId),
+        eq(jobStages.jobId, jobStageAssessments.jobId),
         eq(jobStages.assignAssessmentsOnEntry, true),
       ),
     )
@@ -51,11 +53,11 @@ export async function createStageAssessmentAssignments(
       and(
         eq(
           assessmentDefinitions.id,
-          pipelineStageAssessments.assessmentDefinitionId,
+          jobStageAssessments.assessmentDefinitionId,
         ),
         eq(
           assessmentDefinitions.organizationId,
-          pipelineStageAssessments.organizationId,
+          jobStageAssessments.organizationId,
         ),
         eq(assessmentDefinitions.provider, "tao"),
         eq(assessmentDefinitions.active, true),
@@ -66,15 +68,16 @@ export async function createStageAssessmentAssignments(
       and(
         eq(
           workspaceSettings.organizationId,
-          pipelineStageAssessments.organizationId,
+          jobStageAssessments.organizationId,
         ),
         eq(workspaceSettings.taoEnabled, true),
       ),
     )
     .where(
       and(
-        eq(pipelineStageAssessments.organizationId, input.organizationId),
-        eq(pipelineStageAssessments.stageId, input.stageId),
+        eq(jobStageAssessments.organizationId, input.organizationId),
+        eq(jobStageAssessments.jobId, input.jobId),
+        eq(jobStageAssessments.stageId, input.stageId),
       ),
     );
 
@@ -85,6 +88,7 @@ export async function createStageAssessmentAssignments(
     .values(
       configured.map((item) => ({
         organizationId: input.organizationId,
+        jobId: input.jobId,
         applicationId: input.applicationId,
         assessmentDefinitionId: item.assessmentDefinitionId,
         providerResourceId: item.providerResourceId,

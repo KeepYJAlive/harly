@@ -550,6 +550,7 @@ export async function moveApplicationStageForApi(input: {
         if (stage.assignAssessmentsOnEntry) {
           await createStageAssessmentAssignments(tx, {
             organizationId: input.workspaceId,
+            jobId: application.jobId,
             applicationId: input.applicationId,
             candidateId: application.candidateId,
             stageId: input.toStageId,
@@ -738,6 +739,7 @@ async function setApplicationStatus(
           if (terminalStage.assignAssessmentsOnEntry) {
             await createStageAssessmentAssignments(tx, {
               organizationId: input.workspaceId,
+              jobId: application.jobId,
               applicationId: input.applicationId,
               candidateId: application.candidateId,
               stageId: terminalStage.id,

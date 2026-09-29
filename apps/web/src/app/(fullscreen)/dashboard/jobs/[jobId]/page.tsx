@@ -21,6 +21,11 @@ import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
 import { countCandidatePool } from "@/features/matching/data";
 import { getWorkspaceContext } from "@/features/workspaces/context";
+import { can } from "@/features/workspaces/permissions-server";
+import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
+import { listJobStageAssessmentConfiguration } from "@/features/assessments/stage-data";
+import { getWorkspaceTaoStatus } from "@/lib/lti/config";
+import { PipelineStageAssessmentsDialog } from "@/features/pipeline/PipelineStageAssessmentsDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +55,20 @@ export default async function DashboardJobPage({
     notFound();
   }
 
-  const { job } = result;
+  const { job, stages } = result;
+  const [assessmentDefinitions, stageAssessmentRows, taoStatus, canEditJobs] =
+    await Promise.all([
+      listTaoAssessmentDefinitions(workspace.id),
+      listJobStageAssessmentConfiguration(workspace.id, job.id),
+      getWorkspaceTaoStatus(workspace.id),
+      can("jobs:edit"),
+    ]);
+  const configuredDefinitionIdsByStage = stageAssessmentRows.reduce<
+    Record<string, string[]>
+  >((configuration, row) => {
+    (configuration[row.stageId] ??= []).push(row.assessmentDefinitionId);
+    return configuration;
+  }, {});
   const appUrl = getHarlyPublicOrigin();
   // Canonical public job details (overview), never the apply form.
   const publicUrl = `${appUrl}/board/${workspace.slug}/jobs/${job.slug}`;
@@ -69,6 +87,16 @@ export default async function DashboardJobPage({
       statusBadge={<JobStatusBadge status={job.status} />}
       previewWorkspace={careerPageData?.workspace ?? null}
       previewConfig={careerPageData?.config ?? null}
+      assessmentConfiguration={
+        <PipelineStageAssessmentsDialog
+          jobId={job.id}
+          stages={stages}
+          assessments={assessmentDefinitions}
+          configuredDefinitionIdsByStage={configuredDefinitionIdsByStage}
+          taoEnabled={taoStatus.enabled}
+          canEdit={canEditJobs}
+        />
+      }
       headerActions={
         <JobActionsMenu jobId={job.id} slug={job.slug} redirectAfterTrash />
       }

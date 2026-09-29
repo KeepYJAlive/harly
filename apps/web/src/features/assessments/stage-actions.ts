@@ -7,8 +7,8 @@ import { z } from "zod";
 import {
   assessmentDefinitions,
   db,
+  jobStageAssessments,
   jobStages,
-  pipelineStageAssessments,
   workspaceSettings,
 } from "@harly/db";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
@@ -79,13 +79,14 @@ export async function saveStageAssessmentConfigurationAction(
       db
         .select({
           assessmentDefinitionId:
-            pipelineStageAssessments.assessmentDefinitionId,
+            jobStageAssessments.assessmentDefinitionId,
         })
-        .from(pipelineStageAssessments)
+        .from(jobStageAssessments)
         .where(
           and(
-            eq(pipelineStageAssessments.organizationId, organizationId),
-            eq(pipelineStageAssessments.stageId, parsed.data.stageId),
+            eq(jobStageAssessments.organizationId, organizationId),
+            eq(jobStageAssessments.jobId, parsed.data.jobId),
+            eq(jobStageAssessments.stageId, parsed.data.stageId),
           ),
         ),
     ]);
@@ -129,18 +130,20 @@ export async function saveStageAssessmentConfigurationAction(
       );
 
     await tx
-      .delete(pipelineStageAssessments)
+      .delete(jobStageAssessments)
       .where(
         and(
-          eq(pipelineStageAssessments.organizationId, organizationId),
-          eq(pipelineStageAssessments.stageId, parsed.data.stageId),
+          eq(jobStageAssessments.organizationId, organizationId),
+          eq(jobStageAssessments.jobId, parsed.data.jobId),
+          eq(jobStageAssessments.stageId, parsed.data.stageId),
         ),
       );
 
     if (parsed.data.enabled && definitionIds.length > 0) {
-      await tx.insert(pipelineStageAssessments).values(
+      await tx.insert(jobStageAssessments).values(
         definitionIds.map((assessmentDefinitionId) => ({
           organizationId,
+          jobId: parsed.data.jobId,
           stageId: parsed.data.stageId,
           assessmentDefinitionId,
         })),
@@ -163,5 +166,6 @@ export async function saveStageAssessmentConfigurationAction(
   });
 
   revalidatePath(`/dashboard/pipeline`);
+  revalidatePath(`/dashboard/jobs/${parsed.data.jobId}`);
   return { ok: true };
 }

@@ -1,5 +1,6 @@
 import { CheckCircle2, Rocket } from "lucide-react";
 import type { Job } from "@harly/db";
+import type { ReactNode } from "react";
 
 import type { HiringTeamMember, WorkspaceMemberOption } from "../hiring-team-data";
 import { JobHiringTeam } from "../JobHiringTeam";
@@ -23,6 +24,7 @@ export function ReviewSection({
   workspaceMembers,
   aiConfigured,
   candidatePoolCount,
+  assessmentConfiguration,
 }: {
   job?: Job;
   title: string;
@@ -34,6 +36,7 @@ export function ReviewSection({
   workspaceMembers?: WorkspaceMemberOption[];
   aiConfigured?: boolean;
   candidatePoolCount?: number;
+  assessmentConfiguration?: ReactNode;
 }) {
   return (
     <div data-section="review" className="space-y-5">
@@ -57,6 +60,20 @@ export function ReviewSection({
 
       {job ? (
         <>
+          <div className="rounded-2xl border border-border/70 bg-card p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-display text-[15px] font-semibold tracking-tight">
+                  Stage assessments
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose the assessments this job assigns when an applicant
+                  enters a stage.
+                </p>
+              </div>
+              {assessmentConfiguration}
+            </div>
+          </div>
           <JobHiringTeam jobId={job.id} team={hiringTeam ?? []} members={workspaceMembers ?? []} />
           {reviewVisited ? (
             <>
@@ -77,7 +94,8 @@ export function ReviewSection({
           <p className="text-sm font-medium">Hiring team, AI matching, and live preview unlock after you publish</p>
           <p className="max-w-sm text-sm text-muted-foreground">
             Save this job first. You&apos;ll be able to assign a hiring team, rank your candidate pool, and preview
-            the public listing right after.
+            the public listing right after. Stage assessments can also be
+            configured once the job&apos;s stage rows exist.
           </p>
         </div>
       )}

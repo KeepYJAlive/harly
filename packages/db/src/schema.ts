@@ -1446,6 +1446,11 @@ export const jobStages = pgTable(
     uniqueIndex("job_stages_job_order_idx").on(table.jobId, table.order),
     uniqueIndex("job_stages_job_name_idx").on(table.jobId, table.name),
     uniqueIndex("job_stages_workspace_id_uidx").on(table.workspaceId, table.id),
+    uniqueIndex("job_stages_workspace_job_id_uidx").on(
+      table.workspaceId,
+      table.jobId,
+      table.id,
+    ),
     index("job_stages_workspace_idx").on(table.workspaceId),
     index("job_stages_job_idx").on(table.jobId),
   ],
@@ -1663,6 +1668,11 @@ export const applications = pgTable(
       table.workspaceId,
       table.id,
     ),
+    uniqueIndex("applications_workspace_job_id_uidx").on(
+      table.workspaceId,
+      table.jobId,
+      table.id,
+    ),
     index("applications_workspace_status_idx").on(
       table.workspaceId,
       table.status,
@@ -1722,14 +1732,17 @@ export const assessmentDefinitions = pgTable(
   ],
 );
 
-/** Organization-safe stage configuration for locally assigned assessments. */
-export const pipelineStageAssessments = pgTable(
-  "pipeline_stage_assessments",
+/** Job-owned assessment configuration for a job's stage. */
+export const jobStageAssessments = pgTable(
+  "job_stage_assessments",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
     stageId: uuid("stage_id")
       .notNull()
       .references(() => jobStages.id, { onDelete: "cascade" }),
@@ -1739,18 +1752,23 @@ export const pipelineStageAssessments = pgTable(
     ...timestamps(),
   },
   (table) => [
-    uniqueIndex("pipeline_stage_assessments_stage_definition_uidx").on(
+    uniqueIndex("job_stage_assessments_job_stage_definition_uidx").on(
+      table.organizationId,
+      table.jobId,
       table.stageId,
       table.assessmentDefinitionId,
     ),
-    index("pipeline_stage_assessments_org_idx").on(table.organizationId),
-    index("pipeline_stage_assessments_definition_idx").on(
+    index("job_stage_assessments_org_job_idx").on(
+      table.organizationId,
+      table.jobId,
+    ),
+    index("job_stage_assessments_definition_idx").on(
       table.assessmentDefinitionId,
     ),
     foreignKey({
-      columns: [table.organizationId, table.stageId],
-      foreignColumns: [jobStages.workspaceId, jobStages.id],
-      name: "pipeline_stage_assessments_org_stage_fk",
+      columns: [table.organizationId, table.jobId, table.stageId],
+      foreignColumns: [jobStages.workspaceId, jobStages.jobId, jobStages.id],
+      name: "job_stage_assessments_org_job_stage_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.organizationId, table.assessmentDefinitionId],
@@ -1758,7 +1776,7 @@ export const pipelineStageAssessments = pgTable(
         assessmentDefinitions.organizationId,
         assessmentDefinitions.id,
       ],
-      name: "pipeline_stage_assessments_org_definition_fk",
+      name: "job_stage_assessments_org_definition_fk",
     }).onDelete("restrict"),
   ],
 );
@@ -1771,6 +1789,9 @@ export const assessmentAssignments = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
     applicationId: uuid("application_id")
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" }),
@@ -1795,9 +1816,9 @@ export const assessmentAssignments = pgTable(
     assignedById: text("assigned_by_id").references(() => user.id, {
       onDelete: "set null",
     }),
-    sourceStageId: uuid("source_stage_id").references(() => jobStages.id, {
-      onDelete: "set null",
-    }),
+    // Historical provenance: intentionally not a foreign key so deleting or
+    // replacing a job's stage configuration cannot erase the originating ID.
+    sourceStageId: uuid("source_stage_id"),
     metadata: jsonb("metadata")
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
@@ -1805,25 +1826,27 @@ export const assessmentAssignments = pgTable(
     ...timestamps(),
   },
   (table) => [
-    // Reassessment remains possible after a terminal state, while duplicate
-    // concurrently-active assignments are prevented.
-    uniqueIndex("assessment_assignments_active_application_definition_uidx")
-      .on(
-        table.organizationId,
-        table.applicationId,
-        table.assessmentDefinitionId,
-      )
-      .where(sql`${table.status} in ('assigned', 'started')`),
-    // A retry or re-entry into the same stage must never create another copy,
-    // including after the original assignment reaches a terminal status.
+    // Re-entry into one stage is one intent; another stage remains a distinct
+    // intent even when it selects the same assessment definition.
     uniqueIndex("assessment_assignments_stage_origin_uidx")
       .on(
         table.organizationId,
+        table.jobId,
         table.applicationId,
-        table.assessmentDefinitionId,
         table.sourceStageId,
+        table.assessmentDefinitionId,
       )
       .where(sql`${table.sourceStageId} is not null`),
+    uniqueIndex("assessment_assignments_active_manual_uidx")
+      .on(
+        table.organizationId,
+        table.jobId,
+        table.applicationId,
+        table.assessmentDefinitionId,
+      )
+      .where(
+        sql`${table.sourceStageId} is null and ${table.status} in ('assigned', 'started')`,
+      ),
     index("assessment_assignments_org_idx").on(table.organizationId),
     index("assessment_assignments_application_idx").on(table.applicationId),
     index("assessment_assignments_status_idx").on(
@@ -1833,6 +1856,15 @@ export const assessmentAssignments = pgTable(
     index("assessment_assignments_definition_idx").on(
       table.assessmentDefinitionId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.jobId, table.applicationId],
+      foreignColumns: [
+        applications.workspaceId,
+        applications.jobId,
+        applications.id,
+      ],
+      name: "assessment_assignments_org_job_application_fk",
+    }).onDelete("cascade"),
     foreignKey({
       columns: [table.organizationId, table.assessmentDefinitionId],
       foreignColumns: [
@@ -1923,10 +1955,8 @@ export const taoLtiClientAssertions = pgTable(
 
 export type AssessmentDefinition = typeof assessmentDefinitions.$inferSelect;
 export type NewAssessmentDefinition = typeof assessmentDefinitions.$inferInsert;
-export type PipelineStageAssessment =
-  typeof pipelineStageAssessments.$inferSelect;
-export type NewPipelineStageAssessment =
-  typeof pipelineStageAssessments.$inferInsert;
+export type JobStageAssessment = typeof jobStageAssessments.$inferSelect;
+export type NewJobStageAssessment = typeof jobStageAssessments.$inferInsert;
 export type AssessmentAssignment = typeof assessmentAssignments.$inferSelect;
 export type NewAssessmentAssignment = typeof assessmentAssignments.$inferInsert;
 

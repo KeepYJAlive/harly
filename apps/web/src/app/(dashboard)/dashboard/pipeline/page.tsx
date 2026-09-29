@@ -12,7 +12,7 @@ import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { can } from "@/features/workspaces/permissions-server";
 import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
-import { listPipelineStageAssessmentConfiguration } from "@/features/assessments/stage-data";
+import { listJobStageAssessmentConfiguration } from "@/features/assessments/stage-data";
 import { getWorkspaceTaoStatus } from "@/lib/lti/config";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ export default async function PipelinePage({
   const [assessmentDefinitions, stageAssessmentRows, taoStatus, canEditJobs] =
     await Promise.all([
       listTaoAssessmentDefinitions(workspace.id),
-      listPipelineStageAssessmentConfiguration(
+      listJobStageAssessmentConfiguration(
         workspace.id,
         data.selectedJob.id,
       ),

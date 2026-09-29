@@ -255,6 +255,7 @@ export async function moveApplicationInPipeline(
           const [application] = await tx
             .select({
               id: applications.id,
+              jobId: applications.jobId,
               candidateId: applications.candidateId,
               currentStageId: applications.currentStageId,
               updatedAtVersion: sql<string>`${applications.updatedAt}::text`,
@@ -384,6 +385,7 @@ export async function moveApplicationInPipeline(
             if (application.toStageAssignAssessmentsOnEntry) {
               await createStageAssessmentAssignments(tx, {
                 organizationId: input.workspaceId,
+                jobId: application.jobId,
                 applicationId: input.applicationId,
                 candidateId: application.candidateId,
                 stageId: input.toStageId,
@@ -674,6 +676,7 @@ export async function bulkMoveApplications(
           const [targetStage] = await tx
             .select({
               id: jobStages.id,
+              jobId: jobStages.jobId,
               name: jobStages.name,
               emailConfig: jobStages.emailConfig,
               assignAssessmentsOnEntry: jobStages.assignAssessmentsOnEntry,
@@ -862,6 +865,7 @@ export async function bulkMoveApplications(
                 if (!appData) continue;
                 await createStageAssessmentAssignments(tx, {
                   organizationId: input.workspaceId,
+                  jobId: targetStage.jobId,
                   applicationId,
                   candidateId: appData.candidateId,
                   stageId: input.toStageId,
@@ -1327,6 +1331,7 @@ export async function updateApplicationStatus(
               if (targetStage?.assignAssessmentsOnEntry) {
                 await createStageAssessmentAssignments(tx, {
                   organizationId: input.workspaceId,
+                  jobId: application.jobId,
                   applicationId: application.id,
                   candidateId: application.candidateId,
                   stageId: targetStageId,
