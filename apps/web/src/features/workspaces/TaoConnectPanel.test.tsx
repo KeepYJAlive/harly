@@ -44,6 +44,8 @@ describe("TaoConnectPanel", () => {
             "https://harly.example.com/api/integrations/tao/lti/token",
           platformJwksUrl:
             "https://harly.example.com/api/integrations/tao/lti/jwks",
+          platformAgsLineItemPattern:
+            "https://harly.example.com/api/integrations/tao/lti/ags/lineitems/{assignmentId}",
           taoOidcInitiationUrl:
             "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
           taoJwksUrl:
@@ -69,9 +71,9 @@ describe("TaoConnectPanel", () => {
     expect(markup).toContain("https://harly.example.com");
     expect(markup).toContain("OAuth Access Token URL");
     expect(markup).toContain("Deployment ID");
-    expect(markup).toContain("Not yet available");
+    expect(markup).toContain("AGS line-item URL pattern");
     expect(markup).toContain("LTI 1.3 Assignment and Grade Services (AGS)");
-    expect(markup).toContain("Harly application ID");
+    expect(markup).toContain("Stable opaque Harly application subject");
     expect(markup).toContain("Manual LTI test");
     expect(markup).toContain("Launch Production Test");
     expect(markup).toContain('href="/assessments/take-assessment"');
@@ -107,6 +109,8 @@ describe("TaoConnectPanel", () => {
             "https://opportunities.keepyjalive.org/api/integrations/tao/lti/token",
           platformJwksUrl:
             "https://opportunities.keepyjalive.org/api/integrations/tao/lti/jwks",
+          platformAgsLineItemPattern:
+            "https://opportunities.keepyjalive.org/api/integrations/tao/lti/ags/lineitems/{assignmentId}",
           taoOidcInitiationUrl:
             "https://assessment.keepyjalive.org/auth-server/lti1p3/oidc/initiation",
           taoJwksUrl:

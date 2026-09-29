@@ -7,8 +7,8 @@ import { z } from "zod";
 import {
   assessmentDefinitions,
   db,
+  jobStageAssessments,
   jobStages,
-  pipelineStageAssessments,
   workspaceSettings,
 } from "@harly/db";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
@@ -20,6 +20,8 @@ const configurationSchema = z.object({
   stageId: z.uuid(),
   enabled: z.boolean(),
   assessmentDefinitionIds: z.array(z.uuid()).max(50),
+  sendInvitation: z.boolean().default(false),
+  deadlineDays: z.number().int().min(1).max(365).nullable().default(null),
 });
 
 export type SaveStageAssessmentConfigurationInput = z.input<
@@ -79,13 +81,14 @@ export async function saveStageAssessmentConfigurationAction(
       db
         .select({
           assessmentDefinitionId:
-            pipelineStageAssessments.assessmentDefinitionId,
+            jobStageAssessments.assessmentDefinitionId,
         })
-        .from(pipelineStageAssessments)
+        .from(jobStageAssessments)
         .where(
           and(
-            eq(pipelineStageAssessments.organizationId, organizationId),
-            eq(pipelineStageAssessments.stageId, parsed.data.stageId),
+            eq(jobStageAssessments.organizationId, organizationId),
+            eq(jobStageAssessments.jobId, parsed.data.jobId),
+            eq(jobStageAssessments.stageId, parsed.data.stageId),
           ),
         ),
     ]);
@@ -129,20 +132,24 @@ export async function saveStageAssessmentConfigurationAction(
       );
 
     await tx
-      .delete(pipelineStageAssessments)
+      .delete(jobStageAssessments)
       .where(
         and(
-          eq(pipelineStageAssessments.organizationId, organizationId),
-          eq(pipelineStageAssessments.stageId, parsed.data.stageId),
+          eq(jobStageAssessments.organizationId, organizationId),
+          eq(jobStageAssessments.jobId, parsed.data.jobId),
+          eq(jobStageAssessments.stageId, parsed.data.stageId),
         ),
       );
 
     if (parsed.data.enabled && definitionIds.length > 0) {
-      await tx.insert(pipelineStageAssessments).values(
+      await tx.insert(jobStageAssessments).values(
         definitionIds.map((assessmentDefinitionId) => ({
           organizationId,
+          jobId: parsed.data.jobId,
           stageId: parsed.data.stageId,
           assessmentDefinitionId,
+          sendInvitation: parsed.data.sendInvitation,
+          deadlineDays: parsed.data.deadlineDays,
         })),
       );
     }
@@ -159,9 +166,12 @@ export async function saveStageAssessmentConfigurationAction(
       jobId: parsed.data.jobId,
       enabled: parsed.data.enabled,
       assessmentDefinitionIds: parsed.data.enabled ? definitionIds : [],
+      sendInvitation: parsed.data.enabled && parsed.data.sendInvitation,
+      deadlineDays: parsed.data.enabled ? parsed.data.deadlineDays : null,
     },
   });
 
   revalidatePath(`/dashboard/pipeline`);
+  revalidatePath(`/dashboard/jobs/${parsed.data.jobId}`);
   return { ok: true };
 }

@@ -1,0 +1,10 @@
+ALTER TABLE "assessment_assignments" ADD COLUMN "activity_progress" text;--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD COLUMN "grading_progress" text;--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD COLUMN "provider_result_timestamp" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD COLUMN "result_received_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "job_stage_assessments" ADD COLUMN "send_invitation" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "job_stage_assessments" ADD COLUMN "deadline_days" integer;--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD CONSTRAINT "assessment_assignments_activity_progress_check" CHECK ("assessment_assignments"."activity_progress" is null or "assessment_assignments"."activity_progress" in ('Initialized', 'Started', 'InProgress', 'Submitted', 'Completed'));--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD CONSTRAINT "assessment_assignments_grading_progress_check" CHECK ("assessment_assignments"."grading_progress" is null or "assessment_assignments"."grading_progress" in ('FullyGraded', 'Pending', 'PendingManual', 'Failed', 'NotReady'));--> statement-breakpoint
+ALTER TABLE "assessment_assignments" ADD CONSTRAINT "assessment_assignments_score_check" CHECK ("assessment_assignments"."score" is null or ("assessment_assignments"."score" >= 0 and "assessment_assignments"."max_score" is not null and "assessment_assignments"."max_score" > 0));--> statement-breakpoint
+ALTER TABLE "job_stage_assessments" ADD CONSTRAINT "job_stage_assessments_deadline_days_check" CHECK ("job_stage_assessments"."deadline_days" is null or ("job_stage_assessments"."deadline_days" >= 1 and "job_stage_assessments"."deadline_days" <= 365));

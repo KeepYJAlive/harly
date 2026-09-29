@@ -31,6 +31,7 @@ export type WorkspaceTaoStatus = {
   platformAuthorizationUrl: string;
   platformTokenUrl: string;
   platformJwksUrl: string;
+  platformAgsLineItemPattern: string;
 };
 
 export function getTaoToolConfiguration(instanceUrl: string | null) {
@@ -99,5 +100,6 @@ export async function getWorkspaceTaoStatus(
     platformAuthorizationUrl: `${origin}/api/integrations/tao/lti/authorize`,
     platformTokenUrl: `${origin}/api/integrations/tao/lti/token`,
     platformJwksUrl: `${origin}/api/integrations/tao/lti/jwks`,
+    platformAgsLineItemPattern: `${origin}/api/integrations/tao/lti/ags/lineitems/{assignmentId}`,
   };
 }

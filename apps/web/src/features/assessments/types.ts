@@ -24,5 +24,9 @@ export type AssessmentAssignmentItem = {
   expiresAt: string | null;
   score: number | null;
   maxScore: number | null;
+  activityProgress: string | null;
+  gradingProgress: string | null;
+  resultReceivedAt: string | null;
+  syncedAt: string | null;
   sourceStageName: string | null;
 };

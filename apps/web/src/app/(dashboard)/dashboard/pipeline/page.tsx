@@ -12,7 +12,7 @@ import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import { can } from "@/features/workspaces/permissions-server";
 import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
-import { listPipelineStageAssessmentConfiguration } from "@/features/assessments/stage-data";
+import { listJobStageAssessmentConfiguration } from "@/features/assessments/stage-data";
 import { getWorkspaceTaoStatus } from "@/lib/lti/config";
 
 export const dynamic = "force-dynamic";
@@ -53,17 +53,29 @@ export default async function PipelinePage({
   const [assessmentDefinitions, stageAssessmentRows, taoStatus, canEditJobs] =
     await Promise.all([
       listTaoAssessmentDefinitions(workspace.id),
-      listPipelineStageAssessmentConfiguration(
+      listJobStageAssessmentConfiguration(
         workspace.id,
         data.selectedJob.id,
       ),
       getWorkspaceTaoStatus(workspace.id),
       can("jobs:edit"),
     ]);
-  const configuredDefinitionIdsByStage = stageAssessmentRows.reduce<
-    Record<string, string[]>
+  const configurationByStage = stageAssessmentRows.reduce<
+    Record<
+      string,
+      {
+        assessmentDefinitionIds: string[];
+        sendInvitation: boolean;
+        deadlineDays: number | null;
+      }
+    >
   >((result, row) => {
-    (result[row.stageId] ??= []).push(row.assessmentDefinitionId);
+    const configuration = (result[row.stageId] ??= {
+      assessmentDefinitionIds: [],
+      sendInvitation: row.sendInvitation,
+      deadlineDays: row.deadlineDays,
+    });
+    configuration.assessmentDefinitionIds.push(row.assessmentDefinitionId);
     return result;
   }, {});
 
@@ -81,7 +93,7 @@ export default async function PipelinePage({
             jobId={data.selectedJob.id}
             stages={data.stages}
             assessments={assessmentDefinitions}
-            configuredDefinitionIdsByStage={configuredDefinitionIdsByStage}
+            configurationByStage={configurationByStage}
             taoEnabled={taoStatus.enabled}
             canEdit={canEditJobs}
           />

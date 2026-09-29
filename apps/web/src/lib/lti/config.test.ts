@@ -80,10 +80,11 @@ describe("TAO connection status", () => {
       platformIssuer: "https://harly.example.com",
       platformTokenUrl:
         "https://harly.example.com/api/integrations/tao/lti/token",
+      platformAgsLineItemPattern:
+        "https://harly.example.com/api/integrations/tao/lti/ags/lineitems/{assignmentId}",
       taoOidcInitiationUrl:
         "https://tao.example.com/auth-server/lti1p3/oidc/initiation",
-      taoJwksUrl:
-        "https://tao.example.com/auth-server/.well-known/jwks.json",
+      taoJwksUrl: "https://tao.example.com/auth-server/.well-known/jwks.json",
       taoToolAudience: "https://tao.example.com/deliver",
       taoDeliveryTargetLinkPattern:
         "https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",

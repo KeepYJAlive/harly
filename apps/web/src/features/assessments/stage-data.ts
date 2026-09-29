@@ -2,33 +2,36 @@ import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
 
-import { db, jobStages, pipelineStageAssessments } from "@harly/db";
+import { db, jobStageAssessments, jobStages } from "@harly/db";
 
-export async function listPipelineStageAssessmentConfiguration(
+export async function listJobStageAssessmentConfiguration(
   organizationId: string,
   jobId: string,
 ) {
   return db
     .select({
-      stageId: pipelineStageAssessments.stageId,
-      assessmentDefinitionId: pipelineStageAssessments.assessmentDefinitionId,
+      stageId: jobStageAssessments.stageId,
+      assessmentDefinitionId: jobStageAssessments.assessmentDefinitionId,
+      sendInvitation: jobStageAssessments.sendInvitation,
+      deadlineDays: jobStageAssessments.deadlineDays,
     })
-    .from(pipelineStageAssessments)
+    .from(jobStageAssessments)
     .innerJoin(
       jobStages,
       and(
-        eq(jobStages.id, pipelineStageAssessments.stageId),
-        eq(jobStages.workspaceId, pipelineStageAssessments.organizationId),
+        eq(jobStages.id, jobStageAssessments.stageId),
+        eq(jobStages.workspaceId, jobStageAssessments.organizationId),
+        eq(jobStages.jobId, jobStageAssessments.jobId),
       ),
     )
     .where(
       and(
-        eq(pipelineStageAssessments.organizationId, organizationId),
-        eq(jobStages.jobId, jobId),
+        eq(jobStageAssessments.organizationId, organizationId),
+        eq(jobStageAssessments.jobId, jobId),
       ),
     )
     .orderBy(
-      asc(pipelineStageAssessments.stageId),
-      asc(pipelineStageAssessments.createdAt),
+      asc(jobStageAssessments.stageId),
+      asc(jobStageAssessments.createdAt),
     );
 }

@@ -203,6 +203,7 @@ describe("moveApplicationStageForApi concurrency retry", () => {
     expect(mocks.transactionImpl).toHaveBeenCalledTimes(2);
     expect(mocks.createStageAssessmentAssignments).toHaveBeenCalledWith(tx, {
       organizationId: "ws-1",
+      jobId: "job-1",
       applicationId: "app-1",
       candidateId: "candidate-1",
       stageId: "stage-target",

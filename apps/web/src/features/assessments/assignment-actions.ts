@@ -38,6 +38,7 @@ async function loadApplicationAndDefinition(
   const [row] = await db
     .select({
       applicationId: applications.id,
+      jobId: applications.jobId,
       candidateId: applications.candidateId,
       definitionId: assessmentDefinitions.id,
       externalId: assessmentDefinitions.externalId,
@@ -121,6 +122,7 @@ export async function assignAssessmentAction(
         .insert(assessmentAssignments)
         .values({
           organizationId: context.organization.id,
+          jobId: domain.jobId,
           applicationId: parsed.data.applicationId,
           assessmentDefinitionId: parsed.data.assessmentDefinitionId,
           providerResourceId: domain.externalId,
@@ -163,7 +165,7 @@ export async function assignAssessmentAction(
   } catch (error) {
     const activeDuplicate =
       error instanceof Error &&
-      /assessment_assignments_active_application_definition_uidx|duplicate key/i.test(
+      /assessment_assignments_active_manual_uidx|duplicate key/i.test(
         error.message,
       );
     return {

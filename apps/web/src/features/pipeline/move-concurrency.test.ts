@@ -74,6 +74,7 @@ const WORKSPACE_ID = "ws-1";
 
 const APPLICATION_ROW = {
   id: "app-1",
+  jobId: "job-1",
   candidateId: "candidate-1",
   currentStageId: "stage-current",
   updatedAt: new Date("2024-01-01T00:00:00.000Z"),
@@ -214,6 +215,7 @@ describe("F1-08 pipeline move concurrency guard", () => {
     expect(result.success).toBe(true);
     expect(mocks.createStageAssessmentAssignments).toHaveBeenCalledWith(tx, {
       organizationId: WORKSPACE_ID,
+      jobId: "job-1",
       applicationId: "app-1",
       candidateId: "candidate-1",
       stageId: "stage-target",
