@@ -175,6 +175,9 @@ export function ApplicationAssessmentsPanel({
                     <p className="font-medium">{assignment.assessmentName}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {assignment.jobTitle}
+                      {assignment.sourceStageName
+                        ? ` · Automatically assigned in ${assignment.sourceStageName}`
+                        : ""}
                     </p>
                     <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
                       <div>

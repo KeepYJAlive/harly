@@ -49,6 +49,7 @@ import { getWorkspaceCaptchaStatus } from "@/lib/captcha";
 import { getZoomConfig } from "@/lib/zoom/config";
 import { getWorkspaceTaoStatus } from "@/lib/lti/config";
 import { isManualTaoTestLaunchEnabled } from "@/lib/tao/lti/manual-launch";
+import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
 import {
   getEsignWebhookBaseUrl,
   getHarlyPublicOrigin,
@@ -333,7 +334,10 @@ async function renderPanel(
       );
     }
     case "tao": {
-      const status = await getWorkspaceTaoStatus(ctx.organizationId);
+      const [status, assessments] = await Promise.all([
+        getWorkspaceTaoStatus(ctx.organizationId),
+        listTaoAssessmentDefinitions(ctx.organizationId),
+      ]);
       return (
         <TaoConnectPanel
           status={status}
@@ -341,6 +345,7 @@ async function renderPanel(
           tileClassName={integration.tileClassName}
           description={integration.detail}
           manualTestLaunchEnabled={isManualTaoTestLaunchEnabled()}
+          assessments={assessments}
         />
       );
     }

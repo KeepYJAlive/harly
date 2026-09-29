@@ -90,13 +90,63 @@ async function findAssignmentByToken(rawToken: string) {
   return row ?? null;
 }
 
-export async function beginTaoCandidateLaunch(
-  rawToken: string,
-): Promise<string> {
-  const assignment = await findAssignmentByToken(rawToken);
-  if (!assignment)
-    throw new CandidateLaunchError("invalid", "Assignment not found.");
+async function findAssignmentForPortal(input: {
+  assignmentId: string;
+  organizationId: string;
+  candidateId: string;
+}) {
+  const [row] = await db
+    .select({
+      assignmentId: assessmentAssignments.id,
+      organizationId: assessmentAssignments.organizationId,
+      applicationId: assessmentAssignments.applicationId,
+      status: assessmentAssignments.status,
+      expiresAt: assessmentAssignments.expiresAt,
+      definitionId: assessmentDefinitions.id,
+      assessmentName: assessmentDefinitions.name,
+      externalId: assessmentDefinitions.externalId,
+      definitionActive: assessmentDefinitions.active,
+      jobId: applications.jobId,
+    })
+    .from(assessmentAssignments)
+    .innerJoin(
+      assessmentDefinitions,
+      and(
+        eq(
+          assessmentDefinitions.id,
+          assessmentAssignments.assessmentDefinitionId,
+        ),
+        eq(
+          assessmentDefinitions.organizationId,
+          assessmentAssignments.organizationId,
+        ),
+      ),
+    )
+    .innerJoin(
+      applications,
+      and(
+        eq(applications.id, assessmentAssignments.applicationId),
+        eq(applications.workspaceId, assessmentAssignments.organizationId),
+        eq(applications.candidateId, input.candidateId),
+      ),
+    )
+    .where(
+      and(
+        eq(assessmentAssignments.id, input.assignmentId),
+        eq(assessmentAssignments.organizationId, input.organizationId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
 
+type ResolvedAssignment = NonNullable<
+  Awaited<ReturnType<typeof findAssignmentByToken>>
+>;
+
+async function beginResolvedTaoCandidateLaunch(
+  assignment: ResolvedAssignment,
+): Promise<string> {
   const now = new Date();
   const blockReason = assignmentLaunchBlockReason({
     status: assignment.status,
@@ -170,6 +220,27 @@ export async function beginTaoCandidateLaunch(
   return initiationUrl.toString();
 }
 
+export async function beginTaoCandidateLaunch(
+  rawToken: string,
+): Promise<string> {
+  const assignment = await findAssignmentByToken(rawToken);
+  if (!assignment)
+    throw new CandidateLaunchError("invalid", "Assignment not found.");
+  return beginResolvedTaoCandidateLaunch(assignment);
+}
+
+/** Authenticated portal launch; delivery and target URI stay server-resolved. */
+export async function beginTaoPortalAssignmentLaunch(input: {
+  assignmentId: string;
+  organizationId: string;
+  candidateId: string;
+}): Promise<string> {
+  const assignment = await findAssignmentForPortal(input);
+  if (!assignment)
+    throw new CandidateLaunchError("invalid", "Assignment not found.");
+  return beginResolvedTaoCandidateLaunch(assignment);
+}
+
 function authorizationFailure(message: string): never {
   throw new CandidateLaunchError("invalid", message);
 }
@@ -240,10 +311,7 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
     );
   }
   const launchResponseUri = buildTaoLaunchResponseUri(config.launchUrl);
-  const targetLinkUri = buildTaoTargetLinkUri(
-    config.launchUrl,
-    row.externalId,
-  );
+  const targetLinkUri = buildTaoTargetLinkUri(config.launchUrl, row.externalId);
 
   const [launchSession] = await db
     .select({

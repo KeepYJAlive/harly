@@ -29,6 +29,7 @@ const ICON_MAP = {
   interview_completed: CheckCircleIcon,
   application_rejected: XCircleIcon,
   application_hired: CheckCircleIcon,
+  assessment_assigned: CheckCircleIcon,
 } as const;
 
 const ICON_COLOR_MAP = {
@@ -37,11 +38,14 @@ const ICON_COLOR_MAP = {
   interview_completed: "text-emerald-500",
   application_rejected: "text-muted-foreground",
   application_hired: "text-emerald-500",
+  assessment_assigned: "text-primary",
 } as const;
 
 function NotificationIcon({ type }: { type: string }) {
   const Icon = ICON_MAP[type as keyof typeof ICON_MAP] ?? CalendarIcon;
-  const color = ICON_COLOR_MAP[type as keyof typeof ICON_COLOR_MAP] ?? "text-muted-foreground";
+  const color =
+    ICON_COLOR_MAP[type as keyof typeof ICON_COLOR_MAP] ??
+    "text-muted-foreground";
   return <Icon className={cn("size-5", color)} />;
 }
 
@@ -88,9 +92,12 @@ export function PortalNotificationsList({
     return (
       <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
         <CalendarIcon className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-        <p className="text-sm font-medium text-muted-foreground">No notifications yet</p>
+        <p className="text-sm font-medium text-muted-foreground">
+          No notifications yet
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          You&apos;ll see updates here when there&apos;s activity on your applications.
+          You&apos;ll see updates here when there&apos;s activity on your
+          applications.
         </p>
       </div>
     );
@@ -100,11 +107,21 @@ export function PortalNotificationsList({
     <div className="space-y-2">
       <div className="flex justify-end gap-2">
         {unreadCount > 0 ? (
-          <Button variant="ghost" size="sm" onClick={markAllRead} disabled={isPending}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={markAllRead}
+            disabled={isPending}
+          >
             Mark all as read
           </Button>
         ) : null}
-        <Button variant="ghost" size="sm" onClick={deleteAll} disabled={isPending}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={deleteAll}
+          disabled={isPending}
+        >
           Clear all
         </Button>
       </div>
@@ -123,16 +140,22 @@ export function PortalNotificationsList({
             {notification.href ? (
               <Link
                 href={notification.href as Route}
-                onClick={() => !notification.read && markRead(notification.id, true)}
+                onClick={() =>
+                  !notification.read && markRead(notification.id, true)
+                }
                 className="text-sm font-medium text-foreground hover:underline"
               >
                 {notification.title}
               </Link>
             ) : (
-              <p className="text-sm font-medium text-foreground">{notification.title}</p>
+              <p className="text-sm font-medium text-foreground">
+                {notification.title}
+              </p>
             )}
             {notification.body ? (
-              <p className="mt-0.5 text-xs text-muted-foreground">{notification.body}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {notification.body}
+              </p>
             ) : null}
             <p className="mt-1 text-[11px] text-muted-foreground">
               {formatRelative(new Date(notification.createdAt))}

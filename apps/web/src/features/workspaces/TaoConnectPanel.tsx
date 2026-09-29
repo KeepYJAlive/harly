@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TaoAssessmentsSection } from "@/features/assessments/TaoAssessmentsSection";
+import type { TaoAssessmentDefinitionItem } from "@/features/assessments/types";
 
 function TaoLogo({ className }: { className?: string }) {
   return <ClipboardCheck className={className} />;
@@ -55,12 +57,14 @@ export function TaoConnectPanel({
   tileClassName,
   description,
   manualTestLaunchEnabled,
+  assessments,
 }: {
   status: WorkspaceTaoStatus;
   canEdit: boolean;
   tileClassName: string;
   description: string;
   manualTestLaunchEnabled: boolean;
+  assessments: TaoAssessmentDefinitionItem[];
 }) {
   const router = useRouter();
   const [instanceUrl, setInstanceUrl] = useState(status.instanceUrl ?? "");
@@ -221,14 +225,8 @@ export function TaoConnectPanel({
             label="OIDC initiation URL"
             value={status.taoOidcInitiationUrl}
           />
-          <PlatformValue
-            label="TAO JWKS URL"
-            value={status.taoJwksUrl}
-          />
-          <PlatformValue
-            label="Tool audience"
-            value={status.taoToolAudience}
-          />
+          <PlatformValue label="TAO JWKS URL" value={status.taoJwksUrl} />
+          <PlatformValue label="Tool audience" value={status.taoToolAudience} />
           <div className="flex flex-col gap-2 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">
               Delivery target-link pattern
@@ -250,14 +248,8 @@ export function TaoConnectPanel({
         />
         <div className="divide-y rounded-xl border">
           <PlatformValue label="Issuer" value={status.platformIssuer} />
-          <PlatformValue
-            label="Client ID"
-            value={status.clientId}
-          />
-          <PlatformValue
-            label="Deployment ID"
-            value={status.deploymentId}
-          />
+          <PlatformValue label="Client ID" value={status.clientId} />
+          <PlatformValue label="Deployment ID" value={status.deploymentId} />
           <PlatformValue
             label="OIDC Authentication URL"
             value={status.platformAuthorizationUrl}
@@ -278,7 +270,7 @@ export function TaoConnectPanel({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <SectionIntro
             title="Manual LTI test"
-            description='Launch the registered TAO delivery “Production Test” to verify the OIDC and LTI Resource Link flow. This test does not store a result.'
+            description="Launch the registered TAO delivery “Production Test” to verify the OIDC and LTI Resource Link flow. This test does not store a result."
           />
           {manualTestLaunchReady ? (
             <Button asChild className="self-start sm:self-auto">
@@ -288,11 +280,7 @@ export function TaoConnectPanel({
               </a>
             </Button>
           ) : (
-            <Button
-              type="button"
-              disabled
-              className="self-start sm:self-auto"
-            >
+            <Button type="button" disabled className="self-start sm:self-auto">
               <Rocket className="size-4" />
               Launch Production Test
             </Button>
@@ -300,8 +288,7 @@ export function TaoConnectPanel({
         </div>
         {!manualTestLaunchEnabled ? (
           <p className="text-xs text-muted-foreground">
-            Manual test launch is disabled. Set
-            {" "}
+            Manual test launch is disabled. Set{" "}
             <code>HARLY_TAO_MANUAL_TEST_LAUNCH=true</code> to enable it in a
             production build.
           </p>
@@ -311,10 +298,13 @@ export function TaoConnectPanel({
           </p>
         ) : !status.configured || !status.clientId || !status.deploymentId ? (
           <p className="text-xs text-muted-foreground">
-            Save a complete TAO platform configuration before running this
-            test.
+            Save a complete TAO platform configuration before running this test.
           </p>
         ) : null}
+      </Card>
+
+      <Card className="space-y-5 p-6">
+        <TaoAssessmentsSection assessments={assessments} canEdit={canEdit} />
       </Card>
 
       <Card className="space-y-5 p-6">

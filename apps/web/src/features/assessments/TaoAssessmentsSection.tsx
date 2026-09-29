@@ -94,7 +94,9 @@ export function TaoAssessmentsSection({
             TAO assessments
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Map friendly Harly names to deliveries already authored in TAO.
+            Map friendly Harly names to delivery IDs already published in TAO.
+            TAO Community Edition does not expose a supported delivery catalog
+            API, so these are registered manually.
           </p>
         </div>
         <Button size="sm" onClick={add} disabled={!canEdit}>
@@ -109,7 +111,7 @@ export function TaoAssessmentsSection({
             No TAO assessments registered
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Add the exact delivery/resource identifier from your TAO deployment.
+            Add the exact delivery ID from your TAO deployment.
           </p>
         </div>
       ) : (
@@ -183,7 +185,7 @@ export function TaoAssessmentsSection({
                 }
               />
             </FormField>
-            <FormField label="TAO external delivery/resource identifier">
+            <FormField label="TAO delivery ID">
               <Input
                 className="font-mono text-xs"
                 value={form.externalId}
