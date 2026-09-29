@@ -14,6 +14,11 @@ const tables = vi.hoisted(() => ({
   },
   activityEvents: { table: "activity" },
   candidatePortalNotifications: { table: "portal-notification" },
+  emailOutbox: {
+    table: "email-outbox",
+    workspaceId: "outbox.workspaceId",
+    dedupeKey: "outbox.dedupeKey",
+  },
   jobStages: {
     id: "stage.id",
     workspaceId: "stage.workspaceId",
@@ -26,6 +31,8 @@ const tables = vi.hoisted(() => ({
     jobId: "configuration.jobId",
     stageId: "configuration.stageId",
     assessmentDefinitionId: "configuration.definitionId",
+    sendInvitation: "configuration.sendInvitation",
+    deadlineDays: "configuration.deadlineDays",
   },
   workspaceSettings: {
     organizationId: "settings.organizationId",
@@ -38,6 +45,15 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((column, value) => ({ column, value })),
 }));
 vi.mock("@harly/db", () => ({ ...tables, db: { transaction: vi.fn() } }));
+vi.mock("@/lib/crypto", () => ({
+  isEncryptionConfigured: vi.fn(() => true),
+  encryptSecret: vi.fn(() => ({
+    ciphertext: "encrypted-token",
+    iv: "encrypted-iv",
+    tag: "encrypted-tag",
+  })),
+  decryptSecret: vi.fn(),
+}));
 
 import { createStageAssessmentAssignments } from "./stage-assignment-service";
 
@@ -46,6 +62,8 @@ function createTransaction(
     stageName: string;
     assessmentDefinitionId: string;
     providerResourceId: string;
+    sendInvitation?: boolean;
+    deadlineDays?: number | null;
   }>,
   inserted = configured.map((item, index) => ({
     id: `assignment-${index + 1}`,
@@ -65,8 +83,17 @@ function createTransaction(
       returning: vi.fn().mockResolvedValue(inserted),
     })),
   }));
-  const activityValues = vi.fn().mockResolvedValue(undefined);
-  const notificationValues = vi.fn().mockResolvedValue(undefined);
+  const activityValues = vi.fn(async (values: unknown) => {
+    void values;
+  });
+  const notificationValues = vi.fn(async (values: unknown) => {
+    void values;
+  });
+  const outboxConflict = vi.fn().mockResolvedValue(undefined);
+  const outboxValues = vi.fn((values: unknown) => {
+    void values;
+    return { onConflictDoNothing: outboxConflict };
+  });
   const insert = vi.fn((table) => {
     if (table === tables.assessmentAssignments) {
       return { values: assignmentValues };
@@ -75,6 +102,7 @@ function createTransaction(
     if (table === tables.candidatePortalNotifications) {
       return { values: notificationValues };
     }
+    if (table === tables.emailOutbox) return { values: outboxValues };
     throw new Error("Unexpected table");
   });
   return {
@@ -83,6 +111,7 @@ function createTransaction(
     assignmentValues,
     activityValues,
     notificationValues,
+    outboxValues,
   };
 }
 
@@ -158,15 +187,57 @@ describe("automatic stage assessment assignments", () => {
         providerResourceId: "delivery-a",
       },
     ];
-    const { tx, activityValues, notificationValues } = createTransaction(
-      configured,
-      [],
-    );
+    const { tx, activityValues, notificationValues, outboxValues } =
+      createTransaction(configured, []);
     await expect(
       createStageAssessmentAssignments(tx as never, INPUT),
     ).resolves.toEqual([]);
     expect(activityValues).not.toHaveBeenCalled();
     expect(notificationValues).not.toHaveBeenCalled();
+    expect(outboxValues).not.toHaveBeenCalled();
+  });
+
+  it("queues one encrypted invitation with the configured deadline", async () => {
+    const configured = [
+      {
+        stageName: "Assessment",
+        assessmentDefinitionId: "definition-a",
+        providerResourceId: "delivery-a",
+        sendInvitation: true,
+        deadlineDays: 7,
+      },
+    ];
+    const { tx, assignmentValues, outboxValues, activityValues } =
+      createTransaction(configured);
+
+    await createStageAssessmentAssignments(tx as never, INPUT);
+
+    const assignment = assignmentValues.mock.calls[0]![0][0];
+    expect(assignment.expiresAt).toBeInstanceOf(Date);
+    expect(
+      (assignment.expiresAt as Date).getTime() -
+        (assignment.assignedAt as Date).getTime(),
+    ).toBe(7 * 24 * 60 * 60_000);
+    expect(assignment.launchTokenHash).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(outboxValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        workspaceId: INPUT.organizationId,
+        kind: "assessment.invitation",
+        dedupeKey: "assessment-invitation:assignment-1",
+        payload: expect.objectContaining({
+          assignmentId: "assignment-1",
+          tokenCiphertext: "encrypted-token",
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(outboxValues.mock.calls[0]![0])).not.toContain(
+      assignment.launchTokenHash as string,
+    );
+    expect(activityValues.mock.calls[0]![0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "assessment.invitation_queued" }),
+      ]),
+    );
   });
 
   it("keeps assessment selection isolated for jobs with the same logical stage", async () => {

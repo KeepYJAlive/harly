@@ -5,11 +5,14 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   activityEvents,
   applications,
+  assessmentAssignments,
+  assessmentDefinitions,
   candidates,
   db,
   documentAssociations,
   documents,
   emailOutbox,
+  jobs,
   offers,
   organization,
 } from "@harly/db";
@@ -33,6 +36,8 @@ import {
   offerExtendedSubject,
   OfferWithdrawn,
   offerWithdrawnSubject,
+  AssessmentInvitation,
+  assessmentInvitationSubject,
 } from "@harly/emails";
 
 import { renderActiveEmailTemplate } from "@/features/email-templates/data";
@@ -44,6 +49,14 @@ import { insertCanonicalMessage } from "@/lib/mail/canonical";
 import { createLogger } from "@/lib/logger";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
 import { storage } from "@/lib/storage";
+import {
+  ASSESSMENT_INVITATION_KIND,
+  ASSESSMENT_INVITATION_TEMPLATE_VERSION,
+  buildCandidateAssessmentUrl,
+  decryptAssessmentInvitationToken,
+  type AssessmentInvitationPayload,
+} from "@/features/assessments/invitation";
+import { tokenHashMatches } from "@/lib/tao/lti/tokens";
 import {
   offerMatchesTerms,
   parseOfferTermsSnapshot,
@@ -194,6 +207,8 @@ async function deliverRow(row: OutboxRow, database: typeof db = db): Promise<boo
         return await deliverScheduledReport(row);
       case "automation.email":
         return await deliverAutomationEmail(row);
+      case ASSESSMENT_INVITATION_KIND:
+        return await deliverAssessmentInvitation(row, database);
       default:
         log.warn({ kind: row.kind }, "unknown email_outbox kind");
         await database
@@ -217,6 +232,275 @@ async function deliverRow(row: OutboxRow, database: typeof db = db): Promise<boo
     );
     return false;
   }
+}
+
+async function recordAssessmentInvitationFailure(
+  row: OutboxRow,
+  assignmentId: string | undefined,
+  applicationId: string | undefined,
+  reason: string,
+  database: typeof db,
+  permanent = false,
+) {
+  if (permanent) {
+    await markStale(
+      row.id,
+      reason,
+      database,
+      assessmentInvitationAuditPayload(row, assignmentId),
+    );
+  } else {
+    await markFailed(row.id, reason, database);
+  }
+  if (!assignmentId || !applicationId) return false;
+  await database.insert(activityEvents).values({
+    workspaceId: row.workspaceId,
+    actorId: row.actorId,
+    entityType: "application",
+    entityId: applicationId,
+    type: "assessment.invitation_failed",
+    metadata: { assignmentId, outboxId: row.id, permanent },
+  });
+  return false;
+}
+
+function assessmentInvitationAuditPayload(
+  row: OutboxRow,
+  assignmentId: string | undefined,
+) {
+  const payload = row.payload as Partial<AssessmentInvitationPayload> | null;
+  return {
+    assignmentId: assignmentId ?? null,
+    templateVersion:
+      payload?.templateVersion ?? ASSESSMENT_INVITATION_TEMPLATE_VERSION,
+    tokenDiscarded: true,
+  };
+}
+
+async function deliverAssessmentInvitation(
+  row: OutboxRow,
+  database: typeof db,
+): Promise<boolean> {
+  const payload = row.payload as Partial<AssessmentInvitationPayload> | null;
+  const assignmentId = payload?.assignmentId;
+  if (
+    !assignmentId ||
+    payload.templateVersion !== ASSESSMENT_INVITATION_TEMPLATE_VERSION ||
+    !payload.tokenCiphertext ||
+    !payload.tokenIv ||
+    !payload.tokenTag
+  ) {
+    return recordAssessmentInvitationFailure(
+      row,
+      assignmentId,
+      undefined,
+      "Assessment invitation payload is incomplete.",
+      database,
+      true,
+    );
+  }
+
+  const [target] = await database
+    .select({
+      assignmentId: assessmentAssignments.id,
+      applicationId: assessmentAssignments.applicationId,
+      launchTokenHash: assessmentAssignments.launchTokenHash,
+      assignmentStatus: assessmentAssignments.status,
+      expiresAt: assessmentAssignments.expiresAt,
+      candidateId: candidates.id,
+      candidateEmail: candidates.email,
+      candidateFirstName: candidates.firstName,
+      jobTitle: jobs.title,
+      assessmentName: assessmentDefinitions.name,
+      assessmentMetadata: assessmentDefinitions.metadata,
+      definitionActive: assessmentDefinitions.active,
+      companyName: organization.name,
+    })
+    .from(assessmentAssignments)
+    .innerJoin(
+      applications,
+      and(
+        eq(applications.id, assessmentAssignments.applicationId),
+        eq(applications.workspaceId, assessmentAssignments.organizationId),
+        eq(applications.jobId, assessmentAssignments.jobId),
+        eq(applications.status, "active"),
+      ),
+    )
+    .innerJoin(
+      candidates,
+      and(
+        eq(candidates.id, applications.candidateId),
+        eq(candidates.workspaceId, assessmentAssignments.organizationId),
+        isNull(candidates.deletedAt),
+      ),
+    )
+    .innerJoin(
+      jobs,
+      and(
+        eq(jobs.id, assessmentAssignments.jobId),
+        eq(jobs.workspaceId, assessmentAssignments.organizationId),
+        isNull(jobs.deletedAt),
+      ),
+    )
+    .innerJoin(
+      assessmentDefinitions,
+      and(
+        eq(
+          assessmentDefinitions.id,
+          assessmentAssignments.assessmentDefinitionId,
+        ),
+        eq(
+          assessmentDefinitions.organizationId,
+          assessmentAssignments.organizationId,
+        ),
+      ),
+    )
+    .innerJoin(
+      organization,
+      eq(organization.id, assessmentAssignments.organizationId),
+    )
+    .where(
+      and(
+        eq(assessmentAssignments.id, assignmentId),
+        eq(assessmentAssignments.organizationId, row.workspaceId),
+      ),
+    )
+    .limit(1);
+
+  const now = new Date();
+  if (
+    !target ||
+    !target.definitionActive ||
+    !["assigned", "started"].includes(target.assignmentStatus) ||
+    (target.expiresAt && target.expiresAt <= now)
+  ) {
+    return recordAssessmentInvitationFailure(
+      row,
+      assignmentId,
+      target?.applicationId,
+      "Assessment assignment is no longer available.",
+      database,
+      true,
+    );
+  }
+
+  let rawToken: string;
+  try {
+    rawToken = decryptAssessmentInvitationToken(
+      payload as AssessmentInvitationPayload,
+    );
+  } catch {
+    return recordAssessmentInvitationFailure(
+      row,
+      assignmentId,
+      target.applicationId,
+      "Assessment invitation token could not be decrypted.",
+      database,
+      true,
+    );
+  }
+  if (!tokenHashMatches(rawToken, target.launchTokenHash)) {
+    return recordAssessmentInvitationFailure(
+      row,
+      assignmentId,
+      target.applicationId,
+      "Assessment invitation link has been replaced.",
+      database,
+      true,
+    );
+  }
+
+  const assessmentUrl = buildCandidateAssessmentUrl(rawToken);
+  const estimatedMinutes = Number(
+    target.assessmentMetadata?.estimatedDurationMinutes,
+  );
+  const estimatedDuration =
+    Number.isInteger(estimatedMinutes) && estimatedMinutes > 0
+      ? `${estimatedMinutes} minutes`
+      : undefined;
+  const dueDate = target.expiresAt
+    ? dateFormatter.format(target.expiresAt)
+    : undefined;
+
+  const branding = await getWorkspaceEmailBranding(row.workspaceId);
+  const subject = assessmentInvitationSubject({
+    companyName: target.companyName,
+  });
+  let delivered: Awaited<ReturnType<typeof sendWorkspaceEmail>> = false;
+  try {
+    delivered = await sendWorkspaceEmail(
+      row.workspaceId,
+      {
+        to: target.candidateEmail,
+        subject,
+        react: createElement(AssessmentInvitation, {
+          candidateName: target.candidateFirstName,
+          jobTitle: target.jobTitle,
+          assessmentName: target.assessmentName,
+          companyName: target.companyName,
+          assessmentUrl,
+          dueDate,
+          estimatedDuration,
+          companyLogoUrl: branding.logoUrl ?? undefined,
+          hideBranding: branding.hideBranding,
+          accentColor: branding.primaryColor ?? undefined,
+          socialLinks: branding.socialLinks,
+        }),
+        ...deliveryOptions(row),
+      },
+      row.actorId,
+    );
+  } catch (error) {
+    log.error(
+      { error, assignmentId },
+      "assessment invitation render/send failed",
+    );
+  }
+  if (!delivered) {
+    return recordAssessmentInvitationFailure(
+      row,
+      assignmentId,
+      target.applicationId,
+      "Email provider did not accept the assessment invitation.",
+      database,
+    );
+  }
+
+  await markSent(
+    row.id,
+    delivered,
+    database,
+    assessmentInvitationAuditPayload(row, assignmentId),
+  );
+  try {
+    await database.insert(activityEvents).values({
+      workspaceId: row.workspaceId,
+      actorId: row.actorId,
+      entityType: "application",
+      entityId: target.applicationId,
+      type: "assessment.invitation_sent",
+      metadata: {
+        assignmentId,
+        outboxId: row.id,
+        templateVersion: payload.templateVersion,
+      },
+    });
+  } catch (error) {
+    log.warn(
+      { error, assignmentId, outboxId: row.id },
+      "assessment invitation sent but activity recording failed",
+    );
+  }
+  await recordOutboundConversation({
+    workspaceId: row.workspaceId,
+    toEmail: target.candidateEmail,
+    subject,
+    textBody: `Assessment invitation for ${target.assessmentName}. A secure, unique start link was included in the delivered email.`,
+    outboxRowId: row.id,
+    candidateId: target.candidateId,
+    applicationId: target.applicationId,
+  });
+  return true;
 }
 
 async function deliverAutomationEmail(row: OutboxRow): Promise<boolean> {
@@ -1283,6 +1567,7 @@ async function markSent(
   id: string,
   result: Exclude<Awaited<ReturnType<typeof sendWorkspaceEmail>>, false>,
   database: typeof db = db,
+  payload?: Record<string, unknown>,
 ) {
   await database
     .update(emailOutbox)
@@ -1293,6 +1578,7 @@ async function markSent(
       lockedAt: null,
       lockedBy: null,
       providerMessageId: result.messageId ?? null,
+      ...(payload ? { payload } : {}),
     })
     .where(eq(emailOutbox.id, id));
 }
@@ -1317,7 +1603,12 @@ async function markFailed(id: string, message: string, database: typeof db = db)
     .where(eq(emailOutbox.id, id));
 }
 
-async function markStale(id: string, message: string, database: typeof db = db) {
+async function markStale(
+  id: string,
+  message: string,
+  database: typeof db = db,
+  payload?: Record<string, unknown>,
+) {
   await database
     .update(emailOutbox)
     .set({
@@ -1326,6 +1617,7 @@ async function markStale(id: string, message: string, database: typeof db = db) 
       nextRetryAt: null,
       lockedAt: null,
       lockedBy: null,
+      ...(payload ? { payload } : {}),
     })
     .where(eq(emailOutbox.id, id));
 }

@@ -1749,9 +1749,15 @@ export const jobStageAssessments = pgTable(
     assessmentDefinitionId: uuid("assessment_definition_id")
       .notNull()
       .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    sendInvitation: boolean("send_invitation").default(false).notNull(),
+    deadlineDays: integer("deadline_days"),
     ...timestamps(),
   },
   (table) => [
+    check(
+      "job_stage_assessments_deadline_days_check",
+      sql`${table.deadlineDays} is null or (${table.deadlineDays} >= 1 and ${table.deadlineDays} <= 365)`,
+    ),
     uniqueIndex("job_stage_assessments_job_stage_definition_uidx").on(
       table.organizationId,
       table.jobId,
@@ -1805,6 +1811,12 @@ export const assessmentAssignments = pgTable(
       .notNull(),
     score: doublePrecision("score"),
     maxScore: doublePrecision("max_score"),
+    activityProgress: text("activity_progress"),
+    gradingProgress: text("grading_progress"),
+    providerResultTimestamp: timestamp("provider_result_timestamp", {
+      withTimezone: true,
+    }),
+    resultReceivedAt: timestamp("result_received_at", { withTimezone: true }),
     assignedAt: timestamp("assigned_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1826,6 +1838,18 @@ export const assessmentAssignments = pgTable(
     ...timestamps(),
   },
   (table) => [
+    check(
+      "assessment_assignments_activity_progress_check",
+      sql`${table.activityProgress} is null or ${table.activityProgress} in ('Initialized', 'Started', 'InProgress', 'Submitted', 'Completed')`,
+    ),
+    check(
+      "assessment_assignments_grading_progress_check",
+      sql`${table.gradingProgress} is null or ${table.gradingProgress} in ('FullyGraded', 'Pending', 'PendingManual', 'Failed', 'NotReady')`,
+    ),
+    check(
+      "assessment_assignments_score_check",
+      sql`${table.score} is null or (${table.score} >= 0 and ${table.maxScore} is not null and ${table.maxScore} > 0)`,
+    ),
     // Re-entry into one stage is one intent; another stage remains a distinct
     // intent even when it selects the same assessment definition.
     uniqueIndex("assessment_assignments_stage_origin_uidx")

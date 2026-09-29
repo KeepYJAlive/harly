@@ -3,11 +3,8 @@ import { exportJWK, generateKeyPair, importJWK, jwtVerify } from "jose";
 
 vi.mock("@harly/db", () => ({ db: {}, taoLtiSigningKeys: {} }));
 
-import { LTI_CLAIM, LTI_LEARNER_ROLE } from "./claims";
-import {
-  signManualTaoLtiLaunchWithKey,
-  signTaoLtiLaunchWithKey,
-} from "./jwt";
+import { LTI_AGS_SCORE_SCOPE, LTI_CLAIM, LTI_LEARNER_ROLE } from "./claims";
+import { signManualTaoLtiLaunchWithKey, signTaoLtiLaunchWithKey } from "./jwt";
 import { generateTaoSigningKeyMaterial } from "./keys";
 
 describe("TAO LTI launch JWT", () => {
@@ -43,6 +40,8 @@ describe("TAO LTI launch JWT", () => {
         nonce: "nonce-from-tao",
         targetLinkUri: "https://tao.example/launch/delivery-1",
         returnUrl: "https://harly.example/assessments/complete/opaque",
+        lineItemUrl:
+          "https://harly.example/api/integrations/tao/lti/ags/lineitems/assignment-1",
       },
       { kid: "key-1", privateKey, issuer: "https://harly.example" },
     );
@@ -62,6 +61,11 @@ describe("TAO LTI launch JWT", () => {
     expect(payload[LTI_CLAIM.targetLinkUri]).toBe(
       "https://tao.example/launch/delivery-1",
     );
+    expect(payload[LTI_CLAIM.agsEndpoint]).toEqual({
+      scope: [LTI_AGS_SCORE_SCOPE],
+      lineitem:
+        "https://harly.example/api/integrations/tao/lti/ags/lineitems/assignment-1",
+    });
   });
 
   it("keeps generated private key material out of the public JWKS value", async () => {
@@ -100,7 +104,8 @@ describe("TAO LTI launch JWT", () => {
         nonce: "nonce-issued-by-tao",
         targetLinkUri:
           "https://assessment.keepyjalive.org/deliver/api/v1/auth/launch-lti-1p3/9ddca443197e",
-        returnUrl: "https://opportunities.keepyjalive.org/settings/integrations/tao",
+        returnUrl:
+          "https://opportunities.keepyjalive.org/settings/integrations/tao",
         tenantId: "1",
         deliveryId: "9ddca443197e",
         assessmentName: "Production Test",

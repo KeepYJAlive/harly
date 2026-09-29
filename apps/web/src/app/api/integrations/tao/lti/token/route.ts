@@ -16,6 +16,7 @@ import { getHarlyPublicOrigin } from "@/lib/public-origin";
 import { getTaoToolConfiguration } from "@/lib/lti/config";
 import { safeFetchHttp } from "@/lib/ssrf";
 import { ensureTaoSigningKey } from "@/lib/tao/lti/keys";
+import { LTI_AGS_SCORE_SCOPE } from "@/lib/tao/lti/claims";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +24,10 @@ const TOKEN_PATH = "/api/integrations/tao/lti/token";
 const VALID_GRANT_TYPE = "client_credentials";
 const VALID_ASSERTION_TYPE =
   "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-const SCORE_SCOPE = "https://purl.imsglobal.org/spec/lti-ags/scope/score";
 const MAX_ASSERTION_LIFETIME_SECONDS = 300;
 const ASSERTION_CLOCK_TOLERANCE_SECONDS = 5;
 
-function oauthError(
-  status: number,
-  error: string,
-  description: string,
-) {
+function oauthError(status: number, error: string, description: string) {
   return NextResponse.json(
     { error, error_description: description },
     { status, headers: { "Cache-Control": "no-store" } },
@@ -82,7 +78,9 @@ async function readTaoJwks(instanceUrl: string): Promise<JSONWebKeySet> {
 
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
+  if (
+    !contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")
+  ) {
     return oauthError(400, "invalid_request", "Request must be form-encoded.");
   }
 
@@ -128,7 +126,7 @@ export async function POST(request: Request) {
     .filter(Boolean);
   if (
     requestedScopes.length !== 1 ||
-    requestedScopes[0] !== SCORE_SCOPE
+    requestedScopes[0] !== LTI_AGS_SCORE_SCOPE
   ) {
     return oauthError(
       400,
@@ -209,12 +207,16 @@ export async function POST(request: Request) {
     .onConflictDoNothing()
     .returning({ id: taoLtiClientAssertions.id });
   if (!reservedAssertion) {
-    return oauthError(401, "invalid_client", "client_assertion was already used.");
+    return oauthError(
+      401,
+      "invalid_client",
+      "client_assertion was already used.",
+    );
   }
 
   const signingKey = await ensureTaoSigningKey(registration.organizationId);
   const accessToken = await new SignJWT({
-    scope: SCORE_SCOPE,
+    scope: LTI_AGS_SCORE_SCOPE,
     client_id: clientId,
     jti: randomUUID(),
   })
@@ -231,7 +233,7 @@ export async function POST(request: Request) {
       access_token: accessToken,
       token_type: "Bearer",
       expires_in: 300,
-      scope: SCORE_SCOPE,
+      scope: LTI_AGS_SCORE_SCOPE,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

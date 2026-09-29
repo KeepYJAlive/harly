@@ -20,6 +20,8 @@ const configurationSchema = z.object({
   stageId: z.uuid(),
   enabled: z.boolean(),
   assessmentDefinitionIds: z.array(z.uuid()).max(50),
+  sendInvitation: z.boolean().default(false),
+  deadlineDays: z.number().int().min(1).max(365).nullable().default(null),
 });
 
 export type SaveStageAssessmentConfigurationInput = z.input<
@@ -146,6 +148,8 @@ export async function saveStageAssessmentConfigurationAction(
           jobId: parsed.data.jobId,
           stageId: parsed.data.stageId,
           assessmentDefinitionId,
+          sendInvitation: parsed.data.sendInvitation,
+          deadlineDays: parsed.data.deadlineDays,
         })),
       );
     }
@@ -162,6 +166,8 @@ export async function saveStageAssessmentConfigurationAction(
       jobId: parsed.data.jobId,
       enabled: parsed.data.enabled,
       assessmentDefinitionIds: parsed.data.enabled ? definitionIds : [],
+      sendInvitation: parsed.data.enabled && parsed.data.sendInvitation,
+      deadlineDays: parsed.data.enabled ? parsed.data.deadlineDays : null,
     },
   });
 

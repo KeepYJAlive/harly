@@ -4,6 +4,7 @@ export * from "./inbound/postmark";
 export * from "./inbound/resend";
 export * from "./templates/ApplicationReceivedCandidate";
 export * from "./templates/ApplicationReceivedRecruiter";
+export * from "./templates/AssessmentInvitation";
 export * from "./templates/PortalMagicLink";
 export * from "./templates/CandidateRejected";
 export * from "./templates/CandidateStageUpdate";

@@ -12,6 +12,8 @@ export async function listJobStageAssessmentConfiguration(
     .select({
       stageId: jobStageAssessments.stageId,
       assessmentDefinitionId: jobStageAssessments.assessmentDefinitionId,
+      sendInvitation: jobStageAssessments.sendInvitation,
+      deadlineDays: jobStageAssessments.deadlineDays,
     })
     .from(jobStageAssessments)
     .innerJoin(

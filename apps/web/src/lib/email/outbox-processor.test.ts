@@ -40,7 +40,9 @@ vi.mock("@harly/db", () => {
       execute: vi.fn(async () => [{ id: "outbox-1" }]),
       select: vi.fn(makeQuery),
       insert: vi.fn(() => ({
-        values: () => ({ returning: async () => mocks.insertQueue.shift() ?? [{ id: "x" }] }),
+        values: () => ({
+          returning: async () => mocks.insertQueue.shift() ?? [{ id: "x" }],
+        }),
       })),
       update: vi.fn(() => ({
         set: (set: Record<string, unknown>) => {
@@ -48,7 +50,8 @@ vi.mock("@harly/db", () => {
           return { where: () => ({}) };
         },
       })),
-      transaction: (fn: (tx: unknown) => Promise<unknown>) => mocks.transactionImpl(fn),
+      transaction: (fn: (tx: unknown) => Promise<unknown>) =>
+        mocks.transactionImpl(fn),
     },
     offers: {},
     emailOutbox: {},
@@ -58,19 +61,45 @@ vi.mock("@harly/db", () => {
     documentAssociations: {},
     documents: {},
     applications: {},
+    assessmentAssignments: {},
+    assessmentDefinitions: {},
+    jobs: {},
   };
 });
 
-vi.mock("@/lib/email", () => ({ sendWorkspaceEmail: mocks.sendWorkspaceEmail }));
-vi.mock("@/lib/email/branding", () => ({ getWorkspaceEmailBranding: mocks.getWorkspaceEmailBranding }));
-vi.mock("@/lib/email/config", () => ({ getWorkspaceEmailConfig: mocks.getWorkspaceEmailConfig }));
-vi.mock("@/lib/mail/canonical", () => ({ insertCanonicalMessage: mocks.insertCanonicalMessage }));
+vi.mock("@/lib/email", () => ({
+  sendWorkspaceEmail: mocks.sendWorkspaceEmail,
+}));
+vi.mock("@/lib/email/branding", () => ({
+  getWorkspaceEmailBranding: mocks.getWorkspaceEmailBranding,
+}));
+vi.mock("@/lib/email/config", () => ({
+  getWorkspaceEmailConfig: mocks.getWorkspaceEmailConfig,
+}));
+vi.mock("@/lib/mail/canonical", () => ({
+  insertCanonicalMessage: mocks.insertCanonicalMessage,
+}));
 vi.mock("@/features/email-templates/data", () => ({
   renderActiveEmailTemplate: mocks.renderActiveEmailTemplate,
 }));
 vi.mock("@/lib/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-  getServerLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
+  getServerLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  }),
+}));
+vi.mock("@/features/assessments/invitation", () => ({
+  ASSESSMENT_INVITATION_KIND: "assessment.invitation",
+  ASSESSMENT_INVITATION_TEMPLATE_VERSION: 1,
+  buildCandidateAssessmentUrl: (token: string) =>
+    `https://harly.example/assessment/${token}`,
+  decryptAssessmentInvitationToken: vi.fn(() => "opaque-token"),
+}));
+vi.mock("@/lib/tao/lti/tokens", () => ({
+  tokenHashMatches: vi.fn(() => true),
 }));
 
 import { processEmailOutbox } from "./outbox-processor";
@@ -100,7 +129,38 @@ const APPLICATION_ACTIVE = {
   candidateId: "cand-1",
   jobId: "job-1",
 };
-const RECIPIENT = { email: "c@example.com", firstName: "C", lastName: "D", companyName: "Acme" };
+const RECIPIENT = {
+  email: "c@example.com",
+  firstName: "C",
+  lastName: "D",
+  companyName: "Acme",
+};
+const ASSESSMENT_PENDING = {
+  ...PENDING,
+  kind: "assessment.invitation",
+  payload: {
+    assignmentId: "assessment-assignment-1",
+    templateVersion: 1,
+    tokenCiphertext: "ciphertext",
+    tokenIv: "iv",
+    tokenTag: "tag",
+  },
+};
+const ASSESSMENT_TARGET = {
+  assignmentId: "assessment-assignment-1",
+  applicationId: "app-1",
+  launchTokenHash: "stored-hash",
+  assignmentStatus: "assigned",
+  expiresAt: new Date("2099-10-06T12:00:00.000Z"),
+  candidateId: "cand-1",
+  candidateEmail: "c@example.com",
+  candidateFirstName: "C",
+  jobTitle: "Digital Artist Volunteer",
+  assessmentName: "Digital Artist Assessment",
+  assessmentMetadata: { estimatedDurationMinutes: 30 },
+  definitionActive: true,
+  companyName: "Acme",
+};
 
 function reset() {
   mocks.selectQueue.length = 0;
@@ -112,42 +172,58 @@ function reset() {
   mocks.renderActiveEmailTemplate.mockResolvedValue(null);
   mocks.getWorkspaceEmailBranding.mockResolvedValue({});
   mocks.insertCanonicalMessage.mockReset();
-  mocks.insertCanonicalMessage.mockResolvedValue({ messageId: "mm-1", threadId: "mt-1", duplicate: false });
+  mocks.insertCanonicalMessage.mockResolvedValue({
+    messageId: "mm-1",
+    threadId: "mt-1",
+    duplicate: false,
+  });
   mocks.getWorkspaceEmailConfig.mockReset();
   mocks.getWorkspaceEmailConfig.mockResolvedValue(null);
-  mocks.transactionImpl.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-    let updateCount = 0;
-    const tx = {
-      update: () => ({
-        set: (set: Record<string, unknown>) => {
-          mocks.updateCalls.push({ set });
-          return {
-            where: () => ({
-              returning: async () => {
-                updateCount += 1;
-                return mocks.transactionReturningQueue.shift() ?? (updateCount === 1 ? [{ id: "offer-1" }] : []);
-              },
-            }),
-          };
-        },
-      }),
-    };
-    return fn(tx);
-  });
+  mocks.transactionImpl.mockImplementation(
+    async (fn: (tx: unknown) => Promise<unknown>) => {
+      let updateCount = 0;
+      const tx = {
+        update: () => ({
+          set: (set: Record<string, unknown>) => {
+            mocks.updateCalls.push({ set });
+            return {
+              where: () => ({
+                returning: async () => {
+                  updateCount += 1;
+                  return (
+                    mocks.transactionReturningQueue.shift() ??
+                    (updateCount === 1 ? [{ id: "offer-1" }] : [])
+                  );
+                },
+              }),
+            };
+          },
+        }),
+      };
+      return fn(tx);
+    },
+  );
 }
 
 describe("email_outbox worker", () => {
   beforeEach(reset);
 
   it("sends the email and flips the offer + outbox to sent on success", async () => {
-    mocks.selectQueue.push([PENDING], [OFFER_DRAFT], [APPLICATION_ACTIVE], [RECIPIENT]);
+    mocks.selectQueue.push(
+      [PENDING],
+      [OFFER_DRAFT],
+      [APPLICATION_ACTIVE],
+      [RECIPIENT],
+    );
     mocks.sendWorkspaceEmail.mockResolvedValue(true);
 
     const result = await processEmailOutbox();
 
     expect(result).toEqual({ processed: 1, sent: 1, failed: 0 });
     expect(mocks.sendWorkspaceEmail).toHaveBeenCalledTimes(1);
-    const sentUpdates = mocks.updateCalls.filter((c) => c.set.status === "sent");
+    const sentUpdates = mocks.updateCalls.filter(
+      (c) => c.set.status === "sent",
+    );
     expect(sentUpdates.length).toBeGreaterThan(0);
   });
 
@@ -161,7 +237,12 @@ describe("email_outbox worker", () => {
   });
 
   it("queues a retry (keeps pending + bumps attempts) when delivery fails", async () => {
-    mocks.selectQueue.push([PENDING], [OFFER_DRAFT], [APPLICATION_ACTIVE], [RECIPIENT]);
+    mocks.selectQueue.push(
+      [PENDING],
+      [OFFER_DRAFT],
+      [APPLICATION_ACTIVE],
+      [RECIPIENT],
+    );
     mocks.sendWorkspaceEmail.mockResolvedValue(false);
 
     const result = await processEmailOutbox();
@@ -169,20 +250,30 @@ describe("email_outbox worker", () => {
     expect(result).toEqual({ processed: 1, sent: 0, failed: 1 });
     expect(mocks.sendWorkspaceEmail).toHaveBeenCalledTimes(1);
     // No success path; the failing row must carry a retry error + attempt bump.
-    const failedUpdate = mocks.updateCalls.find((c) => c.set.lastError !== undefined);
+    const failedUpdate = mocks.updateCalls.find(
+      (c) => c.set.lastError !== undefined,
+    );
     expect(failedUpdate?.set.lastError).toMatch(/did not accept/i);
     expect(failedUpdate?.set).toHaveProperty("attempts");
   });
 
   it("records the sent offer in the canonical conversation model", async () => {
-    mocks.selectQueue.push([PENDING], [OFFER_DRAFT], [APPLICATION_ACTIVE], [RECIPIENT]);
+    mocks.selectQueue.push(
+      [PENDING],
+      [OFFER_DRAFT],
+      [APPLICATION_ACTIVE],
+      [RECIPIENT],
+    );
     mocks.sendWorkspaceEmail.mockResolvedValue(true);
 
     const result = await processEmailOutbox();
 
     expect(result).toEqual({ processed: 1, sent: 1, failed: 0 });
     expect(mocks.insertCanonicalMessage).toHaveBeenCalledTimes(1);
-    const call = mocks.insertCanonicalMessage.mock.calls[0][0] as Record<string, unknown>;
+    const call = mocks.insertCanonicalMessage.mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
     expect(call).toMatchObject({
       workspaceId: "ws-1",
       candidateId: "cand-1",
@@ -193,9 +284,11 @@ describe("email_outbox worker", () => {
   });
 
   it("does not send an offer after its application becomes terminal", async () => {
-    mocks.selectQueue.push([
-      PENDING,
-    ], [OFFER_DRAFT], [{ ...APPLICATION_ACTIVE, status: "rejected" }]);
+    mocks.selectQueue.push(
+      [PENDING],
+      [OFFER_DRAFT],
+      [{ ...APPLICATION_ACTIVE, status: "rejected" }],
+    );
 
     const result = await processEmailOutbox();
 
@@ -204,7 +297,12 @@ describe("email_outbox worker", () => {
   });
 
   it("does not revive a withdrawn offer when delivery races its final transition", async () => {
-    mocks.selectQueue.push([PENDING], [OFFER_DRAFT], [APPLICATION_ACTIVE], [RECIPIENT]);
+    mocks.selectQueue.push(
+      [PENDING],
+      [OFFER_DRAFT],
+      [APPLICATION_ACTIVE],
+      [RECIPIENT],
+    );
     mocks.transactionReturningQueue.push([], []);
     mocks.sendWorkspaceEmail.mockResolvedValue(true);
 
@@ -213,5 +311,47 @@ describe("email_outbox worker", () => {
     expect(result).toEqual({ processed: 1, sent: 1, failed: 0 });
     expect(mocks.sendWorkspaceEmail).toHaveBeenCalledTimes(1);
     expect(mocks.insertCanonicalMessage).not.toHaveBeenCalled();
+  });
+
+  it("delivers an assessment invitation with a Harly URL from the durable queue", async () => {
+    mocks.selectQueue.push([ASSESSMENT_PENDING], [ASSESSMENT_TARGET]);
+    mocks.sendWorkspaceEmail.mockResolvedValue({ messageId: "provider-1" });
+
+    const result = await processEmailOutbox();
+
+    expect(result).toEqual({ processed: 1, sent: 1, failed: 0 });
+    const options = mocks.sendWorkspaceEmail.mock.calls[0]![1] as {
+      react: { props: { assessmentUrl: string; dueDate?: string } };
+    };
+    expect(options.react.props.assessmentUrl).toBe(
+      "https://harly.example/assessment/opaque-token",
+    );
+    expect(options.react.props.assessmentUrl).not.toContain(
+      "assessment.keepyjalive.org",
+    );
+    expect(options.react.props.dueDate).toBeTruthy();
+    expect(mocks.updateCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          set: expect.objectContaining({
+            status: "sent",
+            payload: {
+              assignmentId: "assessment-assignment-1",
+              templateVersion: 1,
+              tokenDiscarded: true,
+            },
+          }),
+        }),
+      ]),
+    );
+    expect(mocks.insertCanonicalMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "app-1",
+        candidateId: "cand-1",
+      }),
+    );
+    expect(
+      JSON.stringify(mocks.insertCanonicalMessage.mock.calls[0]![0]),
+    ).not.toContain("opaque-token");
   });
 });

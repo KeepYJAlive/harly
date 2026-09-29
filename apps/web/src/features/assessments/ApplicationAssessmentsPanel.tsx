@@ -51,6 +51,24 @@ const STATUS_LABEL: Record<AssessmentAssignmentItem["status"], string> = {
   error: "Launch error",
 };
 
+function assignmentStatusLabel(assignment: AssessmentAssignmentItem) {
+  if (assignment.status !== "completed") return STATUS_LABEL[assignment.status];
+  if (assignment.gradingProgress === "Failed") {
+    return "Completed — grading failed";
+  }
+  if (
+    assignment.gradingProgress &&
+    assignment.gradingProgress !== "FullyGraded"
+  ) {
+    return "Completed — grading pending";
+  }
+  return "Completed";
+}
+
+function readableProgress(value: string) {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
 function sevenDaysFromNow() {
   const date = new Date(Date.now() + 7 * 24 * 60 * 60_000);
   return date.toISOString().slice(0, 10);
@@ -185,7 +203,7 @@ export function ApplicationAssessmentsPanel({
                           Status:{" "}
                         </dt>
                         <dd className="inline font-medium">
-                          {STATUS_LABEL[assignment.status]}
+                          {assignmentStatusLabel(assignment)}
                         </dd>
                       </div>
                       <div>
@@ -218,11 +236,47 @@ export function ApplicationAssessmentsPanel({
                           </dd>
                         </div>
                       ) : null}
+                      {assignment.completedAt ? (
+                        <div>
+                          <dt className="inline text-muted-foreground">
+                            Completed:{" "}
+                          </dt>
+                          <dd className="inline">
+                            {new Date(assignment.completedAt).toLocaleString()}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {assignment.activityProgress ? (
+                        <div>
+                          <dt className="inline text-muted-foreground">
+                            TAO activity:{" "}
+                          </dt>
+                          <dd className="inline">
+                            {readableProgress(assignment.activityProgress)}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {assignment.gradingProgress ? (
+                        <div>
+                          <dt className="inline text-muted-foreground">
+                            Grading:{" "}
+                          </dt>
+                          <dd className="inline">
+                            {readableProgress(assignment.gradingProgress)}
+                          </dd>
+                        </div>
+                      ) : null}
                     </dl>
-                    {assignment.status === "completed" &&
-                    assignment.score === null ? (
+                    {assignment.score !== null ? (
+                      <p className="mt-2 text-sm font-medium">
+                        Score: {assignment.score}
+                        {assignment.maxScore !== null
+                          ? ` / ${assignment.maxScore}`
+                          : ""}
+                      </p>
+                    ) : assignment.status === "completed" ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Score: pending result synchronization
+                        Score: pending grading or result synchronization
                       </p>
                     ) : null}
                   </div>

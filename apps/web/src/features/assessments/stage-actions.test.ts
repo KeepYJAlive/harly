@@ -200,6 +200,8 @@ describe("pipeline stage assessment configuration", () => {
       stageId: STAGE_ID,
       enabled: true,
       assessmentDefinitionIds: [DEFINITION_A, DEFINITION_B],
+      sendInvitation: true,
+      deadlineDays: 7,
     });
     expect(result).toEqual({ ok: true });
     expect(insertedValues).toHaveBeenCalledWith([
@@ -208,6 +210,8 @@ describe("pipeline stage assessment configuration", () => {
         jobId: JOB_ID,
         stageId: STAGE_ID,
         assessmentDefinitionId: DEFINITION_A,
+        sendInvitation: true,
+        deadlineDays: 7,
       }),
       expect.objectContaining({ assessmentDefinitionId: DEFINITION_B }),
     ]);

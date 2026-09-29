@@ -12,6 +12,7 @@ import {
 } from "./identity";
 import {
   LTI_CLAIM,
+  LTI_AGS_SCORE_SCOPE,
   LTI_LEARNER_ROLE,
   LTI_MESSAGE_TYPE,
   LTI_VERSION,
@@ -29,6 +30,7 @@ export type TaoLaunchClaimsInput = {
   nonce: string;
   targetLinkUri: string;
   returnUrl: string;
+  lineItemUrl: string;
 };
 
 export type ManualTaoLaunchClaimsInput = {
@@ -62,6 +64,10 @@ export function createTaoLtiLaunchClaims(input: TaoLaunchClaimsInput) {
       document_target: "window",
       return_url: input.returnUrl,
       locale: "en-US",
+    },
+    [LTI_CLAIM.agsEndpoint]: {
+      scope: [LTI_AGS_SCORE_SCOPE],
+      lineitem: input.lineItemUrl,
     },
   };
 }
@@ -131,10 +137,7 @@ export async function signManualTaoLtiLaunchWithKey(
     .setIssuer(signing.issuer)
     .setAudience(input.clientId)
     .setSubject(
-      createLtiSubject(
-        input.organizationId,
-        "manual-tao-production-test-user",
-      ),
+      createLtiSubject(input.organizationId, "manual-tao-production-test-user"),
     )
     .setIssuedAt()
     .setExpirationTime("5m")

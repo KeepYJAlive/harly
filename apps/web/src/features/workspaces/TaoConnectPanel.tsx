@@ -259,9 +259,9 @@ export function TaoConnectPanel({
             value={status.platformTokenUrl}
           />
           <PlatformValue label="JWKS URL" value={status.platformJwksUrl} />
-          <UnavailableValue
-            label="AGS service URL"
-            detail="Assessment result storage is a later phase"
+          <PlatformValue
+            label="AGS line-item URL pattern"
+            value={status.platformAgsLineItemPattern}
           />
         </div>
       </Card>
@@ -310,14 +310,17 @@ export function TaoConnectPanel({
       <Card className="space-y-5 p-6">
         <SectionIntro
           title="Result passback"
-          description="Assessment assignment and result records are intentionally deferred to the next phase."
+          description="TAO can publish standards-based score and progress updates to each Harly assessment assignment."
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <InfoValue
             label="Result transport"
             value="LTI 1.3 Assignment and Grade Services (AGS)"
           />
-          <InfoValue label="Candidate identity" value="Harly application ID" />
+          <InfoValue
+            label="Candidate identity"
+            value="Stable opaque Harly application subject"
+          />
         </div>
       </Card>
     </div>
@@ -413,23 +416,6 @@ function PlatformValue({
           Copy
         </Button>
       ) : null}
-    </div>
-  );
-}
-
-function UnavailableValue({
-  label,
-  detail,
-}: {
-  label: string;
-  detail?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="text-xs text-muted-foreground">
-        Not yet available{detail ? ` · ${detail}` : ""}
-      </p>
     </div>
   );
 }

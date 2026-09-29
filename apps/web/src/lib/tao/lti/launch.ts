@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
+  activityEvents,
   applications,
   assessmentAssignments,
   assessmentDefinitions,
@@ -143,6 +144,31 @@ type ResolvedAssignment = NonNullable<
   Awaited<ReturnType<typeof findAssignmentByToken>>
 >;
 
+async function recordAssignmentLaunchFailure(
+  assignment: ResolvedAssignment,
+  reason: "configuration" | "provider",
+) {
+  await logAuditEvent({
+    workspaceId: assignment.organizationId,
+    action: "assessment.launch_failed",
+    resourceType: "assessment_assignment",
+    resourceId: assignment.assignmentId,
+    metadata: { provider: "tao", reason },
+    severity: "warning",
+  });
+  try {
+    await db.insert(activityEvents).values({
+      workspaceId: assignment.organizationId,
+      entityType: "application",
+      entityId: assignment.applicationId,
+      type: "assessment.launch_failed",
+      metadata: { assignmentId: assignment.assignmentId, reason },
+    });
+  } catch (error) {
+    log.error(error, "Could not record TAO assessment launch failure");
+  }
+}
+
 async function beginResolvedTaoCandidateLaunch(
   assignment: ResolvedAssignment,
 ): Promise<string> {
@@ -171,6 +197,7 @@ async function beginResolvedTaoCandidateLaunch(
 
   const config = await getTaoLtiPlatformConfig(assignment.organizationId);
   if (!config) {
+    await recordAssignmentLaunchFailure(assignment, "configuration");
     throw new CandidateLaunchError(
       "configuration",
       "TAO LTI is not configured.",
@@ -185,6 +212,7 @@ async function beginResolvedTaoCandidateLaunch(
     );
   } catch (error) {
     log.error(error, "Stored TAO target URL is invalid");
+    await recordAssignmentLaunchFailure(assignment, "configuration");
     throw new CandidateLaunchError("configuration", "TAO target is invalid.");
   }
 
@@ -203,8 +231,10 @@ async function beginResolvedTaoCandidateLaunch(
       returnExpiresAt,
     })
     .returning({ id: assessmentLtiLaunches.id });
-  if (!launch)
+  if (!launch) {
+    await recordAssignmentLaunchFailure(assignment, "provider");
     throw new CandidateLaunchError("provider", "Could not create launch.");
+  }
 
   const initiationUrl = new URL(config.oidcInitiationUrl);
   initiationUrl.searchParams.set(
@@ -328,6 +358,9 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
   // the newly generated value for this one launch.
   const rawReturnToken = createOpaqueToken(32);
   const returnUrl = toHarlyPublicUrl(`/assessments/complete/${rawReturnToken}`);
+  const lineItemUrl = toHarlyPublicUrl(
+    `/api/integrations/tao/lti/ags/lineitems/${row.assignmentId}`,
+  );
   const idToken = await signTaoLtiLaunch({
     organizationId: row.organizationId,
     applicationId: row.applicationId,
@@ -339,6 +372,7 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
     nonce: input.nonce,
     targetLinkUri,
     returnUrl,
+    lineItemUrl,
   });
 
   const stateHash = hashOpaqueToken(input.state);
@@ -362,7 +396,7 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
       )
       .returning({ id: assessmentLtiLaunches.id });
     if (!updated) return false;
-    await tx
+    const [started] = await tx
       .update(assessmentAssignments)
       .set({ status: "started", startedAt: now, updatedAt: now })
       .where(
@@ -370,7 +404,17 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
           eq(assessmentAssignments.id, row.assignmentId),
           eq(assessmentAssignments.status, "assigned"),
         ),
-      );
+      )
+      .returning({ id: assessmentAssignments.id });
+    if (started) {
+      await tx.insert(activityEvents).values({
+        workspaceId: row.organizationId,
+        entityType: "application",
+        entityId: row.applicationId,
+        type: "assessment.started",
+        metadata: { assignmentId: row.assignmentId, provider: "tao" },
+      });
+    }
     return true;
   });
   if (!consumed) authorizationFailure("Launch session has already been used.");

@@ -60,10 +60,22 @@ export default async function PipelinePage({
       getWorkspaceTaoStatus(workspace.id),
       can("jobs:edit"),
     ]);
-  const configuredDefinitionIdsByStage = stageAssessmentRows.reduce<
-    Record<string, string[]>
+  const configurationByStage = stageAssessmentRows.reduce<
+    Record<
+      string,
+      {
+        assessmentDefinitionIds: string[];
+        sendInvitation: boolean;
+        deadlineDays: number | null;
+      }
+    >
   >((result, row) => {
-    (result[row.stageId] ??= []).push(row.assessmentDefinitionId);
+    const configuration = (result[row.stageId] ??= {
+      assessmentDefinitionIds: [],
+      sendInvitation: row.sendInvitation,
+      deadlineDays: row.deadlineDays,
+    });
+    configuration.assessmentDefinitionIds.push(row.assessmentDefinitionId);
     return result;
   }, {});
 
@@ -81,7 +93,7 @@ export default async function PipelinePage({
             jobId={data.selectedJob.id}
             stages={data.stages}
             assessments={assessmentDefinitions}
-            configuredDefinitionIdsByStage={configuredDefinitionIdsByStage}
+            configurationByStage={configurationByStage}
             taoEnabled={taoStatus.enabled}
             canEdit={canEditJobs}
           />

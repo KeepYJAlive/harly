@@ -63,10 +63,22 @@ export default async function DashboardJobPage({
       getWorkspaceTaoStatus(workspace.id),
       can("jobs:edit"),
     ]);
-  const configuredDefinitionIdsByStage = stageAssessmentRows.reduce<
-    Record<string, string[]>
+  const configurationByStage = stageAssessmentRows.reduce<
+    Record<
+      string,
+      {
+        assessmentDefinitionIds: string[];
+        sendInvitation: boolean;
+        deadlineDays: number | null;
+      }
+    >
   >((configuration, row) => {
-    (configuration[row.stageId] ??= []).push(row.assessmentDefinitionId);
+    const stageConfiguration = (configuration[row.stageId] ??= {
+      assessmentDefinitionIds: [],
+      sendInvitation: row.sendInvitation,
+      deadlineDays: row.deadlineDays,
+    });
+    stageConfiguration.assessmentDefinitionIds.push(row.assessmentDefinitionId);
     return configuration;
   }, {});
   const appUrl = getHarlyPublicOrigin();
@@ -92,7 +104,7 @@ export default async function DashboardJobPage({
           jobId={job.id}
           stages={stages}
           assessments={assessmentDefinitions}
-          configuredDefinitionIdsByStage={configuredDefinitionIdsByStage}
+          configurationByStage={configurationByStage}
           taoEnabled={taoStatus.enabled}
           canEdit={canEditJobs}
         />

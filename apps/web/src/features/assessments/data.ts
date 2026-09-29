@@ -56,6 +56,10 @@ export async function listAssessmentAssignmentsForCandidate(
       expiresAt: assessmentAssignments.expiresAt,
       score: assessmentAssignments.score,
       maxScore: assessmentAssignments.maxScore,
+      activityProgress: assessmentAssignments.activityProgress,
+      gradingProgress: assessmentAssignments.gradingProgress,
+      resultReceivedAt: assessmentAssignments.resultReceivedAt,
+      syncedAt: assessmentAssignments.syncedAt,
       sourceStageName: jobStages.name,
     })
     .from(assessmentAssignments)
@@ -94,6 +98,8 @@ export async function listAssessmentAssignmentsForCandidate(
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
     expiresAt: row.expiresAt?.toISOString() ?? null,
+    resultReceivedAt: row.resultReceivedAt?.toISOString() ?? null,
+    syncedAt: row.syncedAt?.toISOString() ?? null,
   }));
 }
 
