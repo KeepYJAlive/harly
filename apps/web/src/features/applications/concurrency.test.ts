@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
       return hits <= failures ? [] : [{ id: "app-1" }];
     },
     transactionImpl: vi.fn(),
+    createStageAssessmentAssignments: vi.fn(),
   };
 });
 
@@ -66,12 +67,14 @@ vi.mock("@harly/db", () => {
               {
                 id: "app-1",
                 jobId: "job-1",
+                candidateId: "candidate-1",
                 workspaceId: "ws-1",
                 currentStageId: "stage-current",
                 status: "active",
                 // Present so both the application row and the jobStage lookup
                 // (which reads `.name`) resolve against this universal mock row.
                 name: "Screening",
+                assignAssessmentsOnEntry: true,
                 updatedAt: new Date("2024-01-01T00:00:00.000Z"),
               },
             ],
@@ -101,6 +104,9 @@ vi.mock("@/server/webhooks/emit", () => ({
 vi.mock("@/features/applications/notifications", () => ({
   notifyApplicationStatusChange: vi.fn(),
 }));
+vi.mock("@/features/assessments/stage-assignment-service", () => ({
+  createStageAssessmentAssignments: mocks.createStageAssessmentAssignments,
+}));
 vi.mock("@/lib/email/outbox-processor", () => ({
   enqueueEmailOutbox: vi.fn(),
   processEmailOutbox: vi.fn(),
@@ -115,6 +121,7 @@ describe("moveApplicationStageForApi concurrency retry", () => {
   beforeEach(() => {
     mocks.reset();
     mocks.transactionImpl.mockReset();
+    mocks.createStageAssessmentAssignments.mockReset();
   });
 
   function makeTx() {
@@ -123,7 +130,13 @@ describe("moveApplicationStageForApi concurrency retry", () => {
       where: () => stageSelect,
       limit: () => stageSelect,
       then: (_resolve: (v: unknown) => void) =>
-        _resolve([{ id: "stage-target", name: "Screening" }]),
+        _resolve([
+          {
+            id: "stage-target",
+            name: "Screening",
+            assignAssessmentsOnEntry: true,
+          },
+        ]),
     };
     const updateBuilder: Record<string, unknown> = {
       set: () => updateBuilder,
@@ -188,6 +201,13 @@ describe("moveApplicationStageForApi concurrency retry", () => {
 
     expect(result.id).toBe("app-1");
     expect(mocks.transactionImpl).toHaveBeenCalledTimes(2);
+    expect(mocks.createStageAssessmentAssignments).toHaveBeenCalledWith(tx, {
+      organizationId: "ws-1",
+      applicationId: "app-1",
+      candidateId: "candidate-1",
+      stageId: "stage-target",
+      actorId: undefined,
+    });
   });
 
   it("surfaces the conflict after exhausting retries when retryOnConflict is true", async () => {

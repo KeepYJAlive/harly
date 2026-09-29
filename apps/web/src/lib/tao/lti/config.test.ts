@@ -1,8 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ limit: vi.fn() }));
+
+vi.mock("@harly/db", () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: () => ({ limit: mocks.limit }),
+      }),
+    }),
+  },
+  workspaceSettings: {
+    organizationId: "organizationId",
+    taoEnabled: "taoEnabled",
+    taoClientId: "taoClientId",
+    taoDeploymentId: "taoDeploymentId",
+    taoInstanceUrl: "taoInstanceUrl",
+  },
+}));
 
 import {
   buildTaoLaunchResponseUri,
   buildTaoTargetLinkUri,
+  getTaoLtiPlatformConfig,
   isTrustedTaoLaunchResponseUri,
   isTrustedTaoTargetLinkUri,
 } from "./config";
@@ -14,6 +34,28 @@ const deliveryId = "9ddca443197e";
 const targetLinkUri = `${launchResponseUri}/${deliveryId}`;
 
 describe("TAO LTI launch URLs", () => {
+  it("derives assignment launch endpoints from the saved TAO base URL", async () => {
+    mocks.limit.mockResolvedValueOnce([
+      {
+        enabled: true,
+        clientId: "harly-client",
+        deploymentId: "harly-deployment",
+        instanceUrl: "https://tao.example.test/tenant",
+      },
+    ]);
+
+    await expect(getTaoLtiPlatformConfig("organization-1")).resolves.toEqual({
+      organizationId: "organization-1",
+      clientId: "harly-client",
+      deploymentId: "harly-deployment",
+      instanceUrl: "https://tao.example.test/tenant",
+      oidcInitiationUrl:
+        "https://tao.example.test/auth-server/lti1p3/oidc/initiation",
+      launchResponseUri:
+        "https://tao.example.test/deliver/api/v1/auth/launch-lti-1p3",
+    });
+  });
+
   it("derives and accepts only the fixed launch response endpoint", () => {
     expect(buildTaoLaunchResponseUri(taoOrigin)).toBe(launchResponseUri);
     expect(

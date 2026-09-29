@@ -94,9 +94,9 @@ export function TaoAssessmentsSection({
             TAO assessments
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Map friendly Harly names to delivery IDs already published in TAO.
-            TAO Community Edition does not expose a supported delivery catalog
-            API, so these are registered manually.
+            TAO provides a delivery catalog REST API for REST Publisher
+            accounts. Harly discovery is not configured with a TAO service
+            credential, so register published delivery IDs manually for now.
           </p>
         </div>
         <Button size="sm" onClick={add} disabled={!canEdit}>

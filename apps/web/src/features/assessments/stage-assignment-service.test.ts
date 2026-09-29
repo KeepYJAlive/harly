@@ -4,6 +4,7 @@ const tables = vi.hoisted(() => ({
   assessmentAssignments: {
     id: "assignment.id",
     assessmentDefinitionId: "assignment.definition",
+    providerResourceId: "assignment.providerResourceId",
   },
   assessmentDefinitions: {
     id: "definition.id",
@@ -104,8 +105,16 @@ describe("automatic stage assessment assignments", () => {
   it("creates multiple local assignments without contacting TAO", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const configured = [
-      { stageName: "Assessment", assessmentDefinitionId: "definition-a" },
-      { stageName: "Assessment", assessmentDefinitionId: "definition-b" },
+      {
+        stageName: "Assessment",
+        assessmentDefinitionId: "definition-a",
+        providerResourceId: "delivery-a",
+      },
+      {
+        stageName: "Assessment",
+        assessmentDefinitionId: "definition-b",
+        providerResourceId: "delivery-b",
+      },
     ];
     const { tx, assignmentValues, activityValues, notificationValues } =
       createTransaction(configured);
@@ -120,9 +129,13 @@ describe("automatic stage assessment assignments", () => {
           organizationId: INPUT.organizationId,
           applicationId: INPUT.applicationId,
           assessmentDefinitionId: "definition-a",
+          providerResourceId: "delivery-a",
           sourceStageId: INPUT.stageId,
         }),
-        expect.objectContaining({ assessmentDefinitionId: "definition-b" }),
+        expect.objectContaining({
+          assessmentDefinitionId: "definition-b",
+          providerResourceId: "delivery-b",
+        }),
       ]),
     );
     expect(values[0].launchTokenHash).toMatch(/^[A-Za-z0-9_-]{43}$/);

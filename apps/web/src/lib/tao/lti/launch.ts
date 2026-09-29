@@ -13,7 +13,6 @@ import { logAuditEvent } from "@/lib/audit-log";
 import { toHarlyPublicUrl } from "@/lib/public-origin";
 import { createLogger } from "@/lib/logger";
 import {
-  buildTaoLaunchResponseUri,
   buildTaoTargetLinkUri,
   getTaoLtiPlatformConfig,
   isTrustedTaoLaunchResponseUri,
@@ -60,7 +59,7 @@ async function findAssignmentByToken(rawToken: string) {
       expiresAt: assessmentAssignments.expiresAt,
       definitionId: assessmentDefinitions.id,
       assessmentName: assessmentDefinitions.name,
-      externalId: assessmentDefinitions.externalId,
+      externalId: assessmentAssignments.providerResourceId,
       definitionActive: assessmentDefinitions.active,
       jobId: applications.jobId,
     })
@@ -104,7 +103,7 @@ async function findAssignmentForPortal(input: {
       expiresAt: assessmentAssignments.expiresAt,
       definitionId: assessmentDefinitions.id,
       assessmentName: assessmentDefinitions.name,
-      externalId: assessmentDefinitions.externalId,
+      externalId: assessmentAssignments.providerResourceId,
       definitionActive: assessmentDefinitions.active,
       jobId: applications.jobId,
     })
@@ -181,7 +180,7 @@ async function beginResolvedTaoCandidateLaunch(
   let targetLinkUri: string;
   try {
     targetLinkUri = buildTaoTargetLinkUri(
-      config.launchUrl,
+      config.launchResponseUri,
       assignment.externalId,
     );
   } catch (error) {
@@ -305,13 +304,16 @@ export async function authorizeTaoLtiLaunch(input: OidcAuthorizationInput) {
   if (!config || config.clientId !== input.clientId) {
     authorizationFailure("LTI registration does not match.");
   }
-  if (!isTrustedTaoLaunchResponseUri(input.redirectUri, config.launchUrl)) {
+  if (!isTrustedTaoLaunchResponseUri(input.redirectUri, config.instanceUrl)) {
     authorizationFailure(
       "redirect_uri does not match the TAO launch response endpoint.",
     );
   }
-  const launchResponseUri = buildTaoLaunchResponseUri(config.launchUrl);
-  const targetLinkUri = buildTaoTargetLinkUri(config.launchUrl, row.externalId);
+  const launchResponseUri = config.launchResponseUri;
+  const targetLinkUri = buildTaoTargetLinkUri(
+    config.launchResponseUri,
+    row.externalId,
+  );
 
   const [launchSession] = await db
     .select({

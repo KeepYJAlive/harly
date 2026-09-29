@@ -35,6 +35,7 @@ export async function createStageAssessmentAssignments(
     .select({
       stageName: jobStages.name,
       assessmentDefinitionId: pipelineStageAssessments.assessmentDefinitionId,
+      providerResourceId: assessmentDefinitions.externalId,
     })
     .from(pipelineStageAssessments)
     .innerJoin(
@@ -86,6 +87,7 @@ export async function createStageAssessmentAssignments(
         organizationId: input.organizationId,
         applicationId: input.applicationId,
         assessmentDefinitionId: item.assessmentDefinitionId,
+        providerResourceId: item.providerResourceId,
         sourceStageId: input.stageId,
         assignedById: input.actorId ?? null,
         // The raw value is deliberately discarded. Authenticated portal

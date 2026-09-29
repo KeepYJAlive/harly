@@ -2,13 +2,15 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 import { db, workspaceSettings } from "@harly/db";
+import { getTaoToolConfiguration } from "@/lib/lti/config";
 
 export type TaoLtiPlatformConfig = {
   organizationId: string;
   clientId: string;
   deploymentId: string;
+  instanceUrl: string;
   oidcInitiationUrl: string;
-  launchUrl: string;
+  launchResponseUri: string;
 };
 
 export const TAO_LTI_LAUNCH_RESPONSE_PATH =
@@ -61,8 +63,7 @@ export async function getTaoLtiPlatformConfig(
       enabled: workspaceSettings.taoEnabled,
       clientId: workspaceSettings.taoClientId,
       deploymentId: workspaceSettings.taoDeploymentId,
-      oidcInitiationUrl: workspaceSettings.taoOidcAuthUrl,
-      launchUrl: workspaceSettings.taoLaunchUrl,
+      instanceUrl: workspaceSettings.taoInstanceUrl,
     })
     .from(workspaceSettings)
     .where(eq(workspaceSettings.organizationId, organizationId))
@@ -72,19 +73,30 @@ export async function getTaoLtiPlatformConfig(
     !row?.enabled ||
     !row.clientId ||
     !row.deploymentId ||
-    !row.oidcInitiationUrl ||
-    !row.launchUrl
+    !row.instanceUrl
   ) {
     return null;
   }
+
+  let oidcInitiationUrl: string | null;
+  let launchResponseUri: string;
+  try {
+    oidcInitiationUrl =
+      getTaoToolConfiguration(row.instanceUrl).oidcInitiationUrl;
+    launchResponseUri = buildTaoLaunchResponseUri(row.instanceUrl);
+  } catch {
+    return null;
+  }
+  if (!oidcInitiationUrl) return null;
 
   return {
     organizationId,
     clientId: row.clientId,
     deploymentId: row.deploymentId,
-    oidcInitiationUrl: row.oidcInitiationUrl,
-    launchUrl: row.launchUrl,
-  } as TaoLtiPlatformConfig;
+    instanceUrl: row.instanceUrl,
+    oidcInitiationUrl,
+    launchResponseUri,
+  };
 }
 
 export function buildTaoTargetLinkUri(

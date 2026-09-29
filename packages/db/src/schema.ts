@@ -944,13 +944,10 @@ export const workspaceSettings = pgTable(
     jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
     jitsiBaseUrl: text("jitsi_base_url"),
     // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
-    // Existing launch settings remain until the launch flow is migrated.
     taoEnabled: boolean("tao_enabled").default(false).notNull(),
     taoInstanceUrl: text("tao_instance_url"),
     taoClientId: text("tao_client_id"),
     taoDeploymentId: text("tao_deployment_id"),
-    taoOidcAuthUrl: text("tao_oidc_auth_url"),
-    taoLaunchUrl: text("tao_launch_url"),
     taoLastConnectionStatus: text("tao_last_connection_status"),
     taoLastConnectionError: text("tao_last_connection_error"),
     taoLastTestedAt: timestamp("tao_last_tested_at", { withTimezone: true }),
@@ -1662,6 +1659,10 @@ export const applications = pgTable(
       table.candidateId,
       table.jobId,
     ),
+    uniqueIndex("applications_workspace_id_uidx").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("applications_workspace_status_idx").on(
       table.workspaceId,
       table.status,
@@ -1776,6 +1777,7 @@ export const assessmentAssignments = pgTable(
     assessmentDefinitionId: uuid("assessment_definition_id")
       .notNull()
       .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    providerResourceId: text("provider_resource_id").notNull(),
     externalExecutionId: text("external_execution_id"),
     status: assessmentAssignmentStatusEnum("status")
       .default("assigned")
@@ -1839,6 +1841,11 @@ export const assessmentAssignments = pgTable(
       ],
       name: "assessment_assignments_org_definition_fk",
     }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.applicationId],
+      foreignColumns: [applications.workspaceId, applications.id],
+      name: "assessment_assignments_org_application_fk",
+    }).onDelete("cascade"),
   ],
 );
 
