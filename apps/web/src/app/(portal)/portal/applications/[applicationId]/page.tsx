@@ -4,7 +4,13 @@ import Link from "next/link";
 import { eq, and, isNull } from "drizzle-orm";
 import type { Route } from "next";
 
-import { applications, candidates, db, jobs, workspaceSettings } from "@harly/db";
+import {
+  applications,
+  candidates,
+  db,
+  jobs,
+  workspaceSettings,
+} from "@harly/db";
 import { PORTAL_SESSION_COOKIE, resolvePortalSession } from "@/lib/portal-auth";
 import {
   getPortalApplicationInterviews,
@@ -19,12 +25,15 @@ import { PortalDocumentRequestsCard } from "@/features/portal/PortalDocumentRequ
 import { listDocumentRequestsForPortal } from "@/features/documents/requests-data";
 import { PortalStatusBadge } from "@/features/portal/PortalStatusBadge";
 import { PortalEmptyState } from "@/features/portal/PortalEmptyState";
-import { PortalActivityTimeline, type ActivityItem } from "@/features/portal/PortalActivityTimeline";
 import {
-  CalendarBlankIcon,
-} from "@/components/ui/icons/phosphor";
+  PortalActivityTimeline,
+  type ActivityItem,
+} from "@/features/portal/PortalActivityTimeline";
+import { CalendarBlankIcon } from "@/components/ui/icons/phosphor";
 import { formatShort } from "@/lib/date";
 import { formatEnumLabel } from "@/lib/format";
+import { listPortalAssessmentAssignments } from "@/features/assessments/data";
+import { PortalAssessmentsCard } from "@/features/assessments/PortalAssessmentsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +65,9 @@ function synthesizeActivities(
         id: `${iv.id}-done`,
         type: "interview_completed",
         label: `${iv.title ?? formatEnumLabel(iv.type)} completed`,
-        timestamp: new Date(iv.scheduledAt.getTime() + iv.durationMins * 60_000),
+        timestamp: new Date(
+          iv.scheduledAt.getTime() + iv.durationMins * 60_000,
+        ),
       });
     } else if (iv.status === "scheduled") {
       items.push({
@@ -182,13 +193,20 @@ export default async function ApplicationDetailPage({
     candidateId: session.candidateId,
     applicationId: appRow.id,
   });
+  const assessmentAssignments = await listPortalAssessmentAssignments({
+    organizationId: session.workspaceId,
+    candidateId: session.candidateId,
+    applicationId: appRow.id,
+  });
 
   const now = new Date();
   const upcomingInterviews = interviewsList.filter(
     (i) => i.status === "scheduled" && i.scheduledAt > now,
   );
   const pastInterviews = interviewsList.filter(
-    (i) => i.status === "completed" || (i.status === "scheduled" && i.scheduledAt <= now),
+    (i) =>
+      i.status === "completed" ||
+      (i.status === "scheduled" && i.scheduledAt <= now),
   );
 
   return (
@@ -199,8 +217,18 @@ export default async function ApplicationDetailPage({
           href="/portal/applications"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+          <svg
+            className="size-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+            />
           </svg>
           Back to applications
         </Link>
@@ -215,12 +243,18 @@ export default async function ApplicationDetailPage({
               {appRow.jobDepartment && <span>{appRow.jobDepartment}</span>}
               {appRow.jobLocation && <span>{appRow.jobLocation}</span>}
               {appRow.jobWorkplaceType && (
-                <span>{WORKPLACE_LABELS[appRow.jobWorkplaceType] ?? appRow.jobWorkplaceType}</span>
+                <span>
+                  {WORKPLACE_LABELS[appRow.jobWorkplaceType] ??
+                    appRow.jobWorkplaceType}
+                </span>
               )}
               {appRow.jobOpportunityType === "volunteer" ? (
                 <span>Volunteer Opportunity</span>
               ) : appRow.jobEmploymentType ? (
-                <span>{EMPLOYMENT_LABELS[appRow.jobEmploymentType] ?? appRow.jobEmploymentType}</span>
+                <span>
+                  {EMPLOYMENT_LABELS[appRow.jobEmploymentType] ??
+                    appRow.jobEmploymentType}
+                </span>
               ) : null}
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -256,10 +290,14 @@ export default async function ApplicationDetailPage({
         {/* Documents the recruiter requested — upload / status per item */}
         <PortalDocumentRequestsCard requests={documentRequests} />
 
+        <PortalAssessmentsCard assignments={assessmentAssignments} />
+
         {/* Horizontal pipeline */}
         {showStatus && stages.length > 0 && (
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-foreground">Interview plan</h2>
+            <h2 className="mb-4 text-lg font-semibold text-foreground">
+              Interview plan
+            </h2>
             <div className="rounded-2xl border border-border bg-card p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               <PortalHorizontalPipeline
                 stages={stages}
@@ -273,7 +311,9 @@ export default async function ApplicationDetailPage({
         {/* Upcoming interviews */}
         {upcomingInterviews.length > 0 && (
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-foreground">Upcoming Interviews</h2>
+            <h2 className="mb-4 text-lg font-semibold text-foreground">
+              Upcoming Interviews
+            </h2>
             <div className="space-y-3">
               {upcomingInterviews.map((iv) => (
                 <PortalInterviewCard
@@ -295,7 +335,9 @@ export default async function ApplicationDetailPage({
         {/* Past interviews */}
         {pastInterviews.length > 0 && (
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-foreground">Past Interviews</h2>
+            <h2 className="mb-4 text-lg font-semibold text-foreground">
+              Past Interviews
+            </h2>
             <div className="space-y-3">
               {pastInterviews.map((iv) => (
                 <PortalInterviewCard
@@ -327,7 +369,9 @@ export default async function ApplicationDetailPage({
         {/* Activity timeline (full mode, all activities) */}
         {activities.length > 0 && (
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-foreground">Activity</h2>
+            <h2 className="mb-4 text-lg font-semibold text-foreground">
+              Activity
+            </h2>
             <div className="rounded-2xl border border-border bg-card p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               <PortalActivityTimeline activities={activities} />
             </div>

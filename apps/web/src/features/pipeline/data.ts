@@ -41,6 +41,7 @@ export type PipelineStage = {
   emailConfig: {
     candidateUpdatesEnabled: boolean;
   };
+  assignAssessmentsOnEntry: boolean;
 };
 
 export type PipelineApplication = {
@@ -112,9 +113,7 @@ async function getDefaultPipelineJobId(workspaceId: string) {
   const [latestJob] = await db
     .select({ id: jobs.id })
     .from(jobs)
-    .where(
-      and(eq(jobs.workspaceId, workspaceId), isNull(jobs.deletedAt)),
-    )
+    .where(and(eq(jobs.workspaceId, workspaceId), isNull(jobs.deletedAt)))
     .orderBy(desc(jobs.createdAt))
     .limit(1);
 
@@ -157,10 +156,7 @@ export async function getNextStage(
     })
     .from(jobStages)
     .where(
-      and(
-        eq(jobStages.workspaceId, workspace.id),
-        eq(jobStages.jobId, jobId),
-      ),
+      and(eq(jobStages.workspaceId, workspace.id), eq(jobStages.jobId, jobId)),
     )
     .orderBy(asc(jobStages.order));
 
@@ -204,9 +200,7 @@ export async function getPipelineData(
       status: jobs.status,
     })
     .from(jobs)
-    .where(
-      and(eq(jobs.workspaceId, workspace.id), isNull(jobs.deletedAt)),
-    )
+    .where(and(eq(jobs.workspaceId, workspace.id), isNull(jobs.deletedAt)))
     .orderBy(desc(jobs.createdAt));
 
   if (jobOptions.length === 0) {
@@ -229,6 +223,7 @@ export async function getPipelineData(
         color: jobStages.color,
         order: jobStages.order,
         emailConfig: jobStages.emailConfig,
+        assignAssessmentsOnEntry: jobStages.assignAssessmentsOnEntry,
       })
       .from(jobStages)
       .where(
@@ -281,7 +276,10 @@ export async function getPipelineData(
           isNull(jobs.deletedAt),
         ),
       )
-      .leftJoin(latestStageMove, eq(latestStageMove.applicationId, applications.id))
+      .leftJoin(
+        latestStageMove,
+        eq(latestStageMove.applicationId, applications.id),
+      )
       .leftJoin(
         aiEvaluations,
         and(
@@ -298,7 +296,9 @@ export async function getPipelineData(
       .orderBy(asc(applications.pipelineOrder), desc(applications.appliedAt)),
   ]);
 
-  const candidateIds = Array.from(new Set(jobApplications.map((a) => a.candidateId)));
+  const candidateIds = Array.from(
+    new Set(jobApplications.map((a) => a.candidateId)),
+  );
   const featuredReferralRows = candidateIds.length
     ? await db
         .select({ candidateId: candidateReferrals.candidateId })
@@ -320,25 +320,29 @@ export async function getPipelineData(
     kind: "ready",
     jobs: jobOptions,
     selectedJob,
-    applications: jobApplications.map(({ candidateGithubUrl, ...application }) => ({
-      ...application,
-      isFeaturedReferral: featuredReferralCandidateIds.has(application.candidateId),
-      evaluationSource:
-        application.evaluationSource === "rules"
-          ? "rules"
-          : application.evaluationSource
-            ? "ai"
-            : null,
-      candidateAvatarFallbackSrcs: candidateAvatarFallbackSrcs(
-        application.candidateEmail,
-        candidateGithubUrl,
-      ),
-      appliedAt: application.appliedAt.toISOString(),
-      createdAt: application.createdAt.toISOString(),
-      lastStageMovedAt: application.lastStageMovedAt
-        ? new Date(application.lastStageMovedAt).toISOString()
-        : null,
-    })),
+    applications: jobApplications.map(
+      ({ candidateGithubUrl, ...application }) => ({
+        ...application,
+        isFeaturedReferral: featuredReferralCandidateIds.has(
+          application.candidateId,
+        ),
+        evaluationSource:
+          application.evaluationSource === "rules"
+            ? "rules"
+            : application.evaluationSource
+              ? "ai"
+              : null,
+        candidateAvatarFallbackSrcs: candidateAvatarFallbackSrcs(
+          application.candidateEmail,
+          candidateGithubUrl,
+        ),
+        appliedAt: application.appliedAt.toISOString(),
+        createdAt: application.createdAt.toISOString(),
+        lastStageMovedAt: application.lastStageMovedAt
+          ? new Date(application.lastStageMovedAt).toISOString()
+          : null,
+      }),
+    ),
     stages: stages.map((stage) => ({
       ...stage,
       emailConfig: normalizeStageEmailConfig(stage.emailConfig),
@@ -366,12 +370,16 @@ export type PipelineSummary = {
  * Return aggregate stats for a job pipeline. Returns null when the job has no
  * active applications, so the card can be hidden without an extra query.
  */
-export async function getPipelineSummary(jobId: string): Promise<PipelineSummary | null> {
+export async function getPipelineSummary(
+  jobId: string,
+): Promise<PipelineSummary | null> {
   const { organization: workspace } = await getWorkspaceContext();
 
   const STALLED_DAYS = 14;
 
-  const stalledThreshold = new Date(Date.now() - STALLED_DAYS * 24 * 60 * 60 * 1000);
+  const stalledThreshold = new Date(
+    Date.now() - STALLED_DAYS * 24 * 60 * 60 * 1000,
+  );
 
   // Total active applications for this job.
   const [totalsRow] = await db
@@ -418,7 +426,10 @@ export async function getPipelineSummary(jobId: string): Promise<PipelineSummary
         isNull(jobs.deletedAt),
       ),
     )
-    .leftJoin(latestStageMove, eq(latestStageMove.applicationId, applications.id))
+    .leftJoin(
+      latestStageMove,
+      eq(latestStageMove.applicationId, applications.id),
+    )
     .where(
       and(
         eq(applications.workspaceId, workspace.id),

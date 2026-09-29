@@ -26,6 +26,7 @@ describe("TaoConnectPanel", () => {
         tileClassName: "bg-violet-600 text-white",
         description: "Connect TAO over LTI 1.3.",
         manualTestLaunchEnabled: true,
+        assessments: [],
         status: {
           enabled: true,
           configured: true,
@@ -74,7 +75,9 @@ describe("TaoConnectPanel", () => {
     expect(markup).toContain("Manual LTI test");
     expect(markup).toContain("Launch Production Test");
     expect(markup).toContain('href="/assessments/take-assessment"');
-    expect(markup).toContain("https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}");
+    expect(markup).toContain(
+      "https://tao.example.com/deliver/api/v1/auth/launch-lti-1p3/{deliveryId}",
+    );
     expect(markup).not.toContain("Map friendly Harly names to deliveries");
     expect(markup).not.toContain("Coming soon");
   });
@@ -86,6 +89,7 @@ describe("TaoConnectPanel", () => {
         tileClassName: "bg-violet-600 text-white",
         description: "Connect TAO over LTI 1.3.",
         manualTestLaunchEnabled: false,
+        assessments: [],
         status: {
           enabled: true,
           configured: true,

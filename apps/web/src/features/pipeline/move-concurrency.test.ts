@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     requirePermission: vi.fn(),
     requireApplicationPermission: vi.fn(),
     emitWebhookEvent: vi.fn(),
+    createStageAssessmentAssignments: vi.fn(),
   };
 });
 
@@ -63,6 +64,9 @@ vi.mock("@/server/webhooks/emit", () => ({
   emitWebhookEvent: mocks.emitWebhookEvent,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/features/assessments/stage-assignment-service", () => ({
+  createStageAssessmentAssignments: mocks.createStageAssessmentAssignments,
+}));
 
 import { moveApplicationInPipeline } from "./actions";
 
@@ -70,6 +74,7 @@ const WORKSPACE_ID = "ws-1";
 
 const APPLICATION_ROW = {
   id: "app-1",
+  candidateId: "candidate-1",
   currentStageId: "stage-current",
   updatedAt: new Date("2024-01-01T00:00:00.000Z"),
   status: "active",
@@ -79,6 +84,7 @@ const APPLICATION_ROW = {
   jobTitle: "Engineer",
   workspaceName: "Acme",
   toStageName: "Interview",
+  toStageAssignAssessmentsOnEntry: true,
   toStageEmailConfig: { candidateUpdatesEnabled: false },
 };
 
@@ -166,6 +172,7 @@ describe("F1-08 pipeline move concurrency guard", () => {
     });
     mocks.requirePermission.mockResolvedValue(undefined);
     mocks.emitWebhookEvent.mockReset();
+    mocks.createStageAssessmentAssignments.mockReset();
   });
 
   it("rejects the move when the application stays modified concurrently (optimistic lock)", async () => {
@@ -205,6 +212,13 @@ describe("F1-08 pipeline move concurrency guard", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(mocks.createStageAssessmentAssignments).toHaveBeenCalledWith(tx, {
+      organizationId: WORKSPACE_ID,
+      applicationId: "app-1",
+      candidateId: "candidate-1",
+      stageId: "stage-target",
+      actorId: "user-1",
+    });
   });
 
   it("silently retries after a transient optimistic-lock conflict and succeeds on the next attempt", async () => {

@@ -529,7 +529,9 @@ export const ssoProvider = pgTable(
     }),
     domainVerified: boolean("domain_verified").default(false).notNull(),
     enabled: boolean("enabled").default(true).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -624,378 +626,379 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
 }));
 
 // Workspace branding settings (satellite of the Better Auth organization)
-export const workspaceSettings = pgTable("workspace_settings", {
-  organizationId: text("organization_id")
-    .primaryKey()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  mailUnificationEnabled: boolean("mail_unification_enabled")
-    .default(false)
-    .notNull(),
-  tagline: text("tagline"),
-  description: text("description"),
-  websiteUrl: text("website_url"),
-  primaryColor: text("primary_color"),
-  heroImageUrl: text("hero_image_url"),
-  boardStyle: boardStyleEnum("board_style").default("hero").notNull(),
-  logoStyle: logoStyleEnum("logo_style").default("bordered").notNull(),
-  sidebarLogoStyle: logoStyleEnum("sidebar_logo_style")
-    .default("bordered")
-    .notNull(),
-  // Extended/wordmark logo shown in the dashboard sidebar when sidebarLogoStyle
-  // is "full". Separate light/dark assets so the mark stays legible on either
-  // sidebar theme; dark falls back to light when unset.
-  sidebarLogoUrl: text("sidebar_logo_url"),
-  sidebarLogoDarkUrl: text("sidebar_logo_dark_url"),
-  // When true, product emails omit the "Powered by Harly" footer credit and
-  // system emails (invites, welcome) show the workspace name instead of Harly.
-  hideHarlyBranding: boolean("hide_harly_branding").default(false).notNull(),
-  // AI provider config (bring-your-own-key). The API key is encrypted at rest
-  // (AES-256-GCM) — never stored or returned in plaintext.
-  aiEnabled: boolean("ai_enabled").default(false).notNull(),
-  aiProvider: text("ai_provider"),
-  aiModelId: text("ai_model_id"),
-  // Optional custom API base URL for self-hosted / proxy endpoints.
-  aiBaseUrl: text("ai_base_url"),
-  aiApiKeyCiphertext: text("ai_api_key_ciphertext"),
-  aiApiKeyIv: text("ai_api_key_iv"),
-  aiApiKeyTag: text("ai_api_key_tag"),
-  // Automatically score new applications when AI is configured.
-  aiAutoScore: boolean("ai_auto_score").default(false).notNull(),
-  // Automatically detect potential duplicate candidates when AI is configured.
-  aiDuplicateCheck: boolean("ai_duplicate_check").default(false).notNull(),
-  // Redact identifying candidate details (name, contact, links, demographic
-  // signals) from resumes during application review to reduce unconscious bias.
-  aiResumeAnonymization: boolean("ai_resume_anonymization")
-    .default(false)
-    .notNull(),
-  // Cal.com scheduling (bring-your-own-key). Same AES-256-GCM encryption as the
-  // AI key — the API key is never stored or returned in plaintext.
-  calEnabled: boolean("cal_enabled").default(false).notNull(),
-  // Base URL of the Cal.com API v2. Defaults to cloud; override for self-hosted.
-  calBaseUrl: text("cal_base_url"),
-  // Default event type used for programmatic bookings / slot lookups.
-  calDefaultEventTypeId: integer("cal_default_event_type_id"),
-  // Public Cal.com booking page (e.g. https://cal.com/acme/interview) used to
-  // build prefilled self-scheduling links for candidates.
-  calBookingUrl: text("cal_booking_url"),
-  calApiKeyCiphertext: text("cal_api_key_ciphertext"),
-  calApiKeyIv: text("cal_api_key_iv"),
-  calApiKeyTag: text("cal_api_key_tag"),
-  // Shared secret used to verify inbound Cal.com webhook signatures.
-  calWebhookSecret: text("cal_webhook_secret"),
-  // Outbound email config (bring-your-own Resend key or SMTP). Same
-  // AES-256-GCM encryption as the AI/Cal.com keys above. When disabled, the
-  // platform falls back to the RESEND_API_KEY/EMAIL_FROM env vars.
-  emailEnabled: boolean("email_enabled").default(false).notNull(),
-  emailProvider: text("email_provider"), // 'resend' | 'smtp'
-  emailFrom: text("email_from"),
-  emailApiKeyCiphertext: text("email_api_key_ciphertext"),
-  emailApiKeyIv: text("email_api_key_iv"),
-  emailApiKeyTag: text("email_api_key_tag"),
-  // SMTP-only fields (host/port/secure/user). Password is stored in the
-  // emailApiKey* columns above, alongside the Resend API key.
-  emailSmtpHost: text("email_smtp_host"),
-  emailSmtpPort: integer("email_smtp_port"),
-  emailSmtpSecure: boolean("email_smtp_secure"),
-  emailSmtpUser: text("email_smtp_user"),
-  // Inbound email (receiving candidate replies). Independent toggle from
-  // outbound — a workspace can send via SMTP and receive via Resend, etc.
-  emailInboundEnabled: boolean("email_inbound_enabled")
-    .default(false)
-    .notNull(),
-  emailInboundProvider: text("email_inbound_provider"), // 'resend' | 'postmark'
-  // Domain used to build the Reply-To address (reply+{token}@{domain}) on
-  // outbound sends, and shown in the UI as the domain the self-hoster must
-  // point at their provider (MX record for Postmark; verified receiving
-  // domain for Resend). Distinct from the outbound sending domain — a
-  // self-hoster may send from mail.acme.com but receive on reply.acme.com.
-  emailInboundReplyDomain: text("email_inbound_reply_domain"),
-  // Shared verification secret (Postmark: Basic Auth password embedded in
-  // the webhook URL, since Postmark has no HMAC scheme; Resend: passed
-  // straight into resend.webhooks.verify as the svix secret). Plaintext —
-  // same class as calWebhookSecret, not a bearer credential.
-  emailInboundWebhookSecret: text("email_inbound_webhook_secret"),
-  // Resend-only: API key for the follow-up emails.receiving.get() call.
-  // Separate from the outbound emailApiKey* triple on purpose — inbound and
-  // outbound providers are independent, so a workspace on SMTP-outbound +
-  // Resend-inbound has no outbound Resend key to borrow.
-  emailInboundResendApiKeyCiphertext: text(
-    "email_inbound_resend_api_key_ciphertext",
-  ),
-  emailInboundResendApiKeyIv: text("email_inbound_resend_api_key_iv"),
-  emailInboundResendApiKeyTag: text("email_inbound_resend_api_key_tag"),
-  // Require all workspace members to enable two-factor authentication.
-  require2fa: boolean("require_2fa").default(false).notNull(),
-  // Enterprise access controls. Empty lists mean the control is disabled.
-  securityIpAllowlist: jsonb("security_ip_allowlist")
-    .default(sql`'[]'::jsonb`)
-    .notNull(),
-  securityAllowedDomains: jsonb("security_allowed_domains")
-    .default(sql`'[]'::jsonb`)
-    .notNull(),
-  securityRiskDetectionEnabled: boolean("security_risk_detection_enabled")
-    .default(true)
-    .notNull(),
-  securityReauthMinutes: integer("security_reauth_minutes")
-    .default(15)
-    .notNull(),
-  securityRequirePasskey: boolean("security_require_passkey")
-    .default(false)
-    .notNull(),
-  // Curated allow-list of staff login methods shown on the sign-in screen.
-  // Values: "password" | "google" | "microsoft" | "github" | "linkedin" |
-  // "sso" | "magic_link" | "passkey". An empty array means "auto": the login
-  // screen falls back to showing every method that is actually configured
-  // (OAuth creds present, an SSO provider registered, email sender set, etc.).
-  // A non-empty array is an explicit admin choice — only those methods render,
-  // and each is still additionally gated by whether it is actually configured.
-  enabledLoginMethods: jsonb("enabled_login_methods")
-    .default(sql`'[]'::jsonb`)
-    .notNull(),
-  // Shape lives in apps/web/src/features/career-page/config.ts.
-  careerPageConfig: jsonb("career_page_config")
-    .default(sql`'{}'::jsonb`)
-    .notNull(),
-  // Turnstile CAPTCHA (Cloudflare). Site key is public; secret is
-  // AES-256-GCM encrypted at rest, same scheme as the AI/Cal.com keys.
-  turnstileEnabled: boolean("turnstile_enabled").default(false).notNull(),
-  turnstileSiteKey: text("turnstile_site_key"),
-  turnstileSecretCiphertext: text("turnstile_secret_ciphertext"),
-  turnstileSecretIv: text("turnstile_secret_iv"),
-  turnstileSecretTag: text("turnstile_secret_tag"),
-  // Active CAPTCHA provider selector (mirror of chatProvider / chatEnabled).
-  // One provider active per workspace; keys per provider are kept so switching
-  // doesn't lose them. Turnstile keys reuse the turnstile* columns above.
-  captchaEnabled: boolean("captcha_enabled").default(false).notNull(),
-  captchaProvider: text("captcha_provider"), // 'turnstile' | 'recaptcha' | 'hcaptcha'
-  // Google reCAPTCHA v2 keys. Secret AES-256-GCM encrypted at rest.
-  recaptchaSiteKey: text("recaptcha_site_key"),
-  recaptchaSecretCiphertext: text("recaptcha_secret_ciphertext"),
-  recaptchaSecretIv: text("recaptcha_secret_iv"),
-  recaptchaSecretTag: text("recaptcha_secret_tag"),
-  // hCaptcha keys. Secret AES-256-GCM encrypted at rest.
-  hcaptchaSiteKey: text("hcaptcha_site_key"),
-  hcaptchaSecretCiphertext: text("hcaptcha_secret_ciphertext"),
-  hcaptchaSecretIv: text("hcaptcha_secret_iv"),
-  hcaptchaSecretTag: text("hcaptcha_secret_tag"),
-  // Chat notifications (Slack / Discord incoming-webhook). The webhook URL
-  // is the only secret — encrypted at rest (AES-256-GCM).
-  chatEnabled: boolean("chat_enabled").default(false).notNull(),
-  chatProvider: text("chat_provider"), // 'slack' | 'discord'
-  chatWebhookCiphertext: text("chat_webhook_ciphertext"),
-  chatWebhookIv: text("chat_webhook_iv"),
-  chatWebhookTag: text("chat_webhook_tag"),
-  chatEvents: jsonb("chat_events").default(sql`'[]'::jsonb`),
-  // Slack App OAuth (full API access). Bot token encrypted at rest (AES-256-GCM).
-  // Client ID is public; Client Secret encrypted same as other keys.
-  slackClientId: text("slack_client_id"),
-  slackClientSecretCiphertext: text("slack_client_secret_ciphertext"),
-  slackClientSecretIv: text("slack_client_secret_iv"),
-  slackClientSecretTag: text("slack_client_secret_tag"),
-  slackEnabled: boolean("slack_enabled").default(false).notNull(),
-  slackTeamId: text("slack_team_id"),
-  slackTeamName: text("slack_team_name"),
-  slackAppId: text("slack_app_id"),
-  slackBotUserId: text("slack_bot_user_id"),
-  slackEnterpriseId: text("slack_enterprise_id"),
-  slackScopes: jsonb("slack_scopes").default(sql`'[]'::jsonb`),
-  slackInstallerUserId: text("slack_installer_user_id"),
-  slackInstalledAt: timestamp("slack_installed_at", { withTimezone: true }),
-  slackLastValidatedAt: timestamp("slack_last_validated_at", {
-    withTimezone: true,
-  }),
-  slackRevokedAt: timestamp("slack_revoked_at", { withTimezone: true }),
-  slackChannelId: text("slack_channel_id"),
-  slackChannelName: text("slack_channel_name"),
-  slackBotTokenCiphertext: text("slack_bot_token_ciphertext"),
-  slackBotTokenIv: text("slack_bot_token_iv"),
-  slackBotTokenTag: text("slack_bot_token_tag"),
-  slackEvents: jsonb("slack_events").default(sql`'[]'::jsonb`),
-  // Google Calendar OAuth (per-user-who-connected). Refresh token encrypted at
-  // rest (AES-256-GCM). Client ID/Secret come from env vars.
-  gcalEnabled: boolean("gcal_enabled").default(false).notNull(),
-  gcalAccountEmail: text("gcal_account_email"),
-  gcalCalendarId: text("gcal_calendar_id"),
-  gcalRefreshTokenCiphertext: text("gcal_refresh_token_ciphertext"),
-  gcalRefreshTokenIv: text("gcal_refresh_token_iv"),
-  gcalRefreshTokenTag: text("gcal_refresh_token_tag"),
-  acquisitionSource: text("acquisition_source"),
-  // Legal & compliance settings — per-workspace legal entity info, retention
-  // policies, and customizable legal page content (Privacy Policy, Terms of
-  // Service, Cookie Policy, Candidate Notice, AI Transparency Notice).
-  legalEntityName: text("legal_entity_name"),
-  legalEntityAddress: text("legal_entity_address"),
-  legalEntityEmail: text("legal_entity_email"),
-  legalEntityWebsite: text("legal_entity_website"),
-  legalJurisdiction: text("legal_jurisdiction"), // 'eu' | 'us' | 'cl' | 'br' | 'other'
-  dpoEmail: text("dpo_email"), // Data Protection Officer email
-  dataRetentionApplicantsMonths: integer("data_retention_applicants_months")
-    .default(6)
-    .notNull(),
-  dataRetentionTalentPoolMonths: integer("data_retention_talent_pool_months")
-    .default(24)
-    .notNull(),
-  // Opt-in switch for the retention-enforcement cron. Off by default: the
-  // months above are advisory until a workspace explicitly turns on
-  // automatic anonymization, so no one loses data they didn't ask to purge.
-  dataRetentionEnabled: boolean("data_retention_enabled")
-    .default(false)
-    .notNull(),
-  // Audit records are retained independently from candidate PII. A minimum
-  // window keeps compliance evidence available without allowing unbounded
-  // tenant growth. Enforcement is performed by the retention cron.
-  auditLogRetentionMonths: integer("audit_log_retention_months")
-    .default(24)
-    .notNull(),
-  consentCheckboxText: text("consent_checkbox_text"),
-  // JSONB storing legal page content keyed by page type:
-  // { privacyPolicy: string, termsOfService: string, cookiePolicy: string,
-  //   candidateNotice: string, aiTransparencyNotice: string }
-  legalPages: jsonb("legal_pages")
-    .default(sql`'{}'::jsonb`)
-    .notNull(),
-  legalConfigured: boolean("legal_configured").default(false).notNull(),
-  // Candidate portal — self-service portal for candidates to view their applications.
-  candidatePortalEnabled: boolean("candidate_portal_enabled")
-    .default(false)
-    .notNull(),
-  // Portal OAuth — Google. Client secret encrypted at rest (AES-256-GCM).
-  portalGoogleClientId: text("portal_google_client_id"),
-  portalGoogleClientSecretCiphertext: text(
-    "portal_google_client_secret_ciphertext",
-  ),
-  portalGoogleClientSecretIv: text("portal_google_client_secret_iv"),
-  portalGoogleClientSecretTag: text("portal_google_client_secret_tag"),
-  // Portal OAuth — GitHub. Client secret encrypted at rest (AES-256-GCM).
-  portalGithubClientId: text("portal_github_client_id"),
-  portalGithubClientSecretCiphertext: text(
-    "portal_github_client_secret_ciphertext",
-  ),
-  portalGithubClientSecretIv: text("portal_github_client_secret_iv"),
-  portalGithubClientSecretTag: text("portal_github_client_secret_tag"),
-  // Portal OAuth — LinkedIn. Client secret encrypted at rest (AES-256-GCM).
-  portalLinkedinClientId: text("portal_linkedin_client_id"),
-  portalLinkedinClientSecretCiphertext: text(
-    "portal_linkedin_client_secret_ciphertext",
-  ),
-  portalLinkedinClientSecretIv: text("portal_linkedin_client_secret_iv"),
-  portalLinkedinClientSecretTag: text("portal_linkedin_client_secret_tag"),
-  // Portal UI options.
-  portalShowApplicationStatus: boolean("portal_show_application_status")
-    .default(true)
-    .notNull(),
-  // Keep the hiring team private unless a workspace explicitly opts in.
-  portalShowHiringTeam: boolean("portal_show_hiring_team")
-    .default(false)
-    .notNull(),
-  // Shareable invite link — anyone with the token can join with inviteLinkRole.
-  inviteLinkToken: text("invite_link_token"),
-  inviteLinkRole: text("invite_link_role").default("recruiter").notNull(),
-  inviteLinkEnabled: boolean("invite_link_enabled").default(false).notNull(),
-  // Microsoft Outlook OAuth (per-workspace credentials). Tokens encrypted at
-  // rest (AES-256-GCM). Client ID/Secret from env vars or per-workspace DB.
-  outlookClientId: text("outlook_client_id"),
-  outlookClientSecretCiphertext: text("outlook_client_secret_ciphertext"),
-  outlookClientSecretIv: text("outlook_client_secret_iv"),
-  outlookClientSecretTag: text("outlook_client_secret_tag"),
-  outlookEnabled: boolean("outlook_enabled").default(false).notNull(),
-  outlookAccountEmail: text("outlook_account_email"),
-  outlookAccessTokenCiphertext: text("outlook_access_token_ciphertext"),
-  outlookAccessTokenIv: text("outlook_access_token_iv"),
-  outlookAccessTokenTag: text("outlook_access_token_tag"),
-  outlookRefreshTokenCiphertext: text("outlook_refresh_token_ciphertext"),
-  outlookRefreshTokenIv: text("outlook_refresh_token_iv"),
-  outlookRefreshTokenTag: text("outlook_refresh_token_tag"),
-  outlookCalendarId: text("outlook_calendar_id"),
-  outlookEvents: jsonb("outlook_events").default(sql`'[]'::jsonb`),
-  // Zoom OAuth (per-workspace credentials). Token encrypted at rest (AES-256-GCM).
-  zoomClientId: text("zoom_client_id"),
-  zoomClientSecretCiphertext: text("zoom_client_secret_ciphertext"),
-  zoomClientSecretIv: text("zoom_client_secret_iv"),
-  zoomClientSecretTag: text("zoom_client_secret_tag"),
-  zoomEnabled: boolean("zoom_enabled").default(false).notNull(),
-  zoomAccountId: text("zoom_account_id"),
-  zoomAccountEmail: text("zoom_account_email"),
-  zoomTokenCiphertext: text("zoom_token_ciphertext"),
-  zoomTokenIv: text("zoom_token_iv"),
-  zoomTokenTag: text("zoom_token_tag"),
-  zoomRefreshTokenCiphertext: text("zoom_refresh_token_ciphertext"),
-  zoomRefreshTokenIv: text("zoom_refresh_token_iv"),
-  zoomRefreshTokenTag: text("zoom_refresh_token_tag"),
-  zoomEvents: jsonb("zoom_events").default(sql`'[]'::jsonb`),
+export const workspaceSettings = pgTable(
+  "workspace_settings",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    mailUnificationEnabled: boolean("mail_unification_enabled")
+      .default(false)
+      .notNull(),
+    tagline: text("tagline"),
+    description: text("description"),
+    websiteUrl: text("website_url"),
+    primaryColor: text("primary_color"),
+    heroImageUrl: text("hero_image_url"),
+    boardStyle: boardStyleEnum("board_style").default("hero").notNull(),
+    logoStyle: logoStyleEnum("logo_style").default("bordered").notNull(),
+    sidebarLogoStyle: logoStyleEnum("sidebar_logo_style")
+      .default("bordered")
+      .notNull(),
+    // Extended/wordmark logo shown in the dashboard sidebar when sidebarLogoStyle
+    // is "full". Separate light/dark assets so the mark stays legible on either
+    // sidebar theme; dark falls back to light when unset.
+    sidebarLogoUrl: text("sidebar_logo_url"),
+    sidebarLogoDarkUrl: text("sidebar_logo_dark_url"),
+    // When true, product emails omit the "Powered by Harly" footer credit and
+    // system emails (invites, welcome) show the workspace name instead of Harly.
+    hideHarlyBranding: boolean("hide_harly_branding").default(false).notNull(),
+    // AI provider config (bring-your-own-key). The API key is encrypted at rest
+    // (AES-256-GCM) — never stored or returned in plaintext.
+    aiEnabled: boolean("ai_enabled").default(false).notNull(),
+    aiProvider: text("ai_provider"),
+    aiModelId: text("ai_model_id"),
+    // Optional custom API base URL for self-hosted / proxy endpoints.
+    aiBaseUrl: text("ai_base_url"),
+    aiApiKeyCiphertext: text("ai_api_key_ciphertext"),
+    aiApiKeyIv: text("ai_api_key_iv"),
+    aiApiKeyTag: text("ai_api_key_tag"),
+    // Automatically score new applications when AI is configured.
+    aiAutoScore: boolean("ai_auto_score").default(false).notNull(),
+    // Automatically detect potential duplicate candidates when AI is configured.
+    aiDuplicateCheck: boolean("ai_duplicate_check").default(false).notNull(),
+    // Redact identifying candidate details (name, contact, links, demographic
+    // signals) from resumes during application review to reduce unconscious bias.
+    aiResumeAnonymization: boolean("ai_resume_anonymization")
+      .default(false)
+      .notNull(),
+    // Cal.com scheduling (bring-your-own-key). Same AES-256-GCM encryption as the
+    // AI key — the API key is never stored or returned in plaintext.
+    calEnabled: boolean("cal_enabled").default(false).notNull(),
+    // Base URL of the Cal.com API v2. Defaults to cloud; override for self-hosted.
+    calBaseUrl: text("cal_base_url"),
+    // Default event type used for programmatic bookings / slot lookups.
+    calDefaultEventTypeId: integer("cal_default_event_type_id"),
+    // Public Cal.com booking page (e.g. https://cal.com/acme/interview) used to
+    // build prefilled self-scheduling links for candidates.
+    calBookingUrl: text("cal_booking_url"),
+    calApiKeyCiphertext: text("cal_api_key_ciphertext"),
+    calApiKeyIv: text("cal_api_key_iv"),
+    calApiKeyTag: text("cal_api_key_tag"),
+    // Shared secret used to verify inbound Cal.com webhook signatures.
+    calWebhookSecret: text("cal_webhook_secret"),
+    // Outbound email config (bring-your-own Resend key or SMTP). Same
+    // AES-256-GCM encryption as the AI/Cal.com keys above. When disabled, the
+    // platform falls back to the RESEND_API_KEY/EMAIL_FROM env vars.
+    emailEnabled: boolean("email_enabled").default(false).notNull(),
+    emailProvider: text("email_provider"), // 'resend' | 'smtp'
+    emailFrom: text("email_from"),
+    emailApiKeyCiphertext: text("email_api_key_ciphertext"),
+    emailApiKeyIv: text("email_api_key_iv"),
+    emailApiKeyTag: text("email_api_key_tag"),
+    // SMTP-only fields (host/port/secure/user). Password is stored in the
+    // emailApiKey* columns above, alongside the Resend API key.
+    emailSmtpHost: text("email_smtp_host"),
+    emailSmtpPort: integer("email_smtp_port"),
+    emailSmtpSecure: boolean("email_smtp_secure"),
+    emailSmtpUser: text("email_smtp_user"),
+    // Inbound email (receiving candidate replies). Independent toggle from
+    // outbound — a workspace can send via SMTP and receive via Resend, etc.
+    emailInboundEnabled: boolean("email_inbound_enabled")
+      .default(false)
+      .notNull(),
+    emailInboundProvider: text("email_inbound_provider"), // 'resend' | 'postmark'
+    // Domain used to build the Reply-To address (reply+{token}@{domain}) on
+    // outbound sends, and shown in the UI as the domain the self-hoster must
+    // point at their provider (MX record for Postmark; verified receiving
+    // domain for Resend). Distinct from the outbound sending domain — a
+    // self-hoster may send from mail.acme.com but receive on reply.acme.com.
+    emailInboundReplyDomain: text("email_inbound_reply_domain"),
+    // Shared verification secret (Postmark: Basic Auth password embedded in
+    // the webhook URL, since Postmark has no HMAC scheme; Resend: passed
+    // straight into resend.webhooks.verify as the svix secret). Plaintext —
+    // same class as calWebhookSecret, not a bearer credential.
+    emailInboundWebhookSecret: text("email_inbound_webhook_secret"),
+    // Resend-only: API key for the follow-up emails.receiving.get() call.
+    // Separate from the outbound emailApiKey* triple on purpose — inbound and
+    // outbound providers are independent, so a workspace on SMTP-outbound +
+    // Resend-inbound has no outbound Resend key to borrow.
+    emailInboundResendApiKeyCiphertext: text(
+      "email_inbound_resend_api_key_ciphertext",
+    ),
+    emailInboundResendApiKeyIv: text("email_inbound_resend_api_key_iv"),
+    emailInboundResendApiKeyTag: text("email_inbound_resend_api_key_tag"),
+    // Require all workspace members to enable two-factor authentication.
+    require2fa: boolean("require_2fa").default(false).notNull(),
+    // Enterprise access controls. Empty lists mean the control is disabled.
+    securityIpAllowlist: jsonb("security_ip_allowlist")
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    securityAllowedDomains: jsonb("security_allowed_domains")
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    securityRiskDetectionEnabled: boolean("security_risk_detection_enabled")
+      .default(true)
+      .notNull(),
+    securityReauthMinutes: integer("security_reauth_minutes")
+      .default(15)
+      .notNull(),
+    securityRequirePasskey: boolean("security_require_passkey")
+      .default(false)
+      .notNull(),
+    // Curated allow-list of staff login methods shown on the sign-in screen.
+    // Values: "password" | "google" | "microsoft" | "github" | "linkedin" |
+    // "sso" | "magic_link" | "passkey". An empty array means "auto": the login
+    // screen falls back to showing every method that is actually configured
+    // (OAuth creds present, an SSO provider registered, email sender set, etc.).
+    // A non-empty array is an explicit admin choice — only those methods render,
+    // and each is still additionally gated by whether it is actually configured.
+    enabledLoginMethods: jsonb("enabled_login_methods")
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    // Shape lives in apps/web/src/features/career-page/config.ts.
+    careerPageConfig: jsonb("career_page_config")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    // Turnstile CAPTCHA (Cloudflare). Site key is public; secret is
+    // AES-256-GCM encrypted at rest, same scheme as the AI/Cal.com keys.
+    turnstileEnabled: boolean("turnstile_enabled").default(false).notNull(),
+    turnstileSiteKey: text("turnstile_site_key"),
+    turnstileSecretCiphertext: text("turnstile_secret_ciphertext"),
+    turnstileSecretIv: text("turnstile_secret_iv"),
+    turnstileSecretTag: text("turnstile_secret_tag"),
+    // Active CAPTCHA provider selector (mirror of chatProvider / chatEnabled).
+    // One provider active per workspace; keys per provider are kept so switching
+    // doesn't lose them. Turnstile keys reuse the turnstile* columns above.
+    captchaEnabled: boolean("captcha_enabled").default(false).notNull(),
+    captchaProvider: text("captcha_provider"), // 'turnstile' | 'recaptcha' | 'hcaptcha'
+    // Google reCAPTCHA v2 keys. Secret AES-256-GCM encrypted at rest.
+    recaptchaSiteKey: text("recaptcha_site_key"),
+    recaptchaSecretCiphertext: text("recaptcha_secret_ciphertext"),
+    recaptchaSecretIv: text("recaptcha_secret_iv"),
+    recaptchaSecretTag: text("recaptcha_secret_tag"),
+    // hCaptcha keys. Secret AES-256-GCM encrypted at rest.
+    hcaptchaSiteKey: text("hcaptcha_site_key"),
+    hcaptchaSecretCiphertext: text("hcaptcha_secret_ciphertext"),
+    hcaptchaSecretIv: text("hcaptcha_secret_iv"),
+    hcaptchaSecretTag: text("hcaptcha_secret_tag"),
+    // Chat notifications (Slack / Discord incoming-webhook). The webhook URL
+    // is the only secret — encrypted at rest (AES-256-GCM).
+    chatEnabled: boolean("chat_enabled").default(false).notNull(),
+    chatProvider: text("chat_provider"), // 'slack' | 'discord'
+    chatWebhookCiphertext: text("chat_webhook_ciphertext"),
+    chatWebhookIv: text("chat_webhook_iv"),
+    chatWebhookTag: text("chat_webhook_tag"),
+    chatEvents: jsonb("chat_events").default(sql`'[]'::jsonb`),
+    // Slack App OAuth (full API access). Bot token encrypted at rest (AES-256-GCM).
+    // Client ID is public; Client Secret encrypted same as other keys.
+    slackClientId: text("slack_client_id"),
+    slackClientSecretCiphertext: text("slack_client_secret_ciphertext"),
+    slackClientSecretIv: text("slack_client_secret_iv"),
+    slackClientSecretTag: text("slack_client_secret_tag"),
+    slackEnabled: boolean("slack_enabled").default(false).notNull(),
+    slackTeamId: text("slack_team_id"),
+    slackTeamName: text("slack_team_name"),
+    slackAppId: text("slack_app_id"),
+    slackBotUserId: text("slack_bot_user_id"),
+    slackEnterpriseId: text("slack_enterprise_id"),
+    slackScopes: jsonb("slack_scopes").default(sql`'[]'::jsonb`),
+    slackInstallerUserId: text("slack_installer_user_id"),
+    slackInstalledAt: timestamp("slack_installed_at", { withTimezone: true }),
+    slackLastValidatedAt: timestamp("slack_last_validated_at", {
+      withTimezone: true,
+    }),
+    slackRevokedAt: timestamp("slack_revoked_at", { withTimezone: true }),
+    slackChannelId: text("slack_channel_id"),
+    slackChannelName: text("slack_channel_name"),
+    slackBotTokenCiphertext: text("slack_bot_token_ciphertext"),
+    slackBotTokenIv: text("slack_bot_token_iv"),
+    slackBotTokenTag: text("slack_bot_token_tag"),
+    slackEvents: jsonb("slack_events").default(sql`'[]'::jsonb`),
+    // Google Calendar OAuth (per-user-who-connected). Refresh token encrypted at
+    // rest (AES-256-GCM). Client ID/Secret come from env vars.
+    gcalEnabled: boolean("gcal_enabled").default(false).notNull(),
+    gcalAccountEmail: text("gcal_account_email"),
+    gcalCalendarId: text("gcal_calendar_id"),
+    gcalRefreshTokenCiphertext: text("gcal_refresh_token_ciphertext"),
+    gcalRefreshTokenIv: text("gcal_refresh_token_iv"),
+    gcalRefreshTokenTag: text("gcal_refresh_token_tag"),
+    acquisitionSource: text("acquisition_source"),
+    // Legal & compliance settings — per-workspace legal entity info, retention
+    // policies, and customizable legal page content (Privacy Policy, Terms of
+    // Service, Cookie Policy, Candidate Notice, AI Transparency Notice).
+    legalEntityName: text("legal_entity_name"),
+    legalEntityAddress: text("legal_entity_address"),
+    legalEntityEmail: text("legal_entity_email"),
+    legalEntityWebsite: text("legal_entity_website"),
+    legalJurisdiction: text("legal_jurisdiction"), // 'eu' | 'us' | 'cl' | 'br' | 'other'
+    dpoEmail: text("dpo_email"), // Data Protection Officer email
+    dataRetentionApplicantsMonths: integer("data_retention_applicants_months")
+      .default(6)
+      .notNull(),
+    dataRetentionTalentPoolMonths: integer("data_retention_talent_pool_months")
+      .default(24)
+      .notNull(),
+    // Opt-in switch for the retention-enforcement cron. Off by default: the
+    // months above are advisory until a workspace explicitly turns on
+    // automatic anonymization, so no one loses data they didn't ask to purge.
+    dataRetentionEnabled: boolean("data_retention_enabled")
+      .default(false)
+      .notNull(),
+    // Audit records are retained independently from candidate PII. A minimum
+    // window keeps compliance evidence available without allowing unbounded
+    // tenant growth. Enforcement is performed by the retention cron.
+    auditLogRetentionMonths: integer("audit_log_retention_months")
+      .default(24)
+      .notNull(),
+    consentCheckboxText: text("consent_checkbox_text"),
+    // JSONB storing legal page content keyed by page type:
+    // { privacyPolicy: string, termsOfService: string, cookiePolicy: string,
+    //   candidateNotice: string, aiTransparencyNotice: string }
+    legalPages: jsonb("legal_pages")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    legalConfigured: boolean("legal_configured").default(false).notNull(),
+    // Candidate portal — self-service portal for candidates to view their applications.
+    candidatePortalEnabled: boolean("candidate_portal_enabled")
+      .default(false)
+      .notNull(),
+    // Portal OAuth — Google. Client secret encrypted at rest (AES-256-GCM).
+    portalGoogleClientId: text("portal_google_client_id"),
+    portalGoogleClientSecretCiphertext: text(
+      "portal_google_client_secret_ciphertext",
+    ),
+    portalGoogleClientSecretIv: text("portal_google_client_secret_iv"),
+    portalGoogleClientSecretTag: text("portal_google_client_secret_tag"),
+    // Portal OAuth — GitHub. Client secret encrypted at rest (AES-256-GCM).
+    portalGithubClientId: text("portal_github_client_id"),
+    portalGithubClientSecretCiphertext: text(
+      "portal_github_client_secret_ciphertext",
+    ),
+    portalGithubClientSecretIv: text("portal_github_client_secret_iv"),
+    portalGithubClientSecretTag: text("portal_github_client_secret_tag"),
+    // Portal OAuth — LinkedIn. Client secret encrypted at rest (AES-256-GCM).
+    portalLinkedinClientId: text("portal_linkedin_client_id"),
+    portalLinkedinClientSecretCiphertext: text(
+      "portal_linkedin_client_secret_ciphertext",
+    ),
+    portalLinkedinClientSecretIv: text("portal_linkedin_client_secret_iv"),
+    portalLinkedinClientSecretTag: text("portal_linkedin_client_secret_tag"),
+    // Portal UI options.
+    portalShowApplicationStatus: boolean("portal_show_application_status")
+      .default(true)
+      .notNull(),
+    // Keep the hiring team private unless a workspace explicitly opts in.
+    portalShowHiringTeam: boolean("portal_show_hiring_team")
+      .default(false)
+      .notNull(),
+    // Shareable invite link — anyone with the token can join with inviteLinkRole.
+    inviteLinkToken: text("invite_link_token"),
+    inviteLinkRole: text("invite_link_role").default("recruiter").notNull(),
+    inviteLinkEnabled: boolean("invite_link_enabled").default(false).notNull(),
+    // Microsoft Outlook OAuth (per-workspace credentials). Tokens encrypted at
+    // rest (AES-256-GCM). Client ID/Secret from env vars or per-workspace DB.
+    outlookClientId: text("outlook_client_id"),
+    outlookClientSecretCiphertext: text("outlook_client_secret_ciphertext"),
+    outlookClientSecretIv: text("outlook_client_secret_iv"),
+    outlookClientSecretTag: text("outlook_client_secret_tag"),
+    outlookEnabled: boolean("outlook_enabled").default(false).notNull(),
+    outlookAccountEmail: text("outlook_account_email"),
+    outlookAccessTokenCiphertext: text("outlook_access_token_ciphertext"),
+    outlookAccessTokenIv: text("outlook_access_token_iv"),
+    outlookAccessTokenTag: text("outlook_access_token_tag"),
+    outlookRefreshTokenCiphertext: text("outlook_refresh_token_ciphertext"),
+    outlookRefreshTokenIv: text("outlook_refresh_token_iv"),
+    outlookRefreshTokenTag: text("outlook_refresh_token_tag"),
+    outlookCalendarId: text("outlook_calendar_id"),
+    outlookEvents: jsonb("outlook_events").default(sql`'[]'::jsonb`),
+    // Zoom OAuth (per-workspace credentials). Token encrypted at rest (AES-256-GCM).
+    zoomClientId: text("zoom_client_id"),
+    zoomClientSecretCiphertext: text("zoom_client_secret_ciphertext"),
+    zoomClientSecretIv: text("zoom_client_secret_iv"),
+    zoomClientSecretTag: text("zoom_client_secret_tag"),
+    zoomEnabled: boolean("zoom_enabled").default(false).notNull(),
+    zoomAccountId: text("zoom_account_id"),
+    zoomAccountEmail: text("zoom_account_email"),
+    zoomTokenCiphertext: text("zoom_token_ciphertext"),
+    zoomTokenIv: text("zoom_token_iv"),
+    zoomTokenTag: text("zoom_token_tag"),
+    zoomRefreshTokenCiphertext: text("zoom_refresh_token_ciphertext"),
+    zoomRefreshTokenIv: text("zoom_refresh_token_iv"),
+    zoomRefreshTokenTag: text("zoom_refresh_token_tag"),
+    zoomEvents: jsonb("zoom_events").default(sql`'[]'::jsonb`),
 
-  // Telegram notifications. Bot token is the only secret (AES-GCM triple);
-  // chat id is a plain destination identifier. Rides the same event emission
-  // points as chat/webhooks.
-  telegramEnabled: boolean("telegram_enabled").default(false).notNull(),
-  telegramBotTokenCiphertext: text("telegram_bot_token_ciphertext"),
-  telegramBotTokenIv: text("telegram_bot_token_iv"),
-  telegramBotTokenTag: text("telegram_bot_token_tag"),
-  telegramChatId: text("telegram_chat_id"),
-  telegramBotUsername: text("telegram_bot_username"),
-  telegramEvents: jsonb("telegram_events").default(sql`'[]'::jsonb`),
+    // Telegram notifications. Bot token is the only secret (AES-GCM triple);
+    // chat id is a plain destination identifier. Rides the same event emission
+    // points as chat/webhooks.
+    telegramEnabled: boolean("telegram_enabled").default(false).notNull(),
+    telegramBotTokenCiphertext: text("telegram_bot_token_ciphertext"),
+    telegramBotTokenIv: text("telegram_bot_token_iv"),
+    telegramBotTokenTag: text("telegram_bot_token_tag"),
+    telegramChatId: text("telegram_chat_id"),
+    telegramBotUsername: text("telegram_bot_username"),
+    telegramEvents: jsonb("telegram_events").default(sql`'[]'::jsonb`),
 
-  // Jitsi Meet video links. No API, no secrets , the workspace's instance base
-  // URL is the only config; rooms are random slugs composed per interview.
-  jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
-  jitsiBaseUrl: text("jitsi_base_url"),
-  // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
-  // Existing launch settings remain until the launch flow is migrated.
-  taoEnabled: boolean("tao_enabled").default(false).notNull(),
-  taoInstanceUrl: text("tao_instance_url"),
-  taoClientId: text("tao_client_id"),
-  taoDeploymentId: text("tao_deployment_id"),
-  taoOidcAuthUrl: text("tao_oidc_auth_url"),
-  taoLaunchUrl: text("tao_launch_url"),
-  taoLastConnectionStatus: text("tao_last_connection_status"),
-  taoLastConnectionError: text("tao_last_connection_error"),
-  taoLastTestedAt: timestamp("tao_last_tested_at", { withTimezone: true }),
-  // DocuSeal (self-hosted e-signature). Base instance URL + an API token
-  // (X-Auth-Token, encrypted at rest) is all that's needed — no OAuth. The
-  // webhook secret is a plaintext shared token appended to the callback URL and
-  // checked on inbound submission events (same class as calWebhookSecret).
-  docusealEnabled: boolean("docuseal_enabled").default(false).notNull(),
-  docusealUrl: text("docuseal_url"),
-  docusealApiTokenCiphertext: text("docuseal_api_token_ciphertext"),
-  docusealApiTokenIv: text("docuseal_api_token_iv"),
-  docusealApiTokenTag: text("docuseal_api_token_tag"),
-  docusealWebhookSecret: text("docuseal_webhook_secret"),
-  // Native signing rollout and workspace policy. Native is deliberately off
-  // by default so each workspace can be enabled progressively.
-  nativeSignEnabled: boolean("native_sign_enabled").default(true).notNull(),
-  remoteSignEnabled: boolean("remote_sign_enabled").default(false).notNull(),
-  savedSignaturesEnabled: boolean("saved_signatures_enabled")
-    .default(false)
-    .notNull(),
-  // Vector signature capture (Firefox/pdf.js-style outlines). Off by default;
-  // Fase 1 ships capture behind NEXT_PUBLIC_VECTOR_SIGNS, Fase 2 gates saved
-  // vector signatures per workspace with this flag. PNG rows keep working.
-  vectorSignaturesEnabled: boolean("vector_signatures_enabled")
-    .default(false)
-    .notNull(),
-  signatureOtpEnabled: boolean("signature_otp_enabled")
-    .default(false)
-    .notNull(),
-  signatureTimelineEnabled: boolean("signature_timeline_enabled")
-    .default(false)
-    .notNull(),
-  signatureSecurityMode: text("signature_security_mode")
-    .default("link_only")
-    .notNull(),
-  signatureExpirationDays: integer("signature_expiration_days")
-    .default(30)
-    .notNull(),
-  // Offer delivery channel: "email" (default) or "esign" (collect signature via
-  // embedded signing inside the candidate portal, email notifies instead).
-  offerSignatureChannel: text("offer_signature_channel")
-    .default("email")
-    .notNull(),
-  ...timestamps(),
-}, (table) => [
-  uniqueIndex("workspace_settings_tao_client_id_uidx")
-    .on(table.taoClientId)
-    .where(sql`${table.taoClientId} IS NOT NULL`),
-]);
+    // Jitsi Meet video links. No API, no secrets , the workspace's instance base
+    // URL is the only config; rooms are random slugs composed per interview.
+    jitsiEnabled: boolean("jitsi_enabled").default(false).notNull(),
+    jitsiBaseUrl: text("jitsi_base_url"),
+    // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
+    taoEnabled: boolean("tao_enabled").default(false).notNull(),
+    taoInstanceUrl: text("tao_instance_url"),
+    taoClientId: text("tao_client_id"),
+    taoDeploymentId: text("tao_deployment_id"),
+    taoLastConnectionStatus: text("tao_last_connection_status"),
+    taoLastConnectionError: text("tao_last_connection_error"),
+    taoLastTestedAt: timestamp("tao_last_tested_at", { withTimezone: true }),
+    // DocuSeal (self-hosted e-signature). Base instance URL + an API token
+    // (X-Auth-Token, encrypted at rest) is all that's needed — no OAuth. The
+    // webhook secret is a plaintext shared token appended to the callback URL and
+    // checked on inbound submission events (same class as calWebhookSecret).
+    docusealEnabled: boolean("docuseal_enabled").default(false).notNull(),
+    docusealUrl: text("docuseal_url"),
+    docusealApiTokenCiphertext: text("docuseal_api_token_ciphertext"),
+    docusealApiTokenIv: text("docuseal_api_token_iv"),
+    docusealApiTokenTag: text("docuseal_api_token_tag"),
+    docusealWebhookSecret: text("docuseal_webhook_secret"),
+    // Native signing rollout and workspace policy. Native is deliberately off
+    // by default so each workspace can be enabled progressively.
+    nativeSignEnabled: boolean("native_sign_enabled").default(true).notNull(),
+    remoteSignEnabled: boolean("remote_sign_enabled").default(false).notNull(),
+    savedSignaturesEnabled: boolean("saved_signatures_enabled")
+      .default(false)
+      .notNull(),
+    // Vector signature capture (Firefox/pdf.js-style outlines). Off by default;
+    // Fase 1 ships capture behind NEXT_PUBLIC_VECTOR_SIGNS, Fase 2 gates saved
+    // vector signatures per workspace with this flag. PNG rows keep working.
+    vectorSignaturesEnabled: boolean("vector_signatures_enabled")
+      .default(false)
+      .notNull(),
+    signatureOtpEnabled: boolean("signature_otp_enabled")
+      .default(false)
+      .notNull(),
+    signatureTimelineEnabled: boolean("signature_timeline_enabled")
+      .default(false)
+      .notNull(),
+    signatureSecurityMode: text("signature_security_mode")
+      .default("link_only")
+      .notNull(),
+    signatureExpirationDays: integer("signature_expiration_days")
+      .default(30)
+      .notNull(),
+    // Offer delivery channel: "email" (default) or "esign" (collect signature via
+    // embedded signing inside the candidate portal, email notifies instead).
+    offerSignatureChannel: text("offer_signature_channel")
+      .default("email")
+      .notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("workspace_settings_tao_client_id_uidx")
+      .on(table.taoClientId)
+      .where(sql`${table.taoClientId} IS NOT NULL`),
+  ],
+);
 
 /**
  * Durable Slack notification queue. Slack is an external side effect, so the
@@ -1434,11 +1437,15 @@ export const jobStages = pgTable(
     emailConfig: jsonb("email_config")
       .default(sql`'{"candidateUpdatesEnabled":true}'::jsonb`)
       .notNull(),
+    assignAssessmentsOnEntry: boolean("assign_assessments_on_entry")
+      .default(false)
+      .notNull(),
     ...timestamps(),
   },
   (table) => [
     uniqueIndex("job_stages_job_order_idx").on(table.jobId, table.order),
     uniqueIndex("job_stages_job_name_idx").on(table.jobId, table.name),
+    uniqueIndex("job_stages_workspace_id_uidx").on(table.workspaceId, table.id),
     index("job_stages_workspace_idx").on(table.workspaceId),
     index("job_stages_job_idx").on(table.jobId),
   ],
@@ -1652,6 +1659,10 @@ export const applications = pgTable(
       table.candidateId,
       table.jobId,
     ),
+    uniqueIndex("applications_workspace_id_uidx").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("applications_workspace_status_idx").on(
       table.workspaceId,
       table.status,
@@ -1711,6 +1722,47 @@ export const assessmentDefinitions = pgTable(
   ],
 );
 
+/** Organization-safe stage configuration for locally assigned assessments. */
+export const pipelineStageAssessments = pgTable(
+  "pipeline_stage_assessments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => jobStages.id, { onDelete: "cascade" }),
+    assessmentDefinitionId: uuid("assessment_definition_id")
+      .notNull()
+      .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("pipeline_stage_assessments_stage_definition_uidx").on(
+      table.stageId,
+      table.assessmentDefinitionId,
+    ),
+    index("pipeline_stage_assessments_org_idx").on(table.organizationId),
+    index("pipeline_stage_assessments_definition_idx").on(
+      table.assessmentDefinitionId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.stageId],
+      foreignColumns: [jobStages.workspaceId, jobStages.id],
+      name: "pipeline_stage_assessments_org_stage_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.assessmentDefinitionId],
+      foreignColumns: [
+        assessmentDefinitions.organizationId,
+        assessmentDefinitions.id,
+      ],
+      name: "pipeline_stage_assessments_org_definition_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
 /** A TAO execution belongs to one concrete Harly application. */
 export const assessmentAssignments = pgTable(
   "assessment_assignments",
@@ -1725,6 +1777,7 @@ export const assessmentAssignments = pgTable(
     assessmentDefinitionId: uuid("assessment_definition_id")
       .notNull()
       .references(() => assessmentDefinitions.id, { onDelete: "restrict" }),
+    providerResourceId: text("provider_resource_id").notNull(),
     externalExecutionId: text("external_execution_id"),
     status: assessmentAssignmentStatusEnum("status")
       .default("assigned")
@@ -1740,6 +1793,9 @@ export const assessmentAssignments = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     launchTokenHash: text("launch_token_hash").notNull().unique(),
     assignedById: text("assigned_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    sourceStageId: uuid("source_stage_id").references(() => jobStages.id, {
       onDelete: "set null",
     }),
     metadata: jsonb("metadata")
@@ -1758,6 +1814,16 @@ export const assessmentAssignments = pgTable(
         table.assessmentDefinitionId,
       )
       .where(sql`${table.status} in ('assigned', 'started')`),
+    // A retry or re-entry into the same stage must never create another copy,
+    // including after the original assignment reaches a terminal status.
+    uniqueIndex("assessment_assignments_stage_origin_uidx")
+      .on(
+        table.organizationId,
+        table.applicationId,
+        table.assessmentDefinitionId,
+        table.sourceStageId,
+      )
+      .where(sql`${table.sourceStageId} is not null`),
     index("assessment_assignments_org_idx").on(table.organizationId),
     index("assessment_assignments_application_idx").on(table.applicationId),
     index("assessment_assignments_status_idx").on(
@@ -1775,6 +1841,11 @@ export const assessmentAssignments = pgTable(
       ],
       name: "assessment_assignments_org_definition_fk",
     }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.applicationId],
+      foreignColumns: [applications.workspaceId, applications.id],
+      name: "assessment_assignments_org_application_fk",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -1852,6 +1923,10 @@ export const taoLtiClientAssertions = pgTable(
 
 export type AssessmentDefinition = typeof assessmentDefinitions.$inferSelect;
 export type NewAssessmentDefinition = typeof assessmentDefinitions.$inferInsert;
+export type PipelineStageAssessment =
+  typeof pipelineStageAssessments.$inferSelect;
+export type NewPipelineStageAssessment =
+  typeof pipelineStageAssessments.$inferInsert;
 export type AssessmentAssignment = typeof assessmentAssignments.$inferSelect;
 export type NewAssessmentAssignment = typeof assessmentAssignments.$inferInsert;
 
@@ -5483,9 +5558,11 @@ export const automationAiJobs = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    actorId: text("actor_id").notNull().references(() => user.id, {
-      onDelete: "cascade",
-    }),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id, {
+        onDelete: "cascade",
+      }),
     kind: text("kind").notNull(),
     status: text("status").default("queued").notNull(),
     idempotencyKey: text("idempotency_key"),
@@ -5731,7 +5808,10 @@ export const workspaceAutomationRunBuckets = pgTable(
       table.bucketStart,
     ),
     index("workspace_automation_run_buckets_cleanup_idx").on(table.bucketStart),
-    check("workspace_automation_run_buckets_reserved_check", sql`${table.reserved} >= 0`),
+    check(
+      "workspace_automation_run_buckets_reserved_check",
+      sql`${table.reserved} >= 0`,
+    ),
   ],
 );
 
@@ -5783,7 +5863,10 @@ export const workflowExternalActionBuckets = pgTable(
       table.bucketStart,
     ),
     index("workflow_external_action_buckets_cleanup_idx").on(table.bucketStart),
-    check("workflow_external_action_buckets_reserved_check", sql`${table.reserved} >= 0`),
+    check(
+      "workflow_external_action_buckets_reserved_check",
+      sql`${table.reserved} >= 0`,
+    ),
   ],
 );
 

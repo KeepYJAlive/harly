@@ -6,9 +6,14 @@ import { PipelineJobSelect } from "@/features/pipeline/PipelineJobSelect";
 import { PipelineList } from "@/features/pipeline/PipelineList";
 import { PipelineSummaryCard } from "@/features/pipeline/PipelineSummaryCard";
 import { PipelineViewToggle } from "@/features/pipeline/PipelineViewToggle";
+import { PipelineStageAssessmentsDialog } from "@/features/pipeline/PipelineStageAssessmentsDialog";
 import { getPipelineData, type PipelineData } from "@/features/pipeline/data";
 import { getWorkspaceAiStatus } from "@/lib/ai/config";
 import { getWorkspaceContext } from "@/features/workspaces/context";
+import { can } from "@/features/workspaces/permissions-server";
+import { listTaoAssessmentDefinitions } from "@/features/assessments/data";
+import { listPipelineStageAssessmentConfiguration } from "@/features/assessments/stage-data";
+import { getWorkspaceTaoStatus } from "@/lib/lti/config";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +27,9 @@ type PipelinePageProps = {
   }>;
 };
 
-export default async function PipelinePage({ searchParams }: PipelinePageProps) {
+export default async function PipelinePage({
+  searchParams,
+}: PipelinePageProps) {
   const { job, jobId, view: rawView } = await searchParams;
   const view = rawView === "board" ? "board" : "list";
   const { organization: workspace } = await getWorkspaceContext();
@@ -43,14 +50,46 @@ export default async function PipelinePage({ searchParams }: PipelinePageProps) 
     );
   }
 
+  const [assessmentDefinitions, stageAssessmentRows, taoStatus, canEditJobs] =
+    await Promise.all([
+      listTaoAssessmentDefinitions(workspace.id),
+      listPipelineStageAssessmentConfiguration(
+        workspace.id,
+        data.selectedJob.id,
+      ),
+      getWorkspaceTaoStatus(workspace.id),
+      can("jobs:edit"),
+    ]);
+  const configuredDefinitionIdsByStage = stageAssessmentRows.reduce<
+    Record<string, string[]>
+  >((result, row) => {
+    (result[row.stageId] ??= []).push(row.assessmentDefinitionId);
+    return result;
+  }, {});
+
   const toolbar = (
     <div className="flex items-center justify-between gap-3">
       <Suspense>
-        <PipelineJobSelect jobs={data.jobs} selectedJobId={data.selectedJob.id} />
+        <PipelineJobSelect
+          jobs={data.jobs}
+          selectedJobId={data.selectedJob.id}
+        />
       </Suspense>
-      {data.stages.length > 0 ? (
-        <PipelineViewToggle jobId={data.selectedJob.id} view={view} />
-      ) : null}
+      <div className="flex items-center gap-2">
+        {data.stages.length > 0 ? (
+          <PipelineStageAssessmentsDialog
+            jobId={data.selectedJob.id}
+            stages={data.stages}
+            assessments={assessmentDefinitions}
+            configuredDefinitionIdsByStage={configuredDefinitionIdsByStage}
+            taoEnabled={taoStatus.enabled}
+            canEdit={canEditJobs}
+          />
+        ) : null}
+        {data.stages.length > 0 ? (
+          <PipelineViewToggle jobId={data.selectedJob.id} view={view} />
+        ) : null}
+      </div>
     </div>
   );
 
@@ -102,7 +141,11 @@ export default async function PipelinePage({ searchParams }: PipelinePageProps) 
         />
       ) : (
         <PipelineBoard
-          key={pipelineBoardKey(data.selectedJob.id, data.stages, data.applications)}
+          key={pipelineBoardKey(
+            data.selectedJob.id,
+            data.stages,
+            data.applications,
+          )}
           jobs={data.jobs}
           selectedJob={data.selectedJob}
           stages={data.stages}
@@ -119,7 +162,10 @@ function pipelineBoardKey(
   applications: PipelineDataReady["applications"],
 ) {
   const stageVersion = stages
-    .map((stage) => `${stage.id}:${stage.order}:${stage.emailConfig.candidateUpdatesEnabled}`)
+    .map(
+      (stage) =>
+        `${stage.id}:${stage.order}:${stage.emailConfig.candidateUpdatesEnabled}`,
+    )
     .join(",");
   const applicationVersion = applications
     .map(

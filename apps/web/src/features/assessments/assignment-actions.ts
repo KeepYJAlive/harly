@@ -40,6 +40,7 @@ async function loadApplicationAndDefinition(
       applicationId: applications.id,
       candidateId: applications.candidateId,
       definitionId: assessmentDefinitions.id,
+      externalId: assessmentDefinitions.externalId,
       definitionActive: assessmentDefinitions.active,
     })
     .from(applications)
@@ -87,8 +88,7 @@ export async function assignAssessmentAction(
         enabled: workspaceSettings.taoEnabled,
         clientId: workspaceSettings.taoClientId,
         deploymentId: workspaceSettings.taoDeploymentId,
-        oidcUrl: workspaceSettings.taoOidcAuthUrl,
-        launchUrl: workspaceSettings.taoLaunchUrl,
+        instanceUrl: workspaceSettings.taoInstanceUrl,
       })
       .from(workspaceSettings)
       .where(eq(workspaceSettings.organizationId, context.organization.id))
@@ -102,8 +102,7 @@ export async function assignAssessmentAction(
     !integration?.enabled ||
     !integration.clientId ||
     !integration.deploymentId ||
-    !integration.oidcUrl ||
-    !integration.launchUrl
+    !integration.instanceUrl
   ) {
     return {
       ok: false,
@@ -124,6 +123,7 @@ export async function assignAssessmentAction(
           organizationId: context.organization.id,
           applicationId: parsed.data.applicationId,
           assessmentDefinitionId: parsed.data.assessmentDefinitionId,
+          providerResourceId: domain.externalId,
           assignedById: context.user.id,
           expiresAt,
           launchTokenHash: hashOpaqueToken(rawToken),

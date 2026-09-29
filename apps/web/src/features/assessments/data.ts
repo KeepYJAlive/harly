@@ -7,6 +7,7 @@ import {
   assessmentDefinitions,
   db,
   jobs,
+  jobStages,
 } from "@harly/db";
 
 import type {
@@ -55,6 +56,7 @@ export async function listAssessmentAssignmentsForCandidate(
       expiresAt: assessmentAssignments.expiresAt,
       score: assessmentAssignments.score,
       maxScore: assessmentAssignments.maxScore,
+      sourceStageName: jobStages.name,
     })
     .from(assessmentAssignments)
     .innerJoin(
@@ -76,6 +78,13 @@ export async function listAssessmentAssignmentsForCandidate(
       ),
     )
     .innerJoin(jobs, eq(jobs.id, applications.jobId))
+    .leftJoin(
+      jobStages,
+      and(
+        eq(jobStages.id, assessmentAssignments.sourceStageId),
+        eq(jobStages.workspaceId, organizationId),
+      ),
+    )
     .where(eq(assessmentAssignments.organizationId, organizationId))
     .orderBy(desc(assessmentAssignments.assignedAt));
 
@@ -102,4 +111,52 @@ export async function listAssignmentsForApplications(
         inArray(assessmentAssignments.applicationId, applicationIds),
       ),
     );
+}
+
+export async function listPortalAssessmentAssignments(input: {
+  organizationId: string;
+  candidateId: string;
+  applicationId: string;
+}) {
+  return db
+    .select({
+      id: assessmentAssignments.id,
+      assessmentName: assessmentDefinitions.name,
+      description: assessmentDefinitions.description,
+      definitionActive: assessmentDefinitions.active,
+      status: assessmentAssignments.status,
+      assignedAt: assessmentAssignments.assignedAt,
+      startedAt: assessmentAssignments.startedAt,
+      completedAt: assessmentAssignments.completedAt,
+      expiresAt: assessmentAssignments.expiresAt,
+    })
+    .from(assessmentAssignments)
+    .innerJoin(
+      applications,
+      and(
+        eq(applications.id, assessmentAssignments.applicationId),
+        eq(applications.workspaceId, assessmentAssignments.organizationId),
+        eq(applications.candidateId, input.candidateId),
+      ),
+    )
+    .innerJoin(
+      assessmentDefinitions,
+      and(
+        eq(
+          assessmentDefinitions.id,
+          assessmentAssignments.assessmentDefinitionId,
+        ),
+        eq(
+          assessmentDefinitions.organizationId,
+          assessmentAssignments.organizationId,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(assessmentAssignments.organizationId, input.organizationId),
+        eq(assessmentAssignments.applicationId, input.applicationId),
+      ),
+    )
+    .orderBy(desc(assessmentAssignments.assignedAt));
 }

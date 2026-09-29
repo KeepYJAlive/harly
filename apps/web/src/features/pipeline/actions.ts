@@ -1,7 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  isNotNull,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "@harly/db";
 import {
@@ -36,6 +45,7 @@ import {
   enqueueEmailOutbox,
   processEmailOutbox,
 } from "@/lib/email/outbox-processor";
+import { createStageAssessmentAssignments } from "@/features/assessments/stage-assignment-service";
 
 type ApplicationStatus = PipelineApplicationStatus;
 
@@ -256,6 +266,8 @@ export async function moveApplicationInPipeline(
               workspaceName: organization.name,
               toStageName: jobStages.name,
               toStageEmailConfig: jobStages.emailConfig,
+              toStageAssignAssessmentsOnEntry:
+                jobStages.assignAssessmentsOnEntry,
             })
             .from(applications)
             .innerJoin(
@@ -369,6 +381,16 @@ export async function moveApplicationInPipeline(
               movedById: user.id,
             });
 
+            if (application.toStageAssignAssessmentsOnEntry) {
+              await createStageAssessmentAssignments(tx, {
+                organizationId: input.workspaceId,
+                applicationId: input.applicationId,
+                candidateId: application.candidateId,
+                stageId: input.toStageId,
+                actorId: user.id,
+              });
+            }
+
             await tx.insert(activityEvents).values({
               workspaceId: input.workspaceId,
               actorId: user.id,
@@ -424,7 +446,10 @@ export async function moveApplicationInPipeline(
               stageEvent.hiredEventId = hiredDomainEvent.eventId;
               domainEvents.push(hiredDomainEvent);
             }
-            if (application.status !== "rejected" && nextStatus === "rejected") {
+            if (
+              application.status !== "rejected" &&
+              nextStatus === "rejected"
+            ) {
               const rejectedDomainEvent = await persistDomainEvent(tx, {
                 name: "application.rejected",
                 workspaceId: input.workspaceId,
@@ -651,6 +676,7 @@ export async function bulkMoveApplications(
               id: jobStages.id,
               name: jobStages.name,
               emailConfig: jobStages.emailConfig,
+              assignAssessmentsOnEntry: jobStages.assignAssessmentsOnEntry,
             })
             .from(jobStages)
             .innerJoin(
@@ -707,7 +733,10 @@ export async function bulkMoveApplications(
             targetStageApplications.map((item) => item.id),
           );
           const versionById = new Map(
-            targetStageApplications.map((item) => [item.id, item.updatedAtVersion]),
+            targetStageApplications.map((item) => [
+              item.id,
+              item.updatedAtVersion,
+            ]),
           );
           const orderedIds = [
             ...targetStageApplications.map((item) => item.id),
@@ -826,6 +855,20 @@ export async function bulkMoveApplications(
                 movedById: user.id,
               })),
             );
+
+            if (targetStage.assignAssessmentsOnEntry) {
+              for (const applicationId of appIds) {
+                const appData = appDataById.get(applicationId);
+                if (!appData) continue;
+                await createStageAssessmentAssignments(tx, {
+                  organizationId: input.workspaceId,
+                  applicationId,
+                  candidateId: appData.candidateId,
+                  stageId: input.toStageId,
+                  actorId: user.id,
+                });
+              }
+            }
 
             await tx.insert(activityEvents).values(
               appIds.map((applicationId) => ({
@@ -1132,6 +1175,7 @@ export async function updateApplicationStatus(
               id: string;
               name: string;
               emailConfig: unknown;
+              assignAssessmentsOnEntry: boolean;
             } | null = null;
 
             const terminalStageName = terminalStageNameForStatus(input.status);
@@ -1141,6 +1185,8 @@ export async function updateApplicationStatus(
                   id: jobStages.id,
                   name: jobStages.name,
                   emailConfig: jobStages.emailConfig,
+                  assignAssessmentsOnEntry:
+                    jobStages.assignAssessmentsOnEntry,
                 })
                 .from(jobStages)
                 .where(
@@ -1209,6 +1255,8 @@ export async function updateApplicationStatus(
                       id: jobStages.id,
                       name: jobStages.name,
                       emailConfig: jobStages.emailConfig,
+                      assignAssessmentsOnEntry:
+                        jobStages.assignAssessmentsOnEntry,
                     })
                     .from(jobStages)
                     .where(
@@ -1227,6 +1275,8 @@ export async function updateApplicationStatus(
                       id: jobStages.id,
                       name: jobStages.name,
                       emailConfig: jobStages.emailConfig,
+                      assignAssessmentsOnEntry:
+                        jobStages.assignAssessmentsOnEntry,
                     })
                     .from(jobStages)
                     .where(
@@ -1274,6 +1324,15 @@ export async function updateApplicationStatus(
                 toStageId: targetStageId,
                 movedById: user.id,
               });
+              if (targetStage?.assignAssessmentsOnEntry) {
+                await createStageAssessmentAssignments(tx, {
+                  organizationId: input.workspaceId,
+                  applicationId: application.id,
+                  candidateId: application.candidateId,
+                  stageId: targetStageId,
+                  actorId: user.id,
+                });
+              }
               await tx.insert(activityEvents).values({
                 workspaceId: input.workspaceId,
                 actorId: user.id,

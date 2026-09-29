@@ -8,16 +8,13 @@ import { assessmentDefinitions, db } from "@harly/db";
 import { assertNotDemo } from "@/features/demo/assert-not-demo";
 import { requirePermission } from "@/features/workspaces/permissions-server";
 import { logAuditEvent } from "@/lib/audit-log";
+import { taoDeliveryIdSchema } from "./validation";
 
 const definitionSchema = z.object({
   id: z.uuid().optional(),
   name: z.string().trim().min(1, "Display name is required.").max(200),
   description: z.string().trim().max(2_000).optional(),
-  externalId: z
-    .string()
-    .trim()
-    .min(1, "TAO delivery/resource identifier is required.")
-    .max(2_000),
+  externalId: taoDeliveryIdSchema,
   active: z.boolean().default(true),
 });
 

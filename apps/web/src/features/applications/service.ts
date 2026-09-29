@@ -1,6 +1,18 @@
 import "server-only";
 
-import { and, asc, desc, eq, exists, getTableColumns, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { ApiError, type Cursor } from "@harly/api";
 import {
@@ -29,6 +41,7 @@ import {
   enqueueEmailOutbox,
   processEmailOutbox,
 } from "@/lib/email/outbox-processor";
+import { createStageAssessmentAssignments } from "@/features/assessments/stage-assignment-service";
 
 /** Workspace-scoped application service for the REST API. */
 const log = createLogger("applications");
@@ -124,7 +137,11 @@ async function notifyApplicationStatusChange(input: {
       undefined,
       input.database,
     );
-    await processEmailOutbox({ ids: [id], workspaceId: input.workspaceId, database: input.database });
+    await processEmailOutbox({
+      ids: [id],
+      workspaceId: input.workspaceId,
+      database: input.database,
+    });
   }
 }
 
@@ -347,10 +364,15 @@ export async function createApplicationForApi(input: {
   });
 
   await publishPersistedDomainEvents([event]);
-  await emitWebhookEvent(workspaceId, "application.created", {
-    application: serializeApplication(application),
-    eventId: event.eventId,
-  }, { skipDomainEvent: true, eventId: event.eventId });
+  await emitWebhookEvent(
+    workspaceId,
+    "application.created",
+    {
+      application: serializeApplication(application),
+      eventId: event.eventId,
+    },
+    { skipDomainEvent: true, eventId: event.eventId },
+  );
   return application;
 }
 
@@ -461,7 +483,11 @@ export async function moveApplicationStageForApi(input: {
     }
 
     const [stage] = await database
-      .select({ id: jobStages.id, name: jobStages.name })
+      .select({
+        id: jobStages.id,
+        name: jobStages.name,
+        assignAssessmentsOnEntry: jobStages.assignAssessmentsOnEntry,
+      })
       .from(jobStages)
       .where(
         and(
@@ -477,108 +503,148 @@ export async function moveApplicationStageForApi(input: {
 
     const fromStageId = application.currentStageId;
 
-    const { updated, persistedEvents } = await database.transaction(async (tx) => {
-      const nextStatus = statusForStageName(stage.name);
-      const [next] = await tx
-        .select({
-          value: sql<number>`coalesce(max(${applications.pipelineOrder}), 0) + 1`,
-        })
-        .from(applications)
-        .where(
-          and(
-            eq(applications.workspaceId, input.workspaceId),
-            eq(applications.currentStageId, input.toStageId),
-          ),
-        );
+    const { updated, persistedEvents } = await database.transaction(
+      async (tx) => {
+        const nextStatus = statusForStageName(stage.name);
+        const [next] = await tx
+          .select({
+            value: sql<number>`coalesce(max(${applications.pipelineOrder}), 0) + 1`,
+          })
+          .from(applications)
+          .where(
+            and(
+              eq(applications.workspaceId, input.workspaceId),
+              eq(applications.currentStageId, input.toStageId),
+            ),
+          );
 
-      const result = await tx
-        .update(applications)
-        .set({
-          currentStageId: input.toStageId,
-          pipelineOrder: next?.value ?? 1,
-          status: nextStatus,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(applications.id, input.applicationId),
-            eq(applications.workspaceId, input.workspaceId),
-            sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
-          ),
-        )
-        .returning();
-
-      if (result.length === 0) {
-        throw ApiError.conflict("Application changed; retry request.");
-      }
-
-      await tx.insert(applicationStageHistory).values({
-        workspaceId: input.workspaceId,
-        applicationId: input.applicationId,
-        fromStageId,
-        toStageId: input.toStageId,
-        movedById: input.actorId ?? null,
-      });
-
-      const updatedApplication = result[0];
-      if (!updatedApplication) throw ApiError.conflict("Application changed; retry request.");
-      const events = [
-        await persistDomainEvent(tx, {
-          name: "application.stage_changed",
-          workspaceId: input.workspaceId,
-          actorId: input.actorId,
-          aggregateType: "application",
-          aggregateId: input.applicationId,
-          automationParentRunId: input.automationRunId,
-          payload: {
-            application: serializeApplication(updatedApplication),
-            fromStageId,
-            toStageId: input.toStageId,
-            toStageName: stage.name,
+        const result = await tx
+          .update(applications)
+          .set({
+            currentStageId: input.toStageId,
+            pipelineOrder: next?.value ?? 1,
             status: nextStatus,
-          },
-        }),
-      ];
-      if (
-        application.status !== nextStatus &&
-        (nextStatus === "hired" || nextStatus === "rejected")
-      ) {
-        events.push(
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(applications.id, input.applicationId),
+              eq(applications.workspaceId, input.workspaceId),
+              sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
+            ),
+          )
+          .returning();
+
+        if (result.length === 0) {
+          throw ApiError.conflict("Application changed; retry request.");
+        }
+
+        await tx.insert(applicationStageHistory).values({
+          workspaceId: input.workspaceId,
+          applicationId: input.applicationId,
+          fromStageId,
+          toStageId: input.toStageId,
+          movedById: input.actorId ?? null,
+        });
+
+        if (stage.assignAssessmentsOnEntry) {
+          await createStageAssessmentAssignments(tx, {
+            organizationId: input.workspaceId,
+            applicationId: input.applicationId,
+            candidateId: application.candidateId,
+            stageId: input.toStageId,
+            actorId: input.actorId,
+          });
+        }
+
+        const updatedApplication = result[0];
+        if (!updatedApplication)
+          throw ApiError.conflict("Application changed; retry request.");
+        const events = [
           await persistDomainEvent(tx, {
-            name: nextStatus === "hired" ? "application.hired" : "application.rejected",
+            name: "application.stage_changed",
             workspaceId: input.workspaceId,
             actorId: input.actorId,
             aggregateType: "application",
             aggregateId: input.applicationId,
             automationParentRunId: input.automationRunId,
-            payload: { application: serializeApplication(updatedApplication) },
+            payload: {
+              application: serializeApplication(updatedApplication),
+              fromStageId,
+              toStageId: input.toStageId,
+              toStageName: stage.name,
+              status: nextStatus,
+            },
           }),
-        );
-      }
-      return {
-        updated: updatedApplication,
-        persistedEvents: events,
-      };
-    });
+        ];
+        if (
+          application.status !== nextStatus &&
+          (nextStatus === "hired" || nextStatus === "rejected")
+        ) {
+          events.push(
+            await persistDomainEvent(tx, {
+              name:
+                nextStatus === "hired"
+                  ? "application.hired"
+                  : "application.rejected",
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              aggregateType: "application",
+              aggregateId: input.applicationId,
+              automationParentRunId: input.automationRunId,
+              payload: {
+                application: serializeApplication(updatedApplication),
+              },
+            }),
+          );
+        }
+        return {
+          updated: updatedApplication,
+          persistedEvents: events,
+        };
+      },
+    );
 
     await publishPersistedDomainEvents(persistedEvents, database);
-    await emitWebhookEvent(input.workspaceId, "application.stage_changed", {
-      application: serializeApplication(updated),
-      fromStageId,
-      toStageId: input.toStageId,
-      toStageName: stage.name,
-      status: updated.status,
-      eventId: persistedEvents[0]?.eventId,
-    }, { actorId: input.actorId, skipDomainEvent: true, eventId: persistedEvents[0]?.eventId, parentRunId: input.automationRunId, database });
+    await emitWebhookEvent(
+      input.workspaceId,
+      "application.stage_changed",
+      {
+        application: serializeApplication(updated),
+        fromStageId,
+        toStageId: input.toStageId,
+        toStageName: stage.name,
+        status: updated.status,
+        eventId: persistedEvents[0]?.eventId,
+      },
+      {
+        actorId: input.actorId,
+        skipDomainEvent: true,
+        eventId: persistedEvents[0]?.eventId,
+        parentRunId: input.automationRunId,
+        database,
+      },
+    );
     if (
       application.status !== updated.status &&
       (updated.status === "hired" || updated.status === "rejected")
     ) {
       const outcomeEvent = persistedEvents[1];
-      await emitWebhookEvent(input.workspaceId, `application.${updated.status}`, {
-        application: serializeApplication(updated),
-        eventId: outcomeEvent?.eventId,
-      }, { actorId: input.actorId, skipDomainEvent: true, eventId: outcomeEvent?.eventId, parentRunId: input.automationRunId, database });
+      await emitWebhookEvent(
+        input.workspaceId,
+        `application.${updated.status}`,
+        {
+          application: serializeApplication(updated),
+          eventId: outcomeEvent?.eventId,
+        },
+        {
+          actorId: input.actorId,
+          skipDomainEvent: true,
+          eventId: outcomeEvent?.eventId,
+          parentRunId: input.automationRunId,
+          database,
+        },
+      );
     }
 
     return updated;
@@ -617,7 +683,10 @@ async function setApplicationStatus(
     const terminalStageNames =
       status === "hired" ? ["Hired", "Accepted"] : ["Rejected", "Not Selected"];
     const [terminalStage] = await database
-      .select({ id: jobStages.id })
+      .select({
+        id: jobStages.id,
+        assignAssessmentsOnEntry: jobStages.assignAssessmentsOnEntry,
+      })
       .from(jobStages)
       .where(
         and(
@@ -638,52 +707,75 @@ async function setApplicationStatus(
       return application;
     }
 
-    const { updated, persistedEvent } = await database.transaction(async (tx) => {
-      const [next] = await tx
-        .update(applications)
-        .set({
-          status,
-          ...(terminalStage ? { currentStageId: terminalStage.id } : {}),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(applications.id, input.applicationId),
-            eq(applications.workspaceId, input.workspaceId),
-            sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
-          ),
-        )
-        .returning();
-      if (!next) throw ApiError.conflict("Application changed; retry request.");
+    const { updated, persistedEvent } = await database.transaction(
+      async (tx) => {
+        const [next] = await tx
+          .update(applications)
+          .set({
+            status,
+            ...(terminalStage ? { currentStageId: terminalStage.id } : {}),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(applications.id, input.applicationId),
+              eq(applications.workspaceId, input.workspaceId),
+              sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
+            ),
+          )
+          .returning();
+        if (!next)
+          throw ApiError.conflict("Application changed; retry request.");
 
-      if (terminalStage && terminalStage.id !== application.currentStageId) {
-        await tx.insert(applicationStageHistory).values({
-          workspaceId: input.workspaceId,
-          applicationId: input.applicationId,
-          fromStageId: application.currentStageId,
-          toStageId: terminalStage.id,
-          movedById: input.actorId ?? null,
-        });
-      }
-      return {
-        updated: next,
-        persistedEvent: await persistDomainEvent(tx, {
-          name: event,
-          workspaceId: input.workspaceId,
-          actorId: input.actorId,
-          aggregateType: "application",
-          aggregateId: input.applicationId,
-          automationParentRunId: input.automationRunId,
-          payload: { application: serializeApplication(next) },
-        }),
-      };
-    });
+        if (terminalStage && terminalStage.id !== application.currentStageId) {
+          await tx.insert(applicationStageHistory).values({
+            workspaceId: input.workspaceId,
+            applicationId: input.applicationId,
+            fromStageId: application.currentStageId,
+            toStageId: terminalStage.id,
+            movedById: input.actorId ?? null,
+          });
+          if (terminalStage.assignAssessmentsOnEntry) {
+            await createStageAssessmentAssignments(tx, {
+              organizationId: input.workspaceId,
+              applicationId: input.applicationId,
+              candidateId: application.candidateId,
+              stageId: terminalStage.id,
+              actorId: input.actorId,
+            });
+          }
+        }
+        return {
+          updated: next,
+          persistedEvent: await persistDomainEvent(tx, {
+            name: event,
+            workspaceId: input.workspaceId,
+            actorId: input.actorId,
+            aggregateType: "application",
+            aggregateId: input.applicationId,
+            automationParentRunId: input.automationRunId,
+            payload: { application: serializeApplication(next) },
+          }),
+        };
+      },
+    );
 
     await publishPersistedDomainEvents([persistedEvent], database);
-    await emitWebhookEvent(input.workspaceId, event, {
-      application: serializeApplication(updated),
-      eventId: persistedEvent.eventId,
-    }, { actorId: input.actorId, skipDomainEvent: true, eventId: persistedEvent.eventId, parentRunId: input.automationRunId, database });
+    await emitWebhookEvent(
+      input.workspaceId,
+      event,
+      {
+        application: serializeApplication(updated),
+        eventId: persistedEvent.eventId,
+      },
+      {
+        actorId: input.actorId,
+        skipDomainEvent: true,
+        eventId: persistedEvent.eventId,
+        parentRunId: input.automationRunId,
+        database,
+      },
+    );
     if (application.status !== status) {
       await notifyApplicationStatusChange({
         workspaceId: input.workspaceId,
@@ -751,50 +843,53 @@ export async function setApplicationStatusForWorkflow(input: {
     const application = await getApplicationForApi({ ...input, database });
     if (application.status === input.status) return application;
 
-    const { updated, persistedEvent } = await database.transaction(async (tx) => {
-      const [next] = await tx
-        .update(applications)
-        .set({ status: input.status, updatedAt: new Date() })
-        .where(
-          and(
-            eq(applications.id, input.applicationId),
-            eq(applications.workspaceId, input.workspaceId),
-            sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
-          ),
-        )
-        .returning();
-      if (!next) throw ApiError.conflict("Application changed; retry request.");
+    const { updated, persistedEvent } = await database.transaction(
+      async (tx) => {
+        const [next] = await tx
+          .update(applications)
+          .set({ status: input.status, updatedAt: new Date() })
+          .where(
+            and(
+              eq(applications.id, input.applicationId),
+              eq(applications.workspaceId, input.workspaceId),
+              sql`${applications.updatedAt} = ${application.updatedAtVersion}::timestamptz`,
+            ),
+          )
+          .returning();
+        if (!next)
+          throw ApiError.conflict("Application changed; retry request.");
 
-      await tx.insert(activityEvents).values({
-        workspaceId: input.workspaceId,
-        actorId: input.actorId,
-        entityType: "application",
-        entityId: input.applicationId,
-        type: "application.status_changed",
-        metadata: {
-          fromStatus: application.status,
-          toStatus: input.status,
-          source: "workflow",
-        },
-      });
-
-      return {
-        updated: next,
-        persistedEvent: await persistDomainEvent(tx, {
-          name: "application.status_changed",
+        await tx.insert(activityEvents).values({
           workspaceId: input.workspaceId,
           actorId: input.actorId,
-          aggregateType: "application",
-          aggregateId: input.applicationId,
-          automationParentRunId: input.automationRunId,
-          payload: {
-            application: serializeApplication(next),
+          entityType: "application",
+          entityId: input.applicationId,
+          type: "application.status_changed",
+          metadata: {
             fromStatus: application.status,
             toStatus: input.status,
+            source: "workflow",
           },
-        }),
-      };
-    });
+        });
+
+        return {
+          updated: next,
+          persistedEvent: await persistDomainEvent(tx, {
+            name: "application.status_changed",
+            workspaceId: input.workspaceId,
+            actorId: input.actorId,
+            aggregateType: "application",
+            aggregateId: input.applicationId,
+            automationParentRunId: input.automationRunId,
+            payload: {
+              application: serializeApplication(next),
+              fromStatus: application.status,
+              toStatus: input.status,
+            },
+          }),
+        };
+      },
+    );
 
     await publishPersistedDomainEvents([persistedEvent], database);
     await emitWebhookEvent(
