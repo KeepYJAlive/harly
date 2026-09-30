@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolvePersonalReferralToken: vi.fn(),
@@ -12,15 +12,22 @@ vi.mock("@/features/candidates/referrals/personal-data", () => ({
 import { GET } from "./route";
 
 function request(token = "opaque-token") {
-  return GET(new NextRequest(`https://harly.example/referral/${token}`), {
+  return GET(new NextRequest(`https://0.0.0.0:3000/referral/${token}`), {
     params: Promise.resolve({ token }),
   });
 }
 
 describe("public personal referral link", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("HARLY_URL", "https://harly.example");
+  });
 
-  it("stores only minimum referral context and never authenticates the visitor", async () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("redirects through the public origin, stores only minimum referral context, and never authenticates the visitor", async () => {
     mocks.resolvePersonalReferralToken.mockResolvedValue({ status: "pending" });
 
     const response = await request();
