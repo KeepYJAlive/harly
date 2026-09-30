@@ -47,6 +47,8 @@ describe("referral landing authentication", () => {
       status: "pending",
       workspaceId: "workspace-1",
       workspaceSlug: "keepyjalive",
+      referredEmail: "invited@example.com",
+      candidateId: null,
     });
   });
 
@@ -75,5 +77,47 @@ describe("referral landing authentication", () => {
       "redirect:/portal/login?workspace=keepyjalive&next=%2Freferral",
     );
     expect(mocks.resolvePortalSession).toHaveBeenCalledWith("invalid-session");
+  });
+
+  it("redirects a different signed-in email through identity-aware login", async () => {
+    mocks.cookies.mockResolvedValue(
+      cookieStore({
+        harly_referral_context: "referral-token",
+        harly_portal_session: "other-session",
+      }),
+    );
+    mocks.resolvePortalSession.mockResolvedValue({
+      workspaceId: "workspace-1",
+      candidateId: "candidate-other",
+      email: "someone-else@example.com",
+    });
+
+    await expect(ReferralLandingPage()).rejects.toThrow(
+      "redirect:/portal/login?workspace=keepyjalive&next=%2Freferral&error=referral_email",
+    );
+    expect(mocks.getCareerPageData).not.toHaveBeenCalled();
+  });
+
+  it("allows the invited email to reach referral confirmation", async () => {
+    mocks.cookies.mockResolvedValue(
+      cookieStore({
+        harly_referral_context: "referral-token",
+        harly_portal_session: "invited-session",
+      }),
+    );
+    mocks.resolvePortalSession.mockResolvedValue({
+      workspaceId: "workspace-1",
+      candidateId: "candidate-invited",
+      email: "Invited@Example.com",
+    });
+    mocks.getCareerPageData.mockResolvedValue({
+      workspace: { id: "workspace-1" },
+      jobs: [],
+      config: {},
+    });
+    mocks.isPortalEnabled.mockResolvedValue(true);
+
+    await expect(ReferralLandingPage()).resolves.toBeDefined();
+    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

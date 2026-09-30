@@ -52,6 +52,11 @@ describe("personal referral tokens", () => {
     expect(buildPersonalReferralLoginPath("keepyjalive")).toBe(
       "/portal/login?workspace=keepyjalive&next=%2Freferral",
     );
+    expect(
+      buildPersonalReferralLoginPath("keepyjalive", { emailMismatch: true }),
+    ).toBe(
+      "/portal/login?workspace=keepyjalive&next=%2Freferral&error=referral_email",
+    );
   });
 
   it("allows only portal paths and the fixed referral return path", () => {

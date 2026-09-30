@@ -8,6 +8,7 @@ import { ReferralLandingModal } from "@/features/candidates/referrals/ReferralLa
 import { resolvePersonalReferralToken } from "@/features/candidates/referrals/personal-data";
 import {
   buildPersonalReferralLoginPath,
+  normalizeReferralEmail,
   PERSONAL_REFERRAL_COOKIE,
 } from "@/features/candidates/referrals/personal";
 import {
@@ -46,20 +47,29 @@ export default async function ReferralLandingPage() {
   const session = sessionToken
     ? await resolvePortalSession(sessionToken)
     : null;
-  const authenticated = session?.workspaceId === referral.workspaceId;
-  if (!authenticated) {
-    redirect(buildPersonalReferralLoginPath(referral.workspaceSlug) as Route);
+  const sameWorkspace = session?.workspaceId === referral.workspaceId;
+  const acceptedByViewer = Boolean(
+    sameWorkspace &&
+      referral.status === "accepted" &&
+      referral.candidateId === session.candidateId,
+  );
+  const invitedEmailMatches = Boolean(
+    sameWorkspace &&
+      referral.referredEmail &&
+      normalizeReferralEmail(session.email) === referral.referredEmail,
+  );
+  if (!acceptedByViewer && !invitedEmailMatches) {
+    redirect(
+      buildPersonalReferralLoginPath(referral.workspaceSlug, {
+        emailMismatch: Boolean(sameWorkspace && session),
+      }) as Route,
+    );
   }
   const [data, portalEnabled] = await Promise.all([
     getCareerPageData(referral.workspaceSlug),
     isPortalEnabled(referral.workspaceId),
   ]);
   if (!data) return <UnavailableReferral />;
-
-  const acceptedByViewer = Boolean(
-    referral.status === "accepted" &&
-    referral.candidateId === session.candidateId,
-  );
 
   const boardRoot = `/board/${referral.workspaceSlug}`;
   return (

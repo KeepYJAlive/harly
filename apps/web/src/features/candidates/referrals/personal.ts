@@ -68,11 +68,15 @@ export function buildPersonalReferralUrl(
   ).toString();
 }
 
-export function buildPersonalReferralLoginPath(workspaceSlug: string) {
+export function buildPersonalReferralLoginPath(
+  workspaceSlug: string,
+  options: { emailMismatch?: boolean } = {},
+) {
   const params = new URLSearchParams({
     workspace: workspaceSlug,
     next: "/referral",
   });
+  if (options.emailMismatch) params.set("error", "referral_email");
   return `/portal/login?${params.toString()}`;
 }
 

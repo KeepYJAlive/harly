@@ -16,6 +16,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_token: "The link has expired or already been used.",
   missing_token: "Invalid sign-in link.",
   no_workspace: "Workspace not found.",
+  referral_email: "Sign in with the email address that received this referral.",
 };
 
 export function PortalLoginForm({
