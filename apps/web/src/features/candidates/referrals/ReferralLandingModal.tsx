@@ -11,17 +11,13 @@ import { acceptPersonalReferral } from "./personal-actions";
 export function ReferralLandingModal({
   referrerName,
   companyName,
-  workspaceSlug,
   boardRoot,
-  authenticated,
   accepted,
   remaining,
 }: {
   referrerName: string;
   companyName: string;
-  workspaceSlug: string;
   boardRoot: string;
-  authenticated: boolean;
   accepted: boolean;
   remaining: number;
 }) {
@@ -31,7 +27,6 @@ export function ReferralLandingModal({
     | { kind: "error"; message: string }
   >(accepted ? { kind: "accepted", referrerName } : { kind: "ready" });
   const [pending, startTransition] = useTransition();
-  const loginHref = `/portal/login?workspace=${encodeURIComponent(workspaceSlug)}&next=${encodeURIComponent("/referral")}`;
 
   function accept() {
     startTransition(async () => {
@@ -103,28 +98,15 @@ export function ReferralLandingModal({
                 {state.message}
               </p>
             ) : null}
-            <div className="mt-6 grid gap-2 sm:grid-cols-2">
-              {authenticated ? (
-                <Button
-                  type="button"
-                  onClick={accept}
-                  disabled={pending}
-                  className="sm:col-span-2"
-                >
-                  {pending ? "Accepting…" : "Accept referral"}
-                </Button>
-              ) : (
-                <>
-                  <Button asChild>
-                    <Link href={loginHref as Route}>
-                      Sign in to accept referral
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <Link href={loginHref as Route}>Create profile</Link>
-                  </Button>
-                </>
-              )}
+            <div className="mt-6">
+              <Button
+                type="button"
+                onClick={accept}
+                disabled={pending}
+                className="w-full"
+              >
+                {pending ? "Accepting…" : "Accept referral"}
+              </Button>
             </div>
           </>
         )}

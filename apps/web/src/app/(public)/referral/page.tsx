@@ -1,10 +1,15 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import type { Route } from "next";
 
 import { PublicCareerPage } from "@/features/career-page/PublicCareerPage";
 import { getCareerPageData } from "@/features/career-page/data";
 import { ReferralLandingModal } from "@/features/candidates/referrals/ReferralLandingModal";
 import { resolvePersonalReferralToken } from "@/features/candidates/referrals/personal-data";
-import { PERSONAL_REFERRAL_COOKIE } from "@/features/candidates/referrals/personal";
+import {
+  buildPersonalReferralLoginPath,
+  PERSONAL_REFERRAL_COOKIE,
+} from "@/features/candidates/referrals/personal";
 import {
   PORTAL_SESSION_COOKIE,
   isPortalEnabled,
@@ -37,21 +42,23 @@ export default async function ReferralLandingPage() {
     return <UnavailableReferral />;
   }
 
+  const sessionToken = cookieStore.get(PORTAL_SESSION_COOKIE)?.value;
+  const session = sessionToken
+    ? await resolvePortalSession(sessionToken)
+    : null;
+  const authenticated = session?.workspaceId === referral.workspaceId;
+  if (!authenticated) {
+    redirect(buildPersonalReferralLoginPath(referral.workspaceSlug) as Route);
+  }
   const [data, portalEnabled] = await Promise.all([
     getCareerPageData(referral.workspaceSlug),
     isPortalEnabled(referral.workspaceId),
   ]);
   if (!data) return <UnavailableReferral />;
 
-  const sessionToken = cookieStore.get(PORTAL_SESSION_COOKIE)?.value;
-  const session = sessionToken
-    ? await resolvePortalSession(sessionToken)
-    : null;
-  const authenticated = session?.workspaceId === referral.workspaceId;
   const acceptedByViewer = Boolean(
-    authenticated &&
     referral.status === "accepted" &&
-    referral.candidateId === session?.candidateId,
+    referral.candidateId === session.candidateId,
   );
 
   const boardRoot = `/board/${referral.workspaceSlug}`;
@@ -91,9 +98,7 @@ export default async function ReferralLandingPage() {
       <ReferralLandingModal
         referrerName={referral.referrerName}
         companyName={referral.workspaceName}
-        workspaceSlug={referral.workspaceSlug}
         boardRoot={boardRoot}
-        authenticated={authenticated}
         accepted={acceptedByViewer}
         remaining={referral.remaining}
       />

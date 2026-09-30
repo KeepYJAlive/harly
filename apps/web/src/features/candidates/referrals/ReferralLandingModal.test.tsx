@@ -8,14 +8,12 @@ vi.mock("./personal-actions", () => ({
 import { ReferralLandingModal } from "./ReferralLandingModal";
 
 describe("ReferralLandingModal", () => {
-  it("renders the unauthenticated careers referral experience", () => {
+  it("renders the authenticated referral confirmation", () => {
     const html = renderToStaticMarkup(
       <ReferralLandingModal
         referrerName="James Doe"
         companyName="#KeepYJAlive"
-        workspaceSlug="keepyjalive"
         boardRoot="/board/keepyjalive"
-        authenticated={false}
         accepted={false}
         remaining={3}
       />,
@@ -23,8 +21,8 @@ describe("ReferralLandingModal", () => {
     expect(html).toContain("You&#x27;ve been referred!");
     expect(html).toContain("James Doe");
     expect(html).toContain("up to 3 applications");
-    expect(html).toContain("Sign in to accept referral");
-    expect(html).toContain("Create profile");
+    expect(html).toContain("Accept referral");
+    expect(html).not.toContain("Sign in to accept referral");
     expect(html).not.toContain("james@example.com");
   });
 
@@ -33,9 +31,7 @@ describe("ReferralLandingModal", () => {
       <ReferralLandingModal
         referrerName="James Doe"
         companyName="#KeepYJAlive"
-        workspaceSlug="keepyjalive"
         boardRoot="/board/keepyjalive"
-        authenticated
         accepted
         remaining={1}
       />,

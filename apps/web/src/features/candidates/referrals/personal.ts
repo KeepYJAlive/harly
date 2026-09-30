@@ -68,6 +68,14 @@ export function buildPersonalReferralUrl(
   ).toString();
 }
 
+export function buildPersonalReferralLoginPath(workspaceSlug: string) {
+  const params = new URLSearchParams({
+    workspace: workspaceSlug,
+    next: "/referral",
+  });
+  return `/portal/login?${params.toString()}`;
+}
+
 export function isSafePortalNext(value: string | null | undefined) {
   if (!value) return false;
   return value.startsWith("/portal/") || value === "/referral";

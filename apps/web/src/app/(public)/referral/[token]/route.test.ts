@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolvePersonalReferralToken: vi.fn(),
@@ -11,28 +11,58 @@ vi.mock("@/features/candidates/referrals/personal-data", () => ({
 
 import { GET } from "./route";
 
-function request(token = "opaque-token") {
-  return GET(new NextRequest(`https://harly.example/referral/${token}`), {
-    params: Promise.resolve({ token }),
-  });
+function request(token = "opaque-token", authenticated = false) {
+  return GET(
+    new NextRequest(`https://0.0.0.0:3000/referral/${token}`, {
+      headers: authenticated
+        ? { cookie: "harly_portal_session=session-token" }
+        : undefined,
+    }),
+    { params: Promise.resolve({ token }) },
+  );
 }
 
 describe("public personal referral link", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("HARLY_URL", "https://harly.example");
+  });
 
-  it("stores only minimum referral context and never authenticates the visitor", async () => {
-    mocks.resolvePersonalReferralToken.mockResolvedValue({ status: "pending" });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("sends visitors without a portal cookie directly to workspace login", async () => {
+    mocks.resolvePersonalReferralToken.mockResolvedValue({
+      status: "pending",
+      workspaceSlug: "keepyjalive",
+    });
 
     const response = await request();
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://harly.example/referral",
+      "https://harly.example/portal/login?workspace=keepyjalive&next=%2Freferral",
     );
     expect(response.cookies.get("harly_referral_context")?.value).toBe(
       "opaque-token",
     );
     expect(response.cookies.get("harly_portal_session")).toBeUndefined();
+  });
+
+  it("continues to referral confirmation when a portal cookie is present", async () => {
+    mocks.resolvePersonalReferralToken.mockResolvedValue({
+      status: "pending",
+      workspaceSlug: "keepyjalive",
+    });
+
+    const response = await request("opaque-token", true);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://harly.example/referral",
+    );
+    expect(response.headers.get("location")).not.toContain("0.0.0.0");
   });
 
   it.each([null, { status: "revoked" }, { status: "expired" }])(

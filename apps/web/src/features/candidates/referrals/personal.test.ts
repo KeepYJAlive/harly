@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  buildPersonalReferralLoginPath,
   buildPersonalReferralUrl,
   createPersonalReferralInvitationPayload,
   createReferralToken,
@@ -45,6 +46,12 @@ describe("personal referral tokens", () => {
     expect(url).toBe("https://opportunities.example/referral/opaque-token");
     expect(url).not.toContain("candidate");
     expect(url).not.toContain("email");
+  });
+
+  it("builds the fixed referral login return path", () => {
+    expect(buildPersonalReferralLoginPath("keepyjalive")).toBe(
+      "/portal/login?workspace=keepyjalive&next=%2Freferral",
+    );
   });
 
   it("allows only portal paths and the fixed referral return path", () => {
