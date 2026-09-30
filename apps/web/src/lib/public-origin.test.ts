@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getEsignWebhookBaseUrl, getHarlyPublicOrigin } from "./public-origin";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("public provider origin", () => {
   it("uses HARLY_URL and returns the origin only", () => {
@@ -35,6 +39,14 @@ describe("public provider origin", () => {
   it("rejects an unspecified production bind address", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("HARLY_URL", "https://0.0.0.0:3000");
+
+    expect(() => getHarlyPublicOrigin()).toThrow(/reachable public hostname/);
+  });
+
+  it("rejects an unspecified bind address even when local URLs are allowed", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("HARLY_ALLOW_LOCAL_URL", "true");
+    vi.stubEnv("HARLY_URL", "https:0.0.0.0:3000");
 
     expect(() => getHarlyPublicOrigin()).toThrow(/reachable public hostname/);
   });

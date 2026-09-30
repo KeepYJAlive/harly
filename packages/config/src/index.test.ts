@@ -33,6 +33,17 @@ describe("loadHarlyConfig", () => {
     ).toThrow(/HARLY_URL/);
   });
 
+  it("rejects unspecified bind addresses when local URLs are allowed", () => {
+    expect(() =>
+      loadHarlyConfig({
+        ...production,
+        NODE_ENV: "development",
+        HARLY_ALLOW_LOCAL_URL: "true",
+        HARLY_URL: "https:0.0.0.0:3000",
+      }),
+    ).toThrow(/HARLY_URL/);
+  });
+
   it("rejects localhost in production", () => {
     expect(() =>
       loadHarlyConfig({ ...production, HARLY_URL: "https://localhost:3000" }),

@@ -3,6 +3,11 @@ import "server-only";
 const DEFAULT_PUBLIC_ORIGIN = "http://localhost:3000";
 const BUILD_PUBLIC_ORIGIN = "https://build.invalid";
 
+function isUnspecifiedBindHost(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return ["0.0.0.0", "::", "[::]"].includes(normalized);
+}
+
 function isUnsafeProductionHost(hostname: string) {
   const normalized = hostname.toLowerCase();
   const ipv4Parts = normalized.split(".");
@@ -20,9 +25,7 @@ function isUnsafeProductionHost(hostname: string) {
     isIpv4Loopback ||
     normalized === "::1" ||
     normalized === "[::1]" ||
-    normalized === "0.0.0.0" ||
-    normalized === "::" ||
-    normalized === "[::]"
+    isUnspecifiedBindHost(normalized)
   );
 }
 
@@ -50,6 +53,11 @@ export function getHarlyPublicOrigin(): string {
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("HARLY_URL must use HTTP or HTTPS.");
+  }
+  if (isUnspecifiedBindHost(url.hostname)) {
+    throw new Error(
+      "HARLY_URL must use a reachable public hostname, not an unspecified bind address.",
+    );
   }
   const isExplicitE2ELoopback =
     process.env.HARLY_E2E === "true" &&
