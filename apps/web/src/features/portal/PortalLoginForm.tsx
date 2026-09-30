@@ -22,10 +22,12 @@ export function PortalLoginForm({
   hasGoogle,
   hasGitHub,
   hasLinkedIn,
+  workspaceSlug,
 }: {
   hasGoogle: boolean;
   hasGitHub: boolean;
   hasLinkedIn: boolean;
+  workspaceSlug?: string;
 }) {
   const params = useSearchParams();
   const error = params.get("error");
@@ -42,7 +44,10 @@ export function PortalLoginForm({
     const submittedEmail = new FormData(e.currentTarget).get("email");
     const emailValue = typeof submittedEmail === "string" ? submittedEmail : "";
     start(async () => {
-      const result = await sendPortalMagicLinkAction(emailValue);
+      const result = await sendPortalMagicLinkAction(emailValue, {
+        workspaceSlug,
+        next,
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -53,7 +58,10 @@ export function PortalLoginForm({
   }
 
   function oauthHref(provider: "google" | "github" | "linkedin") {
-    return `/api/portal/auth?provider=${provider}&next=${encodeURIComponent(next)}`;
+    const workspace = workspaceSlug
+      ? `&workspace=${encodeURIComponent(workspaceSlug)}`
+      : "";
+    return `/api/portal/auth?provider=${provider}&next=${encodeURIComponent(next)}${workspace}`;
   }
 
   if (sent) {
@@ -160,10 +168,14 @@ export function PortalLoginForm({
       )}
 
       <form
-          action={sendPortalMagicLinkFormAction}
+        action={sendPortalMagicLinkFormAction}
         onSubmit={submitMagicLink}
         className="space-y-3"
       >
+        <input type="hidden" name="next" value={next} />
+        {workspaceSlug ? (
+          <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
+        ) : null}
         <input
           type="email"
           name="email"

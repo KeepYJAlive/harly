@@ -20,6 +20,7 @@ import { db } from "@harly/db";
 import {
   activityEvents,
   aiEvaluations,
+  applicationReferrals,
   applicationAnswers,
   applications,
   applicationQuestions,
@@ -931,6 +932,46 @@ export async function getCandidateProfile(candidateId: string) {
   const applicationIdsForAnswers = candidateApplications.map(
     (application) => application.id,
   );
+  const applicationReferralRows =
+    applicationIdsForAnswers.length > 0
+      ? await db
+          .select({
+            applicationId: applicationReferrals.applicationId,
+            referrerName: applicationReferrals.referrerNameSnapshot,
+            acceptedAt: candidateReferrals.acceptedAt,
+            appliedAt: applicationReferrals.appliedAt,
+          })
+          .from(applicationReferrals)
+          .innerJoin(
+            candidateReferrals,
+            and(
+              eq(candidateReferrals.id, applicationReferrals.referralId),
+              eq(
+                candidateReferrals.workspaceId,
+                applicationReferrals.workspaceId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(applicationReferrals.workspaceId, workspace.id),
+              inArray(
+                applicationReferrals.applicationId,
+                applicationIdsForAnswers,
+              ),
+            ),
+          )
+      : [];
+  const referralByApplication = new Map(
+    applicationReferralRows.map((row) => [
+      row.applicationId,
+      {
+        referrerName: row.referrerName,
+        acceptedAt: row.acceptedAt?.toISOString() ?? null,
+        appliedAt: row.appliedAt.toISOString(),
+      },
+    ]),
+  );
   const answerRows =
     applicationIdsForAnswers.length > 0
       ? await db
@@ -1518,6 +1559,7 @@ export async function getCandidateProfile(candidateId: string) {
       and(
         eq(candidateReferrals.workspaceId, workspace.id),
         eq(candidateReferrals.candidateId, candidate.id),
+        eq(candidateReferrals.kind, "internal"),
       ),
     )
     .orderBy(desc(candidateReferrals.featured), desc(candidateReferrals.createdAt));
@@ -1534,6 +1576,35 @@ export async function getCandidateProfile(candidateId: string) {
     createdById: row.createdById,
     createdByName: row.createdByName,
   }));
+
+  const [personalReferral] = await db
+    .select({
+      id: candidateReferrals.id,
+      status: candidateReferrals.status,
+      acceptedAt: candidateReferrals.acceptedAt,
+      expiresAt: candidateReferrals.expiresAt,
+      referrerName: referredByUsers.name,
+      used: sql<number>`(
+        select count(*)::int
+        from ${applicationReferrals}
+        where ${applicationReferrals.referralId} = ${candidateReferrals.id}
+          and ${applicationReferrals.workspaceId} = ${workspace.id}
+      )`,
+    })
+    .from(candidateReferrals)
+    .innerJoin(
+      referredByUsers,
+      eq(referredByUsers.id, candidateReferrals.referredById),
+    )
+    .where(
+      and(
+        eq(candidateReferrals.workspaceId, workspace.id),
+        eq(candidateReferrals.candidateId, candidate.id),
+        eq(candidateReferrals.kind, "personal"),
+      ),
+    )
+    .orderBy(desc(candidateReferrals.createdAt))
+    .limit(1);
 
   const privacyRequests = await db
     .select({
@@ -1568,9 +1639,17 @@ export async function getCandidateProfile(candidateId: string) {
     },
     inPool,
     referrals,
+    personalReferral: personalReferral
+      ? {
+          ...personalReferral,
+          acceptedAt: personalReferral.acceptedAt?.toISOString() ?? null,
+          expiresAt: personalReferral.expiresAt?.toISOString() ?? null,
+        }
+      : null,
     applications: candidateApplications.map((application) => ({
       ...application,
       answers: answersByApplication.get(application.id) ?? [],
+      referral: referralByApplication.get(application.id) ?? null,
     })),
     notes: notes.map((note) => ({
       id: note.id,

@@ -9,6 +9,8 @@ import { PortalShell } from "@/features/portal/PortalShellServer";
 import { PortalProfileForm } from "@/features/portal/PortalProfileForm";
 import { PortalAvatarEdit } from "@/features/portal/PortalAvatarEdit";
 import { PortalPrivacyControls } from "@/features/portal/PortalPrivacyControls";
+import { getPersonalReferralSummary } from "@/features/candidates/referrals/personal-data";
+import { Handshake } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,10 @@ export default async function PortalProfilePage() {
     ))
     .orderBy(desc(dsarRequests.createdAt))
     .limit(1);
+  const referral = await getPersonalReferralSummary({
+    workspaceId: session.workspaceId,
+    candidateId: session.candidateId,
+  });
 
   const fullName = `${candidate.firstName ?? ""} ${candidate.lastName ?? ""}`.trim();
 
@@ -70,6 +76,24 @@ export default async function PortalProfilePage() {
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{candidate.email}</p>
           </div>
         </div>
+
+        {referral ? (
+          <div className="flex items-start gap-4 rounded-2xl border border-primary/20 bg-primary/5 p-5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Handshake className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">
+                Referral from {referral.referrerName}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {referral.used} of 3 applications used · {referral.remaining}{" "}
+                remaining
+                {referral.status !== "accepted" ? ` · ${referral.status}` : ""}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Edit form */}
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-zinc-800 dark:bg-zinc-900">

@@ -35,6 +35,11 @@ export type CandidateProfileApplication = {
   appliedAt: string;
   source: string | null;
   answers: Array<{ id: string; label: string; type: string; answer: string }>;
+  referral: {
+    referrerName: string;
+    acceptedAt: string | null;
+    appliedAt: string;
+  } | null;
 };
 
 export type CandidateFile = {

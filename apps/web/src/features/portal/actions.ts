@@ -32,6 +32,7 @@ import {
   PORTAL_SESSION_COOKIE,
   createMagicLinkToken,
   deletePortalSession,
+  getPortalWorkspaceBySlug,
   getSinglePortalWorkspace,
   resolvePortalSession,
 } from "@/lib/portal-auth";
@@ -53,6 +54,10 @@ import { offerHasExpired } from "@/features/offers/core";
 import { freshEsignContext, getSubmission } from "@/lib/esign/client";
 import { signerSigningUrl } from "@/lib/esign/offer-signing";
 import { getHarlyPublicOrigin } from "@/lib/public-origin";
+import {
+  applyAcceptedPersonalReferral,
+  isPersonalReferralUseError,
+} from "@/features/candidates/referrals/personal-service";
 
 const log = createLogger("portal-actions");
 
@@ -67,20 +72,30 @@ export async function sendPortalMagicLinkFormAction(
   formData: FormData,
 ): Promise<void> {
   const email = formData.get("email");
+  const workspaceSlug = formData.get("workspaceSlug");
+  const next = formData.get("next");
   await sendPortalMagicLinkAction(
     typeof email === "string" ? email : "",
+    {
+      workspaceSlug:
+        typeof workspaceSlug === "string" ? workspaceSlug : undefined,
+      next: typeof next === "string" ? next : undefined,
+    },
   );
 }
 
 export async function sendPortalMagicLinkAction(
   email: string,
+  options?: { workspaceSlug?: string; next?: string },
 ): Promise<SendMagicLinkResult> {
   const parsed = emailSchema.safeParse(email);
   if (!parsed.success) {
     return { ok: false, error: "Enter a valid email address." };
   }
 
-  const workspace = await getSinglePortalWorkspace();
+  const workspace = options?.workspaceSlug
+    ? await getPortalWorkspaceBySlug(options.workspaceSlug)
+    : await getSinglePortalWorkspace();
   if (!workspace) {
     return { ok: false, error: "This candidate portal is unavailable." };
   }
@@ -127,7 +142,11 @@ export async function sendPortalMagicLinkAction(
   try {
     const token = await createMagicLinkToken(workspaceId, parsed.data);
     const appUrl = getHarlyPublicOrigin();
-    const url = `${appUrl}/api/portal/auth/magic?token=${token}`;
+    const safeNext =
+      options?.next?.startsWith("/portal/") || options?.next === "/referral"
+        ? options.next
+        : "/portal/dashboard";
+    const url = `${appUrl}/api/portal/auth/magic?token=${encodeURIComponent(token)}&next=${encodeURIComponent(safeNext)}`;
 
     const sender = await getWorkspaceEmailSender(workspaceId);
     if (sender) {
@@ -164,6 +183,7 @@ type ApplyInput = {
   resumeFileType?: string;
   resumeFileSize?: number;
   consentGiven?: boolean;
+  applyReferral?: boolean;
 };
 
 export async function applyToJobAction(
@@ -408,6 +428,14 @@ export async function applyToJobAction(
         });
       }
 
+      if (input.applyReferral) {
+        await applyAcceptedPersonalReferral(tx, {
+          workspaceId: session.workspaceId,
+          candidateId: session.candidateId,
+          applicationId: created.id,
+        });
+      }
+
       const domainEvent = await persistDomainEvent(tx, {
         name: "application.created",
         workspaceId: session.workspaceId,
@@ -489,6 +517,9 @@ export async function applyToJobAction(
 
     return { ok: true, applicationId: application.id };
   } catch (error) {
+    if (isPersonalReferralUseError(error)) {
+      return { ok: false, error: error.message };
+    }
     const conflict = getApplicationConflictMessage(error);
     if (conflict) return { ok: false, error: conflict };
     log.error(error, "applyToJobAction failed");

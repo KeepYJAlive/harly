@@ -8,6 +8,7 @@ import {
   getPortalGitHubCredentials,
   getPortalGoogleCredentials,
   getPortalLinkedInCredentials,
+  getPortalWorkspaceBySlug,
   getSinglePortalWorkspace,
 } from "@/lib/portal-auth";
 
@@ -65,8 +66,15 @@ async function getOrgBranding(workspaceId: string) {
   };
 }
 
-export default async function PortalLoginPage() {
-  const workspace = await getSinglePortalWorkspace();
+export default async function PortalLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ workspace?: string }>;
+}) {
+  const { workspace: workspaceSlug } = await searchParams;
+  const workspace = workspaceSlug
+    ? await getPortalWorkspaceBySlug(workspaceSlug)
+    : await getSinglePortalWorkspace();
 
   if (!workspace) {
     return (
@@ -188,6 +196,7 @@ export default async function PortalLoginPage() {
               hasGoogle={hasGoogle}
               hasGitHub={hasGitHub}
               hasLinkedIn={hasLinkedIn}
+              workspaceSlug={workspace.slug}
             />
           </Suspense>
 

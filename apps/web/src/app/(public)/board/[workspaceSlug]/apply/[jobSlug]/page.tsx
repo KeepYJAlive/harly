@@ -6,6 +6,9 @@ import { getPublicJobDetail } from "@/features/jobs/data";
 import { normalizeJobApplicationConfig } from "@/features/jobs/config";
 import { resolveCaptchaSiteKey } from "@/lib/captcha";
 import { isPortalEnabled } from "@/lib/portal-auth";
+import { PORTAL_SESSION_COOKIE, resolvePortalSession } from "@/lib/portal-auth";
+import { getAcceptedPersonalReferral } from "@/features/candidates/referrals/personal-data";
+import { cookies } from "next/headers";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +26,18 @@ export default async function BoardApplyPage({
     resolveCaptchaSiteKey(workspace.id),
     isPortalEnabled(),
   ]);
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get(PORTAL_SESSION_COOKIE)?.value;
+  const session = sessionToken
+    ? await resolvePortalSession(sessionToken)
+    : null;
+  const referral =
+    session?.workspaceId === workspace.id
+      ? await getAcceptedPersonalReferral({
+          workspaceId: workspace.id,
+          candidateId: session.candidateId,
+        })
+      : null;
   const form = (
     <ApplyForm
       jobSlug={job.slug}
@@ -42,6 +57,7 @@ export default async function BoardApplyPage({
       consentCheckboxText={workspace.consentCheckboxText}
       legalPages={workspace.legalPages}
       legalBasePath={`/board/${workspace.slug}/legal`}
+      referral={referral}
     />
   );
   return (

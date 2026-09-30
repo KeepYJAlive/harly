@@ -51,6 +51,11 @@ type Application = {
   appliedAt: string;
   source: string | null;
   answers: Array<{ id: string; label: string; type: string; answer: string }>;
+  referral: {
+    referrerName: string;
+    acceptedAt: string | null;
+    appliedAt: string;
+  } | null;
 };
 
 const APPLICATION_SOURCE_META: Record<
@@ -158,13 +163,14 @@ function DetailRow({
   );
 }
 
-function ApplicationDisclosure({
+export function ApplicationDisclosure({
   application,
 }: {
   application: Application;
 }) {
   const [open, setOpen] = useState(false);
   const hasAnswers = application.answers.length > 0;
+  const hasDetails = hasAnswers || Boolean(application.referral);
   const sourceMeta = application.source
     ? APPLICATION_SOURCE_META[application.source]
     : null;
@@ -208,7 +214,12 @@ function ApplicationDisclosure({
             {sourceMeta.label}
           </ApplicationMetaItem>
         ) : null}
-        {hasAnswers ? (
+        {application.referral ? (
+          <ApplicationMetaItem icon={Users}>
+            Referred by {application.referral.referrerName}
+          </ApplicationMetaItem>
+        ) : null}
+        {hasDetails ? (
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
@@ -216,8 +227,9 @@ function ApplicationDisclosure({
             className="inline-flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           >
             <MessageSquareText className="size-3 shrink-0" strokeWidth={1.8} />
-            {application.answers.length} answer
-            {application.answers.length === 1 ? "" : "s"}
+            {hasAnswers
+              ? `${application.answers.length} answer${application.answers.length === 1 ? "" : "s"}`
+              : "Referral details"}
             {open ? (
               <ChevronUp className="size-3 shrink-0" strokeWidth={2} />
             ) : (
@@ -229,11 +241,43 @@ function ApplicationDisclosure({
 
       <div
         className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: open && hasAnswers ? "1fr" : "0fr" }}
+        style={{ gridTemplateRows: open && hasDetails ? "1fr" : "0fr" }}
         aria-hidden={!open}
       >
         <div className="overflow-hidden">
           <dl className="mt-3 space-y-3 rounded-md border border-border/70 bg-muted/25 p-4">
+            {application.referral ? (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Referred by
+                  </dt>
+                  <dd className="mt-1 text-sm font-medium text-foreground">
+                    {application.referral.referrerName}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Referral accepted
+                  </dt>
+                  <dd className="mt-1 text-sm text-foreground">
+                    {application.referral.acceptedAt ? (
+                      <ShortDate value={application.referral.acceptedAt} />
+                    ) : (
+                      "—"
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Applied to this position
+                  </dt>
+                  <dd className="mt-1 text-sm text-foreground">
+                    <ShortDate value={application.referral.appliedAt} />
+                  </dd>
+                </div>
+              </div>
+            ) : null}
             {application.answers.map((answer) => (
               <div key={answer.id} className="space-y-1">
                 <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

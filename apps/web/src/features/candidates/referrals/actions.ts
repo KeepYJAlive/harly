@@ -178,10 +178,15 @@ export async function toggleReferralFeatured(
         and(
           eq(candidateReferrals.id, parsed.data.referralId),
           eq(candidateReferrals.workspaceId, workspace.id),
+          eq(candidateReferrals.kind, "internal"),
+          isNull(candidateReferrals.revokedAt),
         ),
       )
       .limit(1);
     if (!referral) {
+      return { success: false, error: "Referral not found." };
+    }
+    if (!referral.candidateId) {
       return { success: false, error: "Referral not found." };
     }
 
@@ -251,10 +256,14 @@ export async function deleteReferral(
         and(
           eq(candidateReferrals.id, parsed.data.referralId),
           eq(candidateReferrals.workspaceId, workspace.id),
+          eq(candidateReferrals.kind, "internal"),
         ),
       )
       .limit(1);
     if (!referral) {
+      return { success: false, error: "Referral not found." };
+    }
+    if (!referral.candidateId) {
       return { success: false, error: "Referral not found." };
     }
 

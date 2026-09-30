@@ -680,10 +680,14 @@ export async function permanentlyDeleteJob(jobId: string) {
         and(
           eq(candidateReferrals.workspaceId, workspace.id),
           eq(candidateReferrals.jobId, job.id),
+          eq(candidateReferrals.kind, "internal"),
+          isNotNull(candidateReferrals.candidateId),
         ),
       );
     const referralDeletions = [];
     for (const r of jobReferrals) {
+      // Drizzle does not narrow a selected nullable column from isNotNull().
+      if (!r.candidateId) continue;
       const event = await deleteReferralRecord(
         tx,
         { id: r.id, workspaceId: workspace.id, candidateId: r.candidateId },

@@ -9,8 +9,14 @@ export type PortalOAuthState = {
   workspaceId: string;
 };
 
+function safePortalNext(next: string) {
+  return next.startsWith("/portal/") || next === "/referral"
+    ? next
+    : "/portal/dashboard";
+}
+
 export function createPortalOAuthState(next: string, workspaceId: string) {
-  const safeNext = next.startsWith("/portal/") ? next : "/portal/dashboard";
+  const safeNext = safePortalNext(next);
   return `${randomBytes(32).toString("base64url")}.${Buffer.from(
     JSON.stringify({ next: safeNext, workspaceId }),
   ).toString("base64url")}`;
@@ -32,7 +38,7 @@ export function verifyPortalOAuthState(
       typeof payload.workspaceId !== "string" ||
       !payload.workspaceId ||
       typeof payload.next !== "string" ||
-      !payload.next.startsWith("/portal/")
+      !(payload.next.startsWith("/portal/") || payload.next === "/referral")
     ) {
       return null;
     }

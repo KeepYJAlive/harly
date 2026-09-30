@@ -7,6 +7,7 @@ import {
   applications,
   assessmentAssignments,
   assessmentDefinitions,
+  candidateReferrals,
   candidates,
   db,
   documentAssociations,
@@ -15,6 +16,7 @@ import {
   jobs,
   offers,
   organization,
+  user as authUsers,
 } from "@harly/db";
 import {
   ApplicationReceivedCandidate,
@@ -38,6 +40,8 @@ import {
   offerWithdrawnSubject,
   AssessmentInvitation,
   assessmentInvitationSubject,
+  PersonalReferralInvitation,
+  personalReferralInvitationSubject,
 } from "@harly/emails";
 
 import { renderActiveEmailTemplate } from "@/features/email-templates/data";
@@ -57,6 +61,14 @@ import {
   type AssessmentInvitationPayload,
 } from "@/features/assessments/invitation";
 import { tokenHashMatches } from "@/lib/tao/lti/tokens";
+import {
+  buildPersonalReferralUrl,
+  decryptPersonalReferralToken,
+  hashReferralToken,
+  PERSONAL_REFERRAL_EMAIL_KIND,
+  PERSONAL_REFERRAL_TEMPLATE_VERSION,
+  type PersonalReferralInvitationPayload,
+} from "@/features/candidates/referrals/personal";
 import {
   offerMatchesTerms,
   parseOfferTermsSnapshot,
@@ -209,6 +221,8 @@ async function deliverRow(row: OutboxRow, database: typeof db = db): Promise<boo
         return await deliverAutomationEmail(row);
       case ASSESSMENT_INVITATION_KIND:
         return await deliverAssessmentInvitation(row, database);
+      case PERSONAL_REFERRAL_EMAIL_KIND:
+        return await deliverPersonalReferralInvitation(row, database);
       default:
         log.warn({ kind: row.kind }, "unknown email_outbox kind");
         await database
@@ -232,6 +246,189 @@ async function deliverRow(row: OutboxRow, database: typeof db = db): Promise<boo
     );
     return false;
   }
+}
+
+async function recordPersonalReferralInvitationFailure(
+  row: OutboxRow,
+  referralId: string | undefined,
+  reason: string,
+  database: typeof db,
+  permanent = false,
+) {
+  if (permanent) {
+    await markStale(row.id, reason, database, {
+      referralId: referralId ?? null,
+      templateVersion: PERSONAL_REFERRAL_TEMPLATE_VERSION,
+      tokenDiscarded: true,
+    });
+  } else {
+    await markFailed(row.id, reason, database);
+  }
+  if (referralId) {
+    try {
+      await database.insert(activityEvents).values({
+        workspaceId: row.workspaceId,
+        actorId: row.actorId,
+        entityType: "candidate",
+        entityId: referralId,
+        type: "referral.invitation_failed",
+        metadata: { referralId, outboxId: row.id, permanent },
+      });
+    } catch (error) {
+      log.warn(
+        { error, referralId, outboxId: row.id },
+        "referral invitation failure activity could not be recorded",
+      );
+    }
+  }
+  return false;
+}
+
+async function deliverPersonalReferralInvitation(
+  row: OutboxRow,
+  database: typeof db,
+): Promise<boolean> {
+  const payload =
+    row.payload as Partial<PersonalReferralInvitationPayload> | null;
+  const referralId = payload?.referralId;
+  if (
+    !referralId ||
+    payload.templateVersion !== PERSONAL_REFERRAL_TEMPLATE_VERSION ||
+    !payload.tokenCiphertext ||
+    !payload.tokenIv ||
+    !payload.tokenTag
+  ) {
+    return recordPersonalReferralInvitationFailure(
+      row,
+      referralId,
+      "Referral invitation payload is incomplete.",
+      database,
+      true,
+    );
+  }
+
+  const [target] = await database
+    .select({
+      id: candidateReferrals.id,
+      tokenHash: candidateReferrals.tokenHash,
+      status: candidateReferrals.status,
+      expiresAt: candidateReferrals.expiresAt,
+      referredName: candidateReferrals.referredName,
+      referredEmail: candidateReferrals.referredEmailNormalized,
+      referrerName: authUsers.name,
+      companyName: organization.name,
+    })
+    .from(candidateReferrals)
+    .innerJoin(authUsers, eq(authUsers.id, candidateReferrals.referredById))
+    .innerJoin(
+      organization,
+      eq(organization.id, candidateReferrals.workspaceId),
+    )
+    .where(
+      and(
+        eq(candidateReferrals.id, referralId),
+        eq(candidateReferrals.workspaceId, row.workspaceId),
+        eq(candidateReferrals.kind, "personal"),
+      ),
+    )
+    .limit(1);
+
+  if (
+    !target ||
+    !target.tokenHash ||
+    !target.referredName ||
+    !target.referredEmail ||
+    !["pending", "accepted"].includes(target.status) ||
+    (target.expiresAt && target.expiresAt <= new Date())
+  ) {
+    return recordPersonalReferralInvitationFailure(
+      row,
+      referralId,
+      "Referral invitation is no longer available.",
+      database,
+      true,
+    );
+  }
+
+  let rawToken: string;
+  try {
+    rawToken = decryptPersonalReferralToken(
+      payload as PersonalReferralInvitationPayload,
+    );
+  } catch {
+    return recordPersonalReferralInvitationFailure(
+      row,
+      referralId,
+      "Referral invitation token could not be decrypted.",
+      database,
+      true,
+    );
+  }
+  if (hashReferralToken(rawToken) !== target.tokenHash) {
+    return recordPersonalReferralInvitationFailure(
+      row,
+      referralId,
+      "Referral invitation token is no longer valid.",
+      database,
+      true,
+    );
+  }
+
+  const branding = await getWorkspaceEmailBranding(row.workspaceId);
+  const referralUrl = buildPersonalReferralUrl(rawToken);
+  const subject = personalReferralInvitationSubject({
+    companyName: target.companyName,
+  });
+  const delivered = await sendWorkspaceEmail(
+    row.workspaceId,
+    {
+      to: target.referredEmail,
+      subject,
+      react: createElement(PersonalReferralInvitation, {
+        referredFirstName:
+          target.referredName.trim().split(/\s+/)[0] ?? target.referredName,
+        referrerName: target.referrerName,
+        companyName: target.companyName,
+        referralUrl,
+        companyLogoUrl: branding.logoUrl ?? undefined,
+        hideBranding: branding.hideBranding,
+        accentColor: branding.primaryColor ?? undefined,
+        socialLinks: branding.socialLinks,
+      }),
+      ...deliveryOptions(row),
+    },
+    row.actorId,
+  );
+  if (!delivered) {
+    return recordPersonalReferralInvitationFailure(
+      row,
+      referralId,
+      "Email provider did not accept the referral invitation.",
+      database,
+    );
+  }
+
+  await markSent(row.id, delivered, database, {
+    referralId,
+    templateVersion: PERSONAL_REFERRAL_TEMPLATE_VERSION,
+    tokenDiscarded: true,
+  });
+  try {
+    await database.insert(activityEvents).values({
+      workspaceId: row.workspaceId,
+      actorId: row.actorId,
+      entityType: "candidate",
+      entityId: referralId,
+      type: "referral.invitation_sent",
+      metadata: { referralId, outboxId: row.id },
+    });
+  } catch (error) {
+    log.warn(
+      { error, referralId, outboxId: row.id },
+      "referral invitation sent activity could not be recorded",
+    );
+  }
+  return true;
 }
 
 async function recordAssessmentInvitationFailure(

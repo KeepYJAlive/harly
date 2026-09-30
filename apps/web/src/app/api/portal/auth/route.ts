@@ -4,6 +4,7 @@ import {
   buildGoogleAuthUrl,
   buildGitHubAuthUrl,
   buildLinkedInAuthUrl,
+  getPortalWorkspaceBySlug,
   getSinglePortalWorkspace,
 } from "@/lib/portal-auth";
 import { createLogger } from "@/lib/logger";
@@ -18,7 +19,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const provider = searchParams.get("provider");
   const next = searchParams.get("next") ?? "/portal/dashboard";
-  const workspace = await getSinglePortalWorkspace();
+  const workspaceSlug = searchParams.get("workspace");
+  const workspace = workspaceSlug
+    ? await getPortalWorkspaceBySlug(workspaceSlug)
+    : await getSinglePortalWorkspace();
 
   if (!workspace) {
     return NextResponse.json({ error: "Portal not enabled." }, { status: 404 });

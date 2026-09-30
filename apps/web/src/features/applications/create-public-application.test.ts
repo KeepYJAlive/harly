@@ -8,7 +8,13 @@ const mocks = vi.hoisted(() => {
   const transactionImpl = vi.fn();
   const selectImpl = vi.fn();
   const storageRead = vi.fn();
-  return { transactionImpl, selectImpl, storageRead };
+  const applyAcceptedPersonalReferral = vi.fn();
+  return {
+    transactionImpl,
+    selectImpl,
+    storageRead,
+    applyAcceptedPersonalReferral,
+  };
 });
 
 vi.mock("@harly/db", () => ({
@@ -48,6 +54,14 @@ vi.mock("@/server/events/emit", () => ({
 }));
 vi.mock("@/features/jobs/data", () => ({
   publicJobVisibilityConditions: () => undefined,
+}));
+vi.mock("@/features/candidates/referrals/personal-service", () => ({
+  applyAcceptedPersonalReferral: mocks.applyAcceptedPersonalReferral,
+  isPersonalReferralUseError: (error: unknown) =>
+    error instanceof Error && error.name === "PersonalReferralUseError",
+  PersonalReferralUseError: class PersonalReferralUseError extends Error {
+    name = "PersonalReferralUseError";
+  },
 }));
 
 // data.ts -> jobs/data -> workspaces/context -> @/lib/auth -> @harly/auth,
@@ -137,6 +151,11 @@ describe("F1-07 re-application duplicate detection order", () => {
     mocks.transactionImpl.mockReset();
     mocks.selectImpl.mockReset();
     mocks.storageRead.mockReset();
+    mocks.applyAcceptedPersonalReferral.mockReset();
+    mocks.applyAcceptedPersonalReferral.mockResolvedValue({
+      id: "application-referral-1",
+      usageSlot: 1,
+    });
   });
 
   it("publishes legal configuration through the public job application context", async () => {
@@ -328,6 +347,88 @@ describe("F1-07 re-application duplicate detection order", () => {
         }),
       ]),
     );
+  });
+
+  it("applies a selected accepted referral within the public application transaction", async () => {
+    const queue = [
+      [JOB],
+      [ORG],
+      [
+        {
+          id: "cand-1",
+          firstName: "Canonical",
+          lastName: "Profile",
+          email: "retry@example.com",
+          phone: null,
+          workspaceId: "ws-1",
+        },
+      ],
+      [],
+      [{ id: "stage-1" }],
+      [{ value: 1 }],
+      [{ id: "application-2" }],
+      [],
+      [],
+      [],
+      [{ email: "owner@example.com" }],
+    ];
+    const runnable = new Proxy(
+      function () {},
+      {
+        get(_target, prop) {
+          if (prop === "then") {
+            return (resolve: (value: unknown) => void) =>
+              resolve(queue.shift());
+          }
+          return () => runnable;
+        },
+        apply() {
+          return runnable;
+        },
+      },
+    );
+    const tx = {
+      select: () => runnable,
+      update: () => runnable,
+      insert: () => runnable,
+    };
+    mocks.transactionImpl.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+    );
+
+    const result = await createPublicApplication(
+      { jobSlug: "another-job", workspaceSlug: "acme" },
+      VALUES,
+      { referralCandidateId: "cand-1" },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.applyAcceptedPersonalReferral).toHaveBeenCalledWith(tx, {
+      workspaceId: "ws-1",
+      candidateId: "cand-1",
+      applicationId: "application-2",
+    });
+  });
+
+  it("does not consume a selected referral when submission is rejected", async () => {
+    const { tx } = makeTx([
+      [JOB],
+      [ORG],
+      [EXISTING_CANDIDATE],
+      [EXISTING_APPLICATION],
+    ]);
+    mocks.transactionImpl.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+    );
+
+    const result = await createPublicApplication(
+      { jobSlug: "engineer", workspaceSlug: "acme" },
+      VALUES,
+      { referralCandidateId: "cand-1" },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(mocks.applyAcceptedPersonalReferral).not.toHaveBeenCalled();
   });
 
   it("enforces legal consent inside the domain transaction", async () => {

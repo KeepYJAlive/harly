@@ -6,6 +6,7 @@ import {
   CalendarDays,
   FileText,
   Globe,
+  Handshake,
   Home,
   Inbox,
   KanbanSquare,
@@ -70,6 +71,13 @@ export const moreNav: MoreGroup[] = [
     items: [
       // Candidates was promoted to the rail; only the two surfaces that are
       // genuinely occasional stay here.
+      {
+        label: "Referrals",
+        href: "/dashboard/referrals" as Route,
+        icon: Handshake,
+        requiredPermission: "collab:write",
+        hint: "Refer people to opportunities",
+      },
       {
         label: "Talent Pool",
         href: "/dashboard/talent-pool",
