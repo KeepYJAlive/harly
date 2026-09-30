@@ -124,13 +124,17 @@ const envSchema = z
               (part) =>
                 /^(?:0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255,
             );
+        const isUnspecifiedBindAddress = ["0.0.0.0", "::", "[::]"].includes(
+          normalizedHostname,
+        );
+        if (isUnspecifiedBindAddress) {
+          throw new Error("unspecified bind address");
+        }
         const isLocalOrigin =
           normalizedHostname === "localhost" ||
           normalizedHostname.endsWith(".localhost") ||
           isIpv4Loopback ||
-          ["::1", "[::1]", "0.0.0.0", "::", "[::]"].includes(
-            normalizedHostname,
-          );
+          ["::1", "[::1]"].includes(normalizedHostname);
         const isExplicitE2ELoopback =
           env.HARLY_E2E &&
           parsed.protocol === "http:" &&
