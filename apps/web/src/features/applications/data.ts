@@ -38,6 +38,11 @@ import {
 } from "@/server/events/emit";
 import type { ApplicationFormValues } from "@/lib/validations/applications";
 import { publicJobVisibilityConditions } from "@/features/jobs/data";
+import {
+  applyAcceptedPersonalReferral,
+  isPersonalReferralUseError,
+  PersonalReferralUseError,
+} from "@/features/candidates/referrals/personal-service";
 
 export type PublicApplicationResult =
   | {
@@ -201,6 +206,7 @@ export async function createPublicApplication(
       ipAddress: string | null;
       userAgent: string | null;
     } | null;
+    referralCandidateId?: string;
   },
 ): Promise<PublicApplicationResult> {
   // Captured inside the transaction, emitted after commit so a failed webhook
@@ -500,6 +506,19 @@ export async function createPublicApplication(
         throw new Error("Application could not be created.");
       }
 
+      if (options?.referralCandidateId) {
+        if (options.referralCandidateId !== candidate.id) {
+          throw new PersonalReferralUseError(
+            "Sign in with your referred profile to apply this referral.",
+          );
+        }
+        await applyAcceptedPersonalReferral(tx, {
+          workspaceId,
+          candidateId: candidate.id,
+          applicationId: application.id,
+        });
+      }
+
       if (verifiedResume) {
         await tx.insert(candidateFiles).values({
           workspaceId,
@@ -641,6 +660,9 @@ export async function createPublicApplication(
       },
     );
   } catch (error) {
+    if (isPersonalReferralUseError(error)) {
+      return { ok: false, message: error.message };
+    }
     const conflict = getApplicationConflictMessage(error);
     if (conflict) return { ok: false, message: conflict };
     throw error;

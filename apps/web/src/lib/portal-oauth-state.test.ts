@@ -21,4 +21,25 @@ describe("portal OAuth state", () => {
 
     expect(verifyPortalOAuthState(expected, actual)).toBeNull();
   });
+
+  it("allows the fixed referral continuation without embedding its token", () => {
+    const state = createPortalOAuthState("/referral", "workspace-a");
+
+    expect(verifyPortalOAuthState(state, state)).toEqual({
+      next: "/referral",
+      workspaceId: "workspace-a",
+});
+  });
+
+  it("rejects referral-like redirects that could expose or redirect a token", () => {
+    const state = createPortalOAuthState(
+      "/referral/secret-token",
+      "workspace-a",
+    );
+
+    expect(verifyPortalOAuthState(state, state)).toEqual({
+      next: "/portal/dashboard",
+      workspaceId: "workspace-a",
+    });
+  });
 });

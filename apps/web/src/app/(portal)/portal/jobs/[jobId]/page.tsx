@@ -15,6 +15,7 @@ import { PortalShell } from "@/features/portal/PortalShellServer";
 import { JobApplyForm } from "@/features/portal/JobApplyForm";
 import { normalizeJobApplicationConfig } from "@/features/jobs/config";
 import { RichBody } from "@/features/career-page/RichBody";
+import { getAcceptedPersonalReferral } from "@/features/candidates/referrals/personal-data";
 import {
   MapPinIcon,
   CurrencyDollarIcon,
@@ -140,6 +141,12 @@ export default async function JobDetailPage({ params }: PageProps) {
     job.currency,
     job.salaryPeriod,
   );
+  const referral = existingApp
+    ? null
+    : await getAcceptedPersonalReferral({
+        workspaceId: session.workspaceId,
+        candidateId: session.candidateId,
+      });
 
   return (
     <PortalShell>
@@ -247,6 +254,7 @@ export default async function JobDetailPage({ params }: PageProps) {
             jobId={job.id}
             questions={questions}
             opportunityType={job.opportunityType}
+            referral={referral}
           />
         )}
       </div>

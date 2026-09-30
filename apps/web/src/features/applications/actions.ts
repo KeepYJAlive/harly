@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { after } from "next/server";
 
 import { db, workspaceSettings } from "@harly/db";
@@ -39,6 +39,11 @@ import {
 import { scheduleAutoScore } from "@/features/applications/auto-score";
 import { scheduleAutoDuplicateCheck } from "@/features/applications/auto-duplicates";
 import { validateApplicantLocation } from "@/features/applications/applicant-location";
+import {
+  PORTAL_SESSION_COOKIE,
+  resolvePortalSession,
+} from "@/lib/portal-auth";
+import { normalizeReferralEmail } from "@/features/candidates/referrals/personal";
 
 const PARSE_LIMIT = 5;
 const PARSE_WINDOW_MS = 60_000;
@@ -409,6 +414,28 @@ export async function submitApplicationAction(
   }
 
   try {
+    const wantsReferral = formData.get("applyReferral") === "true";
+    let referralCandidateId: string | undefined;
+    if (wantsReferral) {
+      const cookieStore = await cookies();
+      const portalToken = cookieStore.get(PORTAL_SESSION_COOKIE)?.value;
+      const portalSession = portalToken
+        ? await resolvePortalSession(portalToken)
+        : null;
+      if (
+        !portalSession ||
+        portalSession.workspaceId !== jobContext.workspaceId ||
+        normalizeReferralEmail(portalSession.email) !==
+          normalizeReferralEmail(parsed.data.email)
+      ) {
+        return {
+          status: "error",
+          message: "Sign in with your referred profile to apply this referral.",
+        };
+      }
+      referralCandidateId = portalSession.candidateId;
+    }
+
     const result = await createPublicApplication(input, parsed.data, {
       consent: consentGiven
         ? {
@@ -417,6 +444,7 @@ export async function submitApplicationAction(
             userAgent: requestHeaders.get("user-agent") ?? null,
           }
         : null,
+      referralCandidateId,
     });
 
     if (!result.ok) {

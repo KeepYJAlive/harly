@@ -77,6 +77,16 @@ export const assessmentAssignmentStatusEnum = pgEnum(
   ["assigned", "started", "completed", "expired", "cancelled", "error"],
 );
 
+export const candidateReferralKindEnum = pgEnum("candidate_referral_kind", [
+  "internal",
+  "personal",
+]);
+
+export const candidateReferralStatusEnum = pgEnum(
+  "candidate_referral_status",
+  ["pending", "accepted", "revoked", "expired"],
+);
+
 export const activityEntityTypeEnum = pgEnum("activity_entity_type", [
   "candidate",
   "application",
@@ -1667,6 +1677,13 @@ export const applications = pgTable(
     uniqueIndex("applications_workspace_id_uidx").on(
       table.workspaceId,
       table.id,
+    ),
+    // Composite identity used by application-level records that need to prove
+    // the attributed candidate owns this exact application.
+    unique("applications_workspace_id_candidate_uidx").on(
+      table.workspaceId,
+      table.id,
+      table.candidateId,
     ),
     uniqueIndex("applications_workspace_job_id_uidx").on(
       table.workspaceId,
@@ -3831,8 +3848,8 @@ export const candidateReferrals = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
+    kind: candidateReferralKindEnum("kind").default("internal").notNull(),
     candidateId: uuid("candidate_id")
-      .notNull()
       .references(() => candidates.id, { onDelete: "cascade" }),
     // Nullable: a referral can exist before any requisition. CASCADE (not SET
     // NULL): if the job is deleted, only the job-specific referral row goes
@@ -3859,6 +3876,19 @@ export const candidateReferrals = pgTable(
       onDelete: "set null",
     }),
     featuredAt: timestamp("featured_at", { withTimezone: true }),
+    // Personal referrals begin before a candidate profile exists. The opaque
+    // invitation token is never stored; only its SHA-256 hash is durable.
+    referredName: text("referred_name"),
+    referredEmailNormalized: text("referred_email_normalized"),
+    tokenHash: text("token_hash"),
+    status: candidateReferralStatusEnum("status").default("accepted").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     ...timestamps(),
   },
   (table) => [
@@ -3873,6 +3903,91 @@ export const candidateReferrals = pgTable(
     index("candidate_referrals_workspace_idx").on(table.workspaceId),
     index("candidate_referrals_candidate_idx").on(table.candidateId),
     index("candidate_referrals_job_idx").on(table.jobId),
+    uniqueIndex("candidate_referrals_token_hash_uidx")
+      .on(table.tokenHash)
+      .where(sql`${table.tokenHash} is not null`),
+    uniqueIndex("candidate_referrals_workspace_id_uidx").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("candidate_referrals_personal_referrer_email_active_uidx")
+      .on(table.workspaceId, table.referredById, table.referredEmailNormalized)
+      .where(
+        sql`${table.kind} = 'personal' and ${table.status} in ('pending', 'accepted')`,
+      ),
+    uniqueIndex("candidate_referrals_personal_candidate_active_uidx")
+      .on(table.workspaceId, table.candidateId)
+      .where(
+        sql`${table.kind} = 'personal' and ${table.status} = 'accepted' and ${table.candidateId} is not null`,
+      ),
+    check(
+      "candidate_referrals_personal_shape_check",
+      sql`(${table.kind} = 'internal' and ${table.candidateId} is not null) or (${table.kind} = 'personal' and ${table.jobId} is null and ${table.referredName} is not null and ${table.referredEmailNormalized} is not null and ${table.tokenHash} is not null)`,
+    ),
+  ],
+);
+
+/** Immutable application-level attribution for an accepted personal referral. */
+export const applicationReferrals = pgTable(
+  "application_referrals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    referralId: uuid("referral_id").notNull(),
+    applicationId: uuid("application_id").notNull(),
+    candidateId: uuid("candidate_id").notNull(),
+    referrerUserId: text("referrer_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    referrerNameSnapshot: text("referrer_name_snapshot").notNull(),
+    // A bounded slot is both an audit-friendly ordinal and a database-level
+    // maximum-use guard. CHECK + UNIQUE means a fourth attribution cannot be
+    // inserted even if a future caller forgets the service-layer count.
+    usageSlot: integer("usage_slot").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.referralId],
+      foreignColumns: [candidateReferrals.workspaceId, candidateReferrals.id],
+      name: "application_referrals_workspace_referral_fk",
+      // Revocation never deletes a referral, so attribution remains immutable.
+      // CASCADE is reserved for full candidate/workspace erasure and avoids a
+      // referential-order deadlock between candidate, application, and referral.
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.applicationId, table.candidateId],
+      foreignColumns: [
+        applications.workspaceId,
+        applications.id,
+        applications.candidateId,
+      ],
+      name: "application_referrals_workspace_application_candidate_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("application_referrals_application_uidx").on(
+      table.workspaceId,
+      table.applicationId,
+    ),
+    uniqueIndex("application_referrals_referral_slot_uidx").on(
+      table.referralId,
+      table.usageSlot,
+    ),
+    index("application_referrals_workspace_referral_idx").on(
+      table.workspaceId,
+      table.referralId,
+    ),
+    index("application_referrals_candidate_idx").on(
+      table.workspaceId,
+      table.candidateId,
+    ),
+    check(
+      "application_referrals_usage_slot_check",
+      sql`${table.usageSlot} between 1 and 3`,
+    ),
   ],
 );
 
@@ -4279,6 +4394,8 @@ export type Candidate = typeof candidates.$inferSelect;
 export type NewCandidate = typeof candidates.$inferInsert;
 export type CandidateReferral = typeof candidateReferrals.$inferSelect;
 export type NewCandidateReferral = typeof candidateReferrals.$inferInsert;
+export type ApplicationReferral = typeof applicationReferrals.$inferSelect;
+export type NewApplicationReferral = typeof applicationReferrals.$inferInsert;
 export type Application = typeof applications.$inferSelect;
 export type NewApplication = typeof applications.$inferInsert;
 export type ApplicationStageHistory =

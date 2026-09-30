@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   emitWebhookEvent: vi.fn(),
   sendApplicationReceivedEmails: vi.fn(),
   getApplicationConflictMessage: vi.fn(),
+  applyAcceptedPersonalReferral: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -69,6 +70,11 @@ vi.mock("@/features/applications/pipeline-order", () => ({
 }));
 vi.mock("@/features/applications/data", () => ({
   getApplicationConflictMessage: mocks.getApplicationConflictMessage,
+}));
+vi.mock("@/features/candidates/referrals/personal-service", () => ({
+  applyAcceptedPersonalReferral: mocks.applyAcceptedPersonalReferral,
+  isPersonalReferralUseError: (error: unknown) =>
+    error instanceof Error && error.name === "PersonalReferralUseError",
 }));
 vi.mock("@/server/events/emit", () => ({
   persistDomainEvent: mocks.persistDomainEvent,
@@ -180,6 +186,10 @@ describe("applyToJobAction", () => {
     mocks.validatePortalApplication.mockReturnValue({ ok: true, answers: {} });
     mocks.verifyResumeUpload.mockResolvedValue(null);
     mocks.getApplicationConflictMessage.mockReturnValue(null);
+    mocks.applyAcceptedPersonalReferral.mockResolvedValue({
+      id: "application-referral-1",
+      usageSlot: 1,
+    });
     mocks.persistDomainEvent.mockResolvedValue({
       eventId: "event-1",
       eventName: "application.created",
@@ -235,6 +245,41 @@ describe("applyToJobAction", () => {
         }),
       ]),
     );
+  });
+
+  it("consumes a selected referral inside the application transaction", async () => {
+    const transaction = makeTransaction();
+    mocks.transaction.mockImplementation(
+      async (callback: (value: unknown) => Promise<unknown>) =>
+        callback(transaction),
+    );
+
+    const result = await applyToJobAction({
+      jobId: "job-1",
+      answers: {},
+      applyReferral: true,
+    });
+
+    expect(result).toEqual({ ok: true, applicationId: "application-1" });
+    expect(mocks.applyAcceptedPersonalReferral).toHaveBeenCalledWith(
+      transaction,
+      {
+        workspaceId: "workspace_1",
+        candidateId: "candidate_1",
+        applicationId: "application-1",
+      },
+    );
+  });
+
+  it("does not consume an unchecked referral", async () => {
+    const transaction = makeTransaction();
+    mocks.transaction.mockImplementation(
+      async (callback: (value: unknown) => Promise<unknown>) =>
+        callback(transaction),
+    );
+
+    await applyToJobAction({ jobId: "job-1", answers: {} });
+    expect(mocks.applyAcceptedPersonalReferral).not.toHaveBeenCalled();
   });
 
   it("turns a duplicate race into the known conflict result", async () => {

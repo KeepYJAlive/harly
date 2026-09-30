@@ -16,6 +16,11 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token = searchParams.get("token");
+  const requestedNext = searchParams.get("next");
+  const next =
+    requestedNext?.startsWith("/portal/") || requestedNext === "/referral"
+      ? requestedNext
+      : "/portal/dashboard";
 
   if (!token) redirect("/portal/login?error=missing_token" as Route);
 
@@ -49,5 +54,5 @@ export async function GET(request: NextRequest) {
     maxAge: 60 * 60 * 24 * 30,
   });
 
-  redirect("/portal/dashboard" as Route);
+  redirect(next as Route);
 }

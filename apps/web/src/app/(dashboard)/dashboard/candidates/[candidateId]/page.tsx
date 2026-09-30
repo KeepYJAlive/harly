@@ -132,6 +132,7 @@ export default async function CandidateDetailPage({
     inPool,
     privacyRequests,
     referrals,
+    personalReferral,
   } = profile;
   const applications = (
     await Promise.all(
@@ -483,6 +484,20 @@ export default async function CandidateDetailPage({
                     currentUserId={workspaceContext.user.id}
                     canEditCandidates={canEditCandidates}
                   />
+                  {personalReferral ? (
+                    <div className="w-fit rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+                      <p className="font-medium">
+                        Referral from {personalReferral.referrerName}
+                      </p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {personalReferral.used} of 3 applications used ·{" "}
+                        {Math.max(3 - personalReferral.used, 0)} remaining
+                        {personalReferral.status !== "accepted"
+                          ? ` · ${personalReferral.status}`
+                          : ""}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

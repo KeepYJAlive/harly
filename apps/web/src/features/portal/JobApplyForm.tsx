@@ -26,10 +26,12 @@ export function JobApplyForm({
   jobId,
   questions,
   opportunityType,
+  referral,
 }: {
   jobId: string;
   questions: Question[];
   opportunityType: "employment" | "volunteer";
+  referral?: { referrerName: string; remaining: number } | null;
 }) {
   const router = useRouter();
   const [isPending, start] = useTransition();
@@ -38,6 +40,7 @@ export function JobApplyForm({
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
   const [resumeKey, setResumeKey] = useState<string | null>(null);
   const [consentGiven, setConsentGiven] = useState(false);
+  const [applyReferral, setApplyReferral] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +134,7 @@ export function JobApplyForm({
         answers,
         resumeKey: resumeKey ?? undefined,
         consentGiven,
+        applyReferral,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -330,6 +334,29 @@ export function JobApplyForm({
           </div>
         </div>
       )}
+
+      {referral ? (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-sm font-semibold text-foreground">Referral</h2>
+          <label className="mt-3 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={applyReferral}
+              onChange={(event) => setApplyReferral(event.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-primary"
+            />
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Apply my referral
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Referred by {referral.referrerName} · {referral.remaining} of 3
+                referral applications remaining
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       <label className="flex items-start gap-2 text-sm text-muted-foreground">
         <input

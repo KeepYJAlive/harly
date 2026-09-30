@@ -63,7 +63,9 @@ vi.mock("@harly/db", () => {
     applications: {},
     assessmentAssignments: {},
     assessmentDefinitions: {},
+    candidateReferrals: {},
     jobs: {},
+    user: {},
   };
 });
 
@@ -100,6 +102,14 @@ vi.mock("@/features/assessments/invitation", () => ({
 }));
 vi.mock("@/lib/tao/lti/tokens", () => ({
   tokenHashMatches: vi.fn(() => true),
+}));
+vi.mock("@/features/candidates/referrals/personal", () => ({
+  PERSONAL_REFERRAL_EMAIL_KIND: "referral.invitation",
+  PERSONAL_REFERRAL_TEMPLATE_VERSION: 1,
+  buildPersonalReferralUrl: (token: string) =>
+    `https://harly.example/referral/${token}`,
+  decryptPersonalReferralToken: vi.fn(() => "opaque-referral-token"),
+  hashReferralToken: vi.fn(() => "stored-referral-hash"),
 }));
 
 import { processEmailOutbox } from "./outbox-processor";
@@ -161,6 +171,28 @@ const ASSESSMENT_TARGET = {
   definitionActive: true,
   companyName: "Acme",
 };
+const REFERRAL_PENDING = {
+  ...PENDING,
+  actorId: "user-1",
+  kind: "referral.invitation",
+  payload: {
+    referralId: "referral-1",
+    templateVersion: 1,
+    tokenCiphertext: "ciphertext",
+    tokenIv: "iv",
+    tokenTag: "tag",
+  },
+};
+const REFERRAL_TARGET = {
+  id: "referral-1",
+  tokenHash: "stored-referral-hash",
+  status: "pending",
+  expiresAt: null,
+  referredName: "Alex Smith",
+  referredEmail: "alex@example.com",
+  referrerName: "James Doe",
+  companyName: "Acme",
+};
 
 function reset() {
   mocks.selectQueue.length = 0;
@@ -207,6 +239,36 @@ function reset() {
 
 describe("email_outbox worker", () => {
   beforeEach(reset);
+
+  it("delivers a personal referral through the durable worker and scrubs its token envelope", async () => {
+    mocks.selectQueue.push([REFERRAL_PENDING], [REFERRAL_TARGET]);
+    mocks.sendWorkspaceEmail.mockResolvedValue({ messageId: "provider-1" });
+
+    await expect(processEmailOutbox()).resolves.toEqual({
+      processed: 1,
+      sent: 1,
+      failed: 0,
+    });
+    expect(mocks.sendWorkspaceEmail).toHaveBeenCalledWith(
+      "ws-1",
+      expect.objectContaining({
+        to: "alex@example.com",
+        subject: "You've been referred to Acme",
+        idempotencyKey: "outbox-1",
+      }),
+      "user-1",
+    );
+    expect(mocks.updateCalls).toContainEqual({
+      set: expect.objectContaining({
+        status: "sent",
+        payload: {
+          referralId: "referral-1",
+          templateVersion: 1,
+          tokenDiscarded: true,
+        },
+      }),
+    });
+  });
 
   it("sends the email and flips the offer + outbox to sent on success", async () => {
     mocks.selectQueue.push(

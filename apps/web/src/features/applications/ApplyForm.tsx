@@ -78,6 +78,7 @@ type ApplyFormProps = {
   legalPages?: Record<string, string> | null;
   /** Prefix for the workspace-scoped published legal pages. */
   legalBasePath?: string;
+  referral?: { referrerName: string; remaining: number } | null;
 };
 
 type TextField =
@@ -680,6 +681,7 @@ export function ApplyForm({
   consentCheckboxText = null,
   legalPages = null,
   legalBasePath = "/legal",
+  referral = null,
 }: ApplyFormProps) {
   const isAshby = variant === "ashby";
   const isJoin = variant === "join";
@@ -1834,6 +1836,26 @@ export function ApplyForm({
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
           {state.message}
         </div>
+      ) : null}
+
+      {referral ? (
+        <label className={`${cardClass} flex cursor-pointer items-start gap-3`}>
+          <input
+            type="checkbox"
+            name="applyReferral"
+            value="true"
+            className="mt-0.5 size-4 rounded border-zinc-300 accent-[var(--board-primary)]"
+          />
+          <span>
+            <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Apply my referral
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+              Referred by {referral.referrerName} · {referral.remaining} of 3
+              referral applications remaining
+            </span>
+          </span>
+        </label>
       ) : null}
 
       {isAshby || isJoin ? (
