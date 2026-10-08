@@ -1,10 +1,12 @@
 import "dotenv/config";
 
+import { getHarlyDatabaseUrl } from "./packages/config/src/database";
+
 import { defineConfig } from "drizzle-kit";
 
-const databaseUrl =
-  process.env.DATABASE_URL ??
-  "postgresql://harly:harly@localhost:5432/harly";
+const databaseUrl = getHarlyDatabaseUrl(process.env, {
+  allowDevelopmentFallback: true,
+});
 
 export default defineConfig({
   out: "./packages/db/migrations",

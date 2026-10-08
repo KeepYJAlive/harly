@@ -6,6 +6,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { loadMigrationConfig } from "../../../packages/config/src/database";
+
 import { pruneCache } from "./cache";
 import { describeSchedulerRuns as describeSchedulerRunsForJobs } from "./scheduler-health";
 
@@ -99,7 +101,7 @@ const MIGRATION_LOCK_KEY = 0x48524c59;
 const MIGRATION_LOCK_WAIT_MS = 10 * 60 * 1000;
 
 async function runMigrations() {
-  const config = await runtimeConfig({ validateFilesystem: false });
+  const config = loadMigrationConfig();
   const client = postgres(config.DATABASE_URL!, { max: 1, prepare: false });
   try {
     // Nothing else serialises this. A rolling deploy, a replica set where every

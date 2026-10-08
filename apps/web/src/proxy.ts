@@ -61,6 +61,8 @@ const PUBLIC_PATHS = [
   "/assessment",
   "/assessments/complete",
   "/api/integrations/tao/lti",
+  // Read-only route authenticates a dedicated workspace-scoped read token.
+  "/api/plugins/tao/remote-lists",
 ];
 
 const PROTECTED_PATH_PREFIXES = ["/dashboard", "/settings"];
