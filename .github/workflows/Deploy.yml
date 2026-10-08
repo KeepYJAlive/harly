@@ -5,6 +5,7 @@ on:
       - "Build Docker Image"
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: read
