@@ -21,6 +21,12 @@ describe("loadHarlyConfig", () => {
     );
   });
 
+  it("defaults the public origin in local/test environments", () => {
+    expect(loadHarlyConfig({ NODE_ENV: "test" }).HARLY_URL).toBe(
+      "http://localhost:3000",
+    );
+  });
+
   it("rejects short independent secrets", () => {
     expect(() =>
       loadHarlyConfig({ ...production, CRON_SECRET: "short" }),

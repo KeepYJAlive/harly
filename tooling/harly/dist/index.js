@@ -440,10 +440,11 @@ async function handleHarlyError(error, ctx) {
 
 // src/release.ts
 var embeddedRelease = {
-  version: "0.1.0-beta.2",
+  version: "0.2.0",
   image: "ghcr.io/vytral/harly",
-  digest: "sha256:f0b999a76fa170887f625d12835379ef57772903c792fb0b66faea9270776a16"
+  digest: "sha256:20cae7184921162b2ff3243c99418841a89a2652067d98d207739aa50874e0a8"
 };
+var releaseTagImage = (release) => `${release.image}:${release.version}`;
 var releaseImage = (release) => `${release.image}@${release.digest}`;
 
 // src/pull.ts
@@ -641,6 +642,53 @@ function runPlain(cwd, services) {
 
 // src/version.ts
 var semverPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+var releaseVersionPattern = /^\d+\.\d+\.\d+(?:-(?:beta|rc)\.\d+)?$/;
+function isReleaseVersion(value) {
+  return releaseVersionPattern.test(value);
+}
+function isStableVersion(value) {
+  return isReleaseVersion(value) && !value.includes("-");
+}
+function parseSemver(value) {
+  const match = value.replace(/^v(?=\d)/, "").match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    pre: match[4] ? match[4].split(".") : []
+  };
+}
+function compareIdentifiers(left, right) {
+  if (left.length === 0 && right.length === 0) return 0;
+  if (left.length === 0) return 1;
+  if (right.length === 0) return -1;
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a === void 0) return -1;
+    if (b === void 0) return 1;
+    const aNumeric = /^\d+$/.test(a);
+    const bNumeric = /^\d+$/.test(b);
+    if (aNumeric && bNumeric) {
+      const diff = Number(a) - Number(b);
+      if (diff !== 0) return diff;
+    } else if (aNumeric) return -1;
+    else if (bNumeric) return 1;
+    else if (a !== b) return a < b ? -1 : 1;
+  }
+  return 0;
+}
+function compareSemver(left, right) {
+  const a = parseSemver(left);
+  const b = parseSemver(right);
+  if (!a || !b) return null;
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  if (a.patch !== b.patch) return a.patch - b.patch;
+  return compareIdentifiers(a.pre, b.pre);
+}
 function shortDigest(reference) {
   const digest = reference.split("@sha256:")[1];
   return digest ? `sha256:${digest.slice(0, 8)}` : reference;
@@ -920,7 +968,7 @@ var verbose = flags.has("--verbose");
 var interactive = Boolean(
   !json && !flags.has("--non-interactive") && process4.stdin.isTTY && process4.stdout.isTTY && !process4.env.CI
 );
-var cliVersion = "0.4.0";
+var cliVersion = "0.5.0";
 var jsonResultWritten = false;
 function humanOut(message) {
   if (json) process4.stderr.write(message);
@@ -985,17 +1033,76 @@ function validRelease(value) {
   ) && release.image === "ghcr.io/vytral/harly" && typeof release.digest === "string" && /^sha256:[a-f0-9]{64}$/.test(release.digest);
 }
 async function officialRelease() {
-  if (releaseManifestChecked) return currentOfficialRelease ?? embeddedRelease;
-  releaseManifestChecked = true;
-  try {
-    const response = await fetch(releaseManifestUrl, {
-      signal: AbortSignal.timeout(2e3)
-    });
-    const candidate = response.ok ? await response.json() : null;
-    if (validRelease(candidate)) currentOfficialRelease = candidate;
-  } catch {
+  if (!releaseManifestChecked) {
+    releaseManifestChecked = true;
+    try {
+      const response = await fetch(releaseManifestUrl, {
+        signal: AbortSignal.timeout(2e3)
+      });
+      const candidate = response.ok ? await response.json() : null;
+      if (validRelease(candidate)) currentOfficialRelease = candidate;
+    } catch {
+    }
   }
-  return currentOfficialRelease ?? embeddedRelease;
+  if (currentOfficialRelease) {
+    return { release: currentOfficialRelease, source: "remote" };
+  }
+  return { release: embeddedRelease, source: "embedded" };
+}
+function isLatestAlias(value) {
+  return value === "latest" || value === "ghcr.io/vytral/harly:latest";
+}
+var officialRepository = "ghcr.io/vytral/harly";
+function isOfficialReference(image) {
+  return image === officialRepository || image.startsWith(`${officialRepository}:`) || image.startsWith(`${officialRepository}@`);
+}
+function assertInstallableImage(image) {
+  if (!isOfficialReference(image)) {
+    if (/@sha256:[a-f0-9]{64}$/.test(image)) return;
+    const lastColon = image.lastIndexOf(":");
+    const tag2 = lastColon > image.lastIndexOf("/") ? image.slice(lastColon + 1) : "";
+    if (tag2) return;
+    throw new CliError(
+      `${image} has no tag or digest. Name the exact image to install, such as ${image}:0.2.0, so the deployment is reproducible.`,
+      2
+    );
+  }
+  if (/^ghcr\.io\/vytral\/harly@sha256:[a-f0-9]{64}$/.test(image)) return;
+  const tag = image.startsWith(`${officialRepository}:`) ? image.slice(officialRepository.length + 1) : "";
+  if (isReleaseVersion(tag)) return;
+  throw new CliError(
+    "Install a Harly version such as 0.2.0, or the digest from release-manifest.json. edge and commit tags are not releases. latest is accepted and pinned to the current stable digest.",
+    2
+  );
+}
+async function installImage(override, dryRun) {
+  const release = dryRun ? embeddedRelease : (await officialRelease()).release;
+  if (!override || isLatestAlias(override)) return releaseImage(release);
+  const image = isReleaseVersion(override) ? `${officialRepository}:${override}` : override;
+  assertInstallableImage(image);
+  return image;
+}
+function explicitReleaseImage(value) {
+  if (value === "edge" || value.startsWith("sha-")) {
+    throw new CliError(
+      `${value} is not a Harly release. Run harly update for the current stable version, or pass --to 0.2.0.`,
+      2
+    );
+  }
+  if (/^ghcr\.io\/vytral\/harly@sha256:[a-f0-9]{64}$/.test(value)) return value;
+  const prefixed = "ghcr.io/vytral/harly:";
+  const version = value.startsWith(prefixed) ? value.slice(prefixed.length) : value;
+  if (value.startsWith("ghcr.io/") && !value.startsWith(prefixed) || !isReleaseVersion(version)) {
+    throw new CliError(
+      "Use a version like 0.2.0 or 0.2.0-beta.1. Run harly update with no --to for the current stable release.",
+      2
+    );
+  }
+  return `${prefixed}${version}`;
+}
+function installedReleaseVersion(identity) {
+  const label = identity.label.replace(/^v(?=\d)/, "");
+  return compareSemver(label, "0.0.0") === null ? null : label;
 }
 var commandHelp = [
   ["harly", "Guided menu \u2014 install, or manage a detected installation"],
@@ -1006,7 +1113,7 @@ var commandHelp = [
   ["harly setup-secret [directory]", "Print HARLY_SETUP_SECRET from .env"],
   ["harly backup [directory] [--encrypt]", "Write a private rollback archive"],
   ["harly restore <archive> [directory] --force", "Restore from an archive"],
-  ["harly update [directory] [--to version]", "Back up, upgrade, and migrate"],
+  ["harly update [directory] [--to version]", "Update the install here to the current stable release"],
   ["harly uninstall [directory] [--remove-data]", "Stop and remove Harly"],
   ["harly deploy <railway|fly|digitalocean>", "Generate a cloud-platform config"]
 ];
@@ -1444,12 +1551,10 @@ async function collectNonInteractiveAnswers(directory) {
     endpoint: option(parsed, "--s3-endpoint")?.trim() || process4.env.S3_ENDPOINT?.trim() || "",
     publicUrl: option(parsed, "--s3-public-url")?.trim() || process4.env.S3_PUBLIC_URL?.trim() || ""
   } : null;
-  const image = option(parsed, "--image") ?? process4.env.HARLY_IMAGE_REF ?? releaseImage(flags.has("--dry-run") ? embeddedRelease : await officialRelease());
-  if (image.endsWith(":latest"))
-    throw new CliError(
-      "Installations must pin a version or digest, never latest.",
-      2
-    );
+  const image = await installImage(
+    option(parsed, "--image") ?? process4.env.HARLY_IMAGE_REF,
+    flags.has("--dry-run")
+  );
   if (!flags.has("--dry-run")) {
     await preflight(mode, true, port, directory);
     if (mode !== "local") await verifyPublicDns(url);
@@ -1642,12 +1747,10 @@ async function collectInteractiveAnswers(directory) {
       ]
     })
   );
-  const image = option(parsed, "--image") ?? process4.env.HARLY_IMAGE_REF ?? releaseImage(await officialRelease());
-  if (image.endsWith(":latest"))
-    throw new CliError(
-      "Installations must pin a version or digest, never latest.",
-      2
-    );
+  const image = await installImage(
+    option(parsed, "--image") ?? process4.env.HARLY_IMAGE_REF,
+    flags.has("--dry-run")
+  );
   const services = `PostgreSQL, migrator, app, scheduler${mode === "caddy" ? ", Caddy" : ""}`;
   const localPort = String(requestedPort);
   p3.note(
@@ -1870,7 +1973,7 @@ async function init() {
         // here, which the app then reported as its version at
         // /api/health/ready and in its OpenAPI document. Resolve the release
         // name instead; the digest is already recorded in HARLY_IMAGE.
-        `HARLY_VERSION=${envLine(envVersion(describeImage(image, dryRun ? embeddedRelease : await officialRelease())))}`,
+        `HARLY_VERSION=${envLine(envVersion(describeImage(image, dryRun ? embeddedRelease : (await officialRelease()).release)))}`,
         `HARLY_URL=${envLine(url.origin)}`,
         `HARLY_PORT=${envLine(String(port))}`,
         `HARLY_DOMAIN=${envLine(url.hostname)}`,
@@ -2326,7 +2429,7 @@ async function launch(explicitDirectory, confirmed = false, emit = true) {
     showBrand("Launch");
     const identity = describeImage(
       config.requestedImage ?? config.image,
-      await officialRelease()
+      (await officialRelease()).release
     );
     p3.log.message(
       rows([
@@ -2813,19 +2916,65 @@ async function restore() {
     );
   process4.stdout.write("Restore complete. Harly is healthy.\n");
 }
+async function resolveInstallDirectory(explicitDirectory) {
+  const start = explicitDirectory ?? (positionals[0] ? path.resolve(positionals[0]) : process4.cwd());
+  const found = await findInstallation(start);
+  if (found) return found.directory;
+  throw new CliError(
+    "No Harly installation found here. Run harly update from the install directory, or pass its path.",
+    2
+  );
+}
 async function upgrade(explicitDirectory) {
-  const directory = path.resolve(explicitDirectory ?? positionals[0] ?? ".");
+  const directory = await resolveInstallDirectory(explicitDirectory);
   const config = await readConfig(directory);
-  await preflight(config.proxyMode, false);
-  if (toVersion === "latest")
+  const tracksStable = !toVersion || isLatestAlias(toVersion);
+  const explicitImage = toVersion && !tracksStable ? explicitReleaseImage(toVersion) : void 0;
+  const lookup = await officialRelease();
+  const release = lookup.release;
+  if (tracksStable && lookup.source !== "remote") {
     throw new CliError(
-      "latest is not allowed. Use edge for previews or a fixed version.",
-      2
+      "Harly could not read the release manifest, so it will not guess a version. Check this server's connection to GitHub, or pass --to 0.2.0.",
+      1
     );
-  const requestedImage = toVersion ? toVersion.startsWith("ghcr.io/") ? toVersion : `ghcr.io/vytral/harly:${toVersion}` : config.requestedImage ?? config.image;
-  const release = await officialRelease();
+  }
+  if (tracksStable && !isStableVersion(release.version)) {
+    throw new CliError(
+      `The release manifest names ${release.version}, which is a prerelease. harly update installs stable versions only. Pass --to ${release.version} to install it on purpose.`,
+      1
+    );
+  }
+  const requestedImage = explicitImage ?? releaseTagImage(release);
   const currentIdentity = describeImage(config.image, release);
   const targetIdentity = describeImage(requestedImage, release, () => null);
+  const currentVersion = installedReleaseVersion(currentIdentity);
+  const targetVersion = installedReleaseVersion(targetIdentity);
+  const sameTag = currentIdentity.source === "tag" && targetIdentity.source === "tag" && currentIdentity.label === targetIdentity.label;
+  const sameStableDigest = config.image.endsWith(`@${release.digest}`) && (requestedImage === releaseTagImage(release) || requestedImage === releaseImage(release));
+  if (config.image === requestedImage || sameTag || sameStableDigest) {
+    const message = `Harly is already running ${versionLine(currentIdentity)}.`;
+    if (json) {
+      writeResult(resultOk(command, "up-to-date", {
+        directory,
+        version: targetVersion ?? release.version,
+        image: config.image
+      }));
+    } else if (interactive) {
+      showBrand("Update");
+      p3.outro(message);
+    } else {
+      process4.stdout.write(`${message}
+`);
+    }
+    return;
+  }
+  if (tracksStable && currentVersion && targetVersion && compareSemver(currentVersion, targetVersion) > 0) {
+    throw new CliError(
+      `This installation is on ${currentVersion}, which is newer than the current stable release ${targetVersion}. Harly will not downgrade it. Pass --to ${targetVersion} if you mean to.`,
+      2
+    );
+  }
+  await preflight(config.proxyMode, false);
   if (!yes && !await confirm2(
     `Update Harly from ${versionLine(currentIdentity)} to ${versionLine(targetIdentity)}?`
   )) {
@@ -2881,10 +3030,9 @@ async function upgrade(explicitDirectory) {
   const configPath = path.join(directory, "harly.config.json");
   const originalEnv = await readFile(envPath, "utf8");
   const setImage = (contents, image, version) => contents.replace(/^HARLY_IMAGE=.*$/m, `HARLY_IMAGE=${envLine(image)}`).replace(/^HARLY_VERSION=.*$/m, `HARLY_VERSION=${envLine(version)}`);
-  let migrationsAttempted = false;
   await atomicWrite(
     envPath,
-    setImage(originalEnv, requestedImage, toVersion ?? "current"),
+    setImage(originalEnv, requestedImage, envVersion(targetIdentity)),
     384
   );
   try {
@@ -2931,7 +3079,6 @@ async function upgrade(explicitDirectory) {
 `);
   };
   try {
-    migrationsAttempted = true;
     progressStep(
       phase(3, "Applying database migrations"),
       phase(3, "Migrations applied"),
@@ -2945,8 +3092,7 @@ async function upgrade(explicitDirectory) {
       }
     );
   } catch (error) {
-    if (migrationsAttempted) await markTargetConfigured();
-    else await atomicWrite(envPath, originalEnv, 384);
+    await markTargetConfigured();
     throw error;
   }
   await markTargetConfigured();
@@ -3051,7 +3197,7 @@ async function railwayGuide() {
   if (option(parsed, "--url") && !option(parsed, "--url").includes("://"))
     throw usageError("--url requires an origin with an HTTP(S) protocol.");
   const requestedUrl = requestedUrlValue ? normalizeUrl(requestedUrlValue, "external").origin : void 0;
-  const deploymentRelease = flags.has("--dry-run") ? embeddedRelease : await officialRelease();
+  const deploymentRelease = flags.has("--dry-run") ? embeddedRelease : (await officialRelease()).release;
   const image = releaseImage(deploymentRelease);
   const runtimeSecrets = {
     betterAuth: secret(),
@@ -3295,7 +3441,7 @@ async function cloudGuide(provider) {
     await atomicWrite(envPath, env, 384);
     await chmod(envPath, 384);
   }
-  const deploymentRelease = flags.has("--dry-run") ? embeddedRelease : await officialRelease();
+  const deploymentRelease = flags.has("--dry-run") ? embeddedRelease : (await officialRelease()).release;
   const image = releaseImage(deploymentRelease);
   if (provider === "fly") {
     if (!flags.has("--dry-run")) await mkdir(directory, { recursive: true });
@@ -3439,7 +3585,7 @@ async function menu() {
   }
   const identity = describeImage(
     installation.config.requestedImage ?? installation.config.image,
-    await officialRelease()
+    (await officialRelease()).release
   );
   p3.log.message(
     rows([

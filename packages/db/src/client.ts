@@ -1,22 +1,12 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
+import { getHarlyDatabaseUrl } from "../../config/src/database";
+
 import * as schema from "./schema";
 
 export function getDatabaseUrl() {
-  const explicit = process.env.DATABASE_URL;
-  if (explicit && explicit.trim() !== "") {
-    return explicit;
-  }
-  // In production, a missing DATABASE_URL is a hard failure: silently falling
-  // back to localhost would connect to the wrong (or no) database and produce
-  // confusing crashes / unintended local data.
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "Missing required environment variable DATABASE_URL. Set it before starting Harly in production.",
-    );
-  }
-  return "postgresql://harly:harly@localhost:5432/harly";
+  return getHarlyDatabaseUrl(process.env, { allowDevelopmentFallback: true });
 }
 
 /**

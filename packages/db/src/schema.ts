@@ -955,6 +955,9 @@ export const workspaceSettings = pgTable(
     jitsiBaseUrl: text("jitsi_base_url"),
     // TAO base connection and Harly-owned LTI 1.3 registration identifiers.
     taoEnabled: boolean("tao_enabled").default(false).notNull(),
+    taoRemoteListTokenCiphertext: text("tao_remote_list_token_ciphertext"),
+    taoRemoteListTokenIv: text("tao_remote_list_token_iv"),
+    taoRemoteListTokenTag: text("tao_remote_list_token_tag"),
     taoInstanceUrl: text("tao_instance_url"),
     taoClientId: text("tao_client_id"),
     taoDeploymentId: text("tao_deployment_id"),
@@ -6361,3 +6364,60 @@ export type AiActionReceipt = typeof aiActionReceipts.$inferSelect;
 export type NewAiActionReceipt = typeof aiActionReceipts.$inferInsert;
 export type AutomationAiJob = typeof automationAiJobs.$inferSelect;
 export type NewAutomationAiJob = typeof automationAiJobs.$inferInsert;
+
+/** Vocabulary only: item metadata assignments and usage remain authoritative in TAO. */
+export const taoRemoteLists = pgTable(
+  "tao_remote_lists",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    description: text("description").default("").notNull(),
+    enabled: boolean("enabled").default(false).notNull(),
+    revision: integer("revision").default(1).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("tao_remote_lists_org_key_uidx").on(
+      table.organizationId,
+      table.key,
+    ),
+    check(
+      "tao_remote_lists_key_check",
+      sql`${table.key} ~ '^[a-z][a-z0-9_]{0,99}$'`,
+    ),
+    check("tao_remote_lists_name_check", sql`length(trim(${table.name})) > 0`),
+  ],
+);
+
+export const taoRemoteListEntries = pgTable(
+  "tao_remote_list_entries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    remoteListId: uuid("remote_list_id")
+      .notNull()
+      .references(() => taoRemoteLists.id, { onDelete: "restrict" }),
+    externalKey: text("external_key").notNull(),
+    label: text("label").notNull(),
+    position: integer("position").notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("tao_remote_list_entries_key_uidx").on(
+      table.remoteListId,
+      table.externalKey,
+    ),
+    check(
+      "tao_remote_list_entries_key_check",
+      sql`length(trim(${table.externalKey})) > 0`,
+    ),
+    check(
+      "tao_remote_list_entries_label_check",
+      sql`length(trim(${table.label})) > 0`,
+    ),
+  ],
+);

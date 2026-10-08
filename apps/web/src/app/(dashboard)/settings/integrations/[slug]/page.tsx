@@ -29,6 +29,8 @@ import { SlackConnectPanel } from "@/features/workspaces/SlackConnectPanel";
 import { TelegramConnectPanel } from "@/features/workspaces/TelegramConnectPanel";
 import { CaptchaConnectPanel } from "@/features/workspaces/CaptchaConnectPanel";
 import { ZoomConnectPanel } from "@/features/workspaces/ZoomConnectPanel";
+import { RemoteListsPanel } from "@/features/workspaces/RemoteListsPanel";
+import { getRemoteLists } from "@/lib/tao/remote-lists/data";
 import { TaoConnectPanel } from "@/features/workspaces/TaoConnectPanel";
 import {
   getIntegration,
@@ -334,19 +336,27 @@ async function renderPanel(
       );
     }
     case "tao": {
-      const [status, assessments] = await Promise.all([
+      const [status, assessments, remoteLists] = await Promise.all([
         getWorkspaceTaoStatus(ctx.organizationId),
         listTaoAssessmentDefinitions(ctx.organizationId),
+        getRemoteLists(ctx.organizationId),
       ]);
       return (
-        <TaoConnectPanel
-          status={status}
-          canEdit={ctx.canEdit}
-          tileClassName={integration.tileClassName}
-          description={integration.detail}
-          manualTestLaunchEnabled={isManualTaoTestLaunchEnabled()}
-          assessments={assessments}
-        />
+        <>
+          <TaoConnectPanel
+            status={status}
+            canEdit={ctx.canEdit}
+            tileClassName={integration.tileClassName}
+            description={integration.detail}
+            manualTestLaunchEnabled={isManualTaoTestLaunchEnabled()}
+            assessments={assessments}
+          />
+          <RemoteListsPanel
+            lists={remoteLists}
+            canEdit={ctx.canEdit}
+            workspaceId={ctx.organizationId}
+          />
+        </>
       );
     }
     case "harly-sign": {

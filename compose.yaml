@@ -55,8 +55,11 @@ services:
   migrate:
     image: *harly-image
     command: ["migrate"]
-    environment: 
-      <<: *harly-env
+    # Migrations only use Harly's PostgreSQL connection, never plugin settings.
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      HARLY_VERSION: ${HARLY_VERSION:-0.1.0-dev}
     restart: "no"
     mem_limit: ${HARLY_MIGRATE_MEMORY:-768m}
     cpus: ${HARLY_MIGRATE_CPUS:-1.0}

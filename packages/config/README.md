@@ -76,3 +76,16 @@ and unspecified bind addresses are development-only values.
 
 `formatConfigError()` converts Zod errors into one readable `VARIABLE: message`
 line per failure. Keep secrets out of logs and do not commit `.env` files.
+
+
+## Database-only migration configuration
+
+The runtime `migrate` command uses `loadMigrationConfig()` from `src/database.ts`,
+not `loadHarlyConfig()`. Only Harly's `DATABASE_URL` is required; `HARLY_VERSION`
+is optional. Public origins, authentication/storage settings, and all integration
+configuration are irrelevant to migration. No TAO URL, database credential, or
+running TAO installation is needed.
+
+Use a complete PostgreSQL URL with URL-encoded credentials. Single-quoted Compose
+values and `dotenv` do not expand `${...}` placeholders. Database URL validation
+identifies unresolved placeholders and malformed URLs without printing secrets.

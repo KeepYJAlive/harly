@@ -98,13 +98,13 @@ const envSchema = z
   })
   .superRefine((env, ctx) => {
     const url = env.HARLY_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.BETTER_AUTH_URL;
-    if (!url) {
+    if (!url && env.NODE_ENV === "production") {
       ctx.addIssue({
         code: "custom",
         path: ["HARLY_URL"],
-        message: "is required",
+        message: "is required in production",
       });
-    } else {
+    } else if (url) {
       try {
         const parsed = new URL(url);
         if (
@@ -267,7 +267,10 @@ export function loadHarlyConfig(
 ): HarlyConfig {
   const parsed = envSchema.parse(source);
   const resolvedUrl =
-    parsed.HARLY_URL ?? parsed.NEXT_PUBLIC_APP_URL ?? parsed.BETTER_AUTH_URL;
+    parsed.HARLY_URL ??
+    parsed.NEXT_PUBLIC_APP_URL ??
+    parsed.BETTER_AUTH_URL ??
+    (parsed.NODE_ENV === "production" ? undefined : "http://localhost:3000");
   if (!resolvedUrl) throw new Error("HARLY_URL is required.");
   const deprecatedUrlVariables = [
     !parsed.HARLY_URL && parsed.NEXT_PUBLIC_APP_URL
