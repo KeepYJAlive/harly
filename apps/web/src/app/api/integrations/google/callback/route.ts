@@ -12,6 +12,7 @@ import { requirePermission } from "@/features/workspaces/permissions-server";
 import {
   verifyAndConsumeOauthStateNonce,
 } from "@/server/oauth-state";
+import { getWorkspaceContextOrNull } from "@/features/workspaces/context";
 
 const log = createLogger("api-google-callback");
 
@@ -47,12 +48,14 @@ export async function GET(req: NextRequest) {
   // Verify the server-side nonce: single-use, TTL-scoped, bound to the user +
   // workspace that started the install. This replaces the old CSRF-only state
   // check and closes replay/escalation on the integration OAuth flow.
-  const actor = session.session;
   const userId = session.user.id;
-  const workspaceId = actor.activeOrganizationId;
-  if (!workspaceId) {
+  const context = await getWorkspaceContextOrNull();
+
+  if (!context) {
     return redirectWithError("No workspace available for this account.");
   }
+
+  const workspaceId = context.organization.id;
 
   const nonceCheck = await verifyAndConsumeOauthStateNonce({
     state,
