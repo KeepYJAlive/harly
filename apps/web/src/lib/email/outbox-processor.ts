@@ -86,11 +86,6 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
   day: "numeric",
 });
 
-const interviewWhenFormatter = new Intl.DateTimeFormat("en", {
-  dateStyle: "long",
-  timeStyle: "short",
-});
-
 function formatOfferDate(value: Date | null): string | undefined {
   return value ? dateFormatter.format(value) : undefined;
 }
@@ -1547,6 +1542,21 @@ async function deliverInterviewEmail(row: OutboxRow): Promise<boolean> {
     return false;
   }
 
+  const [recipientZone] = await db
+    .select({ timezone: candidates.timezone })
+    .from(candidates)
+    .where(
+      and(
+        eq(candidates.workspaceId, row.workspaceId),
+        eq(candidates.email, payload.candidateEmail),
+      ),
+    )
+    .limit(1);
+  const interviewWhenFormatter = new Intl.DateTimeFormat("en", {
+    dateStyle: "long",
+    timeStyle: "long",
+    timeZone: recipientZone?.timezone || "UTC",
+  });
   const branding = await getWorkspaceEmailBranding(row.workspaceId);
   const [firstName, ...lastName] = (payload.candidateName ?? "")
     .trim()

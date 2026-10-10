@@ -24,6 +24,7 @@ export const portalInterviewSelect = {
   type: interviews.type,
   mode: interviews.mode,
   status: interviews.status,
+  timeZone: candidates.timezone,
   scheduledAt: interviews.scheduledAt,
   durationMins: interviews.durationMins,
   location: interviews.location,
@@ -56,9 +57,10 @@ export async function getPortalApplicationInterviews(applicationId: string) {
     .orderBy(asc(interviews.scheduledAt));
 }
 
-export type PortalInterview = Awaited<
-  ReturnType<typeof getPortalApplicationInterviews>
->[number];
+export type PortalInterview = Omit<
+  Awaited<ReturnType<typeof getPortalApplicationInterviews>>[number],
+  "timeZone"
+> & { timeZone?: string | null };
 
 export async function getPortalApplicationStage(
   currentStageId: string | null,

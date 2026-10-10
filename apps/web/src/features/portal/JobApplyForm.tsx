@@ -130,6 +130,7 @@ export function JobApplyForm({
     e.preventDefault();
     start(async () => {
       const result = await applyToJobAction({
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         jobId,
         answers,
         resumeKey: resumeKey ?? undefined,

@@ -1,5 +1,6 @@
 "use server";
 
+import { timeZoneSchema } from "@/features/interviews/scheduling-shared";
 import { cookies, headers } from "next/headers";
 import { createElement } from "react";
 import { and, eq, asc, count, desc, gt, inArray, isNull, sql } from "drizzle-orm";
@@ -12,6 +13,7 @@ import {
   applicationAnswers,
   applicationQuestions,
   candidateFiles,
+  candidates,
   db,
   jobs,
   jobStages,
@@ -176,6 +178,7 @@ export async function signOutPortalAction(): Promise<void> {
 }
 
 type ApplyInput = {
+  timeZone?: string;
   jobId: string;
   answers: Record<string, string>;
   resumeKey?: string;
@@ -322,7 +325,19 @@ export async function applyToJobAction(
       return { ok: false, error: "Job pipeline not configured." };
     }
 
+    if (input.timeZone) timeZoneSchema.parse(input.timeZone);
     const application = await db.transaction(async (tx) => {
+      if (input.timeZone)
+        await tx
+          .update(candidates)
+          .set({ timezone: input.timeZone })
+          .where(
+            and(
+              eq(candidates.id, session.candidateId),
+              eq(candidates.workspaceId, session.workspaceId),
+              isNull(candidates.timezone),
+            ),
+          );
       await lockApplicationPipelineOrder(
         tx,
         session.workspaceId,

@@ -4275,6 +4275,150 @@ export const interviews = pgTable(
   ],
 );
 
+// Coordination is separate from confirmed interviews; historical interviews need no backfill.
+export const interviewParticipantRoleEnum = pgEnum(
+  "interview_participant_role",
+  ["lead", "interviewer", "observer"],
+);
+export const interviewSchedulingStatusEnum = pgEnum(
+  "interview_scheduling_status",
+  [
+    "draft",
+    "awaiting_candidate",
+    "pending_review",
+    "confirmed",
+    "needs_rescheduling",
+    "expired",
+    "cancelled",
+  ],
+);
+export const interviewSlotStatusEnum = pgEnum("interview_slot_status", [
+  "offered",
+  "proposed",
+  "accepted",
+  "rejected",
+  "withdrawn",
+  "expired",
+]);
+export const interviewSlotProposerEnum = pgEnum("interview_slot_proposer", [
+  "recruiter",
+  "candidate",
+]);
+
+export const interviewSchedulingRequests = pgTable(
+  "interview_scheduling_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    applicationId: uuid("application_id")
+      .notNull()
+      .references(() => applications.id, { onDelete: "cascade" }),
+    interviewId: uuid("interview_id").references(() => interviews.id, {
+      onDelete: "cascade",
+    }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id),
+    interviewerId: text("interviewer_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    title: text("title"),
+    type: interviewTypeEnum("type").notNull(),
+    mode: interviewModeEnum("mode").notNull(),
+    durationMins: integer("duration_mins").notNull(),
+    location: text("location"),
+    notes: text("notes"),
+    meetingProvider: text("meeting_provider").default("auto").notNull(),
+    timeZone: text("time_zone").notNull(),
+    status: interviewSchedulingStatusEnum("status")
+      .default("awaiting_candidate")
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    index("interview_requests_workspace_status_idx").on(
+      t.workspaceId,
+      t.status,
+    ),
+    index("interview_requests_application_idx").on(t.applicationId),
+    uniqueIndex("interview_requests_active_interview_idx")
+      .on(t.interviewId)
+      .where(
+        sql`${t.status} in ('draft', 'awaiting_candidate', 'pending_review', 'needs_rescheduling')`,
+      ),
+    check(
+      "interview_requests_duration_check",
+      sql`${t.durationMins} between 5 and 480`,
+    ),
+  ],
+);
+
+export const interviewSchedulingSlots = pgTable(
+  "interview_scheduling_slots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => interviewSchedulingRequests.id, {
+        onDelete: "cascade",
+      }),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    timeZone: text("time_zone").notNull(),
+    proposedBy: interviewSlotProposerEnum("proposed_by").notNull(),
+    status: interviewSlotStatusEnum("status").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    index("interview_slots_request_idx").on(t.requestId),
+    uniqueIndex("interview_slots_one_accepted_idx")
+      .on(t.requestId)
+      .where(sql`${t.status} = 'accepted'`),
+  ],
+);
+
+export const interviewParticipants = pgTable(
+  "interview_participants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    interviewId: uuid("interview_id")
+      .notNull()
+      .references(() => interviews.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: interviewParticipantRoleEnum("role").notNull(),
+  },
+  (t) => [
+    uniqueIndex("interview_participants_user_idx").on(t.interviewId, t.userId),
+    index("interview_participants_user_lookup_idx").on(t.userId),
+  ],
+);
+
+export const interviewRequestParticipants = pgTable(
+  "interview_request_participants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => interviewSchedulingRequests.id, {
+        onDelete: "cascade",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: interviewParticipantRoleEnum("role").notNull(),
+  },
+  (t) => [
+    uniqueIndex("interview_request_participants_user_idx").on(
+      t.requestId,
+      t.userId,
+    ),
+  ],
+);
+
 export const interviewsRelations = relations(interviews, ({ one }) => ({
   application: one(applications, {
     fields: [interviews.applicationId],

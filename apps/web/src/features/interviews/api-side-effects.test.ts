@@ -22,6 +22,17 @@ function query(value: unknown) {
   return chain;
 }
 
+vi.mock("./participants", () => ({
+  participantEmails: vi.fn(async () => []),
+  validateInterviewTeam: vi.fn(async () => undefined),
+  getInterviewTeam: vi.fn(async () => []),
+  lockAndCheckTeam: vi.fn(async () => undefined),
+  participantCondition: vi.fn(() => true),
+}));
+vi.mock("./sync-intent", () => ({
+  existingSyncProviders: () => [],
+  persistSyncIntents: vi.fn(async () => undefined),
+}));
 vi.mock("@harly/db", () => ({
   db: { select: mocks.dbSelect },
   candidates: { id: "candidateId", email: "candidateEmail" },
@@ -214,7 +225,7 @@ describe("REST interview side effects", () => {
         database,
       }),
     );
-    expect(mocks.trackInterviewSync).not.toHaveBeenCalledWith(
+    expect(mocks.trackInterviewSync).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "google_calendar" }),
     );
   });
@@ -273,6 +284,119 @@ describe("REST interview side effects", () => {
         strict: true,
         database,
       }),
+    );
+  });
+});
+
+describe("confirmed calendar invitations", () => {
+  it("includes candidate and team, using the persisted Zoom link without creating Meet", async () => {
+    const { participantEmails } = await import("./participants");
+    const { enqueueEmailOutbox } = await import("@/lib/email/outbox-processor");
+    vi.mocked(participantEmails).mockResolvedValueOnce([
+      "lead@example.test",
+      "observer@example.test",
+    ]);
+    const interview = {
+      id: "confirmed",
+      workspaceId: "ws-1",
+      applicationId: "app-1",
+      candidateId: "candidate-1",
+      jobId: "job-1",
+      interviewerId: null,
+      title: "Technical",
+      type: "technical",
+      mode: "video",
+      status: "scheduled",
+      scheduledAt: new Date("2099-06-01T22:00Z"),
+      durationMins: 45,
+      location: null,
+      meetLink: null,
+    } as never;
+    mocks.dbSelect
+      .mockReturnValueOnce(
+        query({
+          email: "candidate@example.test",
+          firstName: "Jane",
+          lastName: "Doe",
+          companyName: "Harly",
+          jobTitle: "Engineer",
+          interviewerId: null,
+          applicationId: "app-1",
+        }),
+      )
+      .mockReturnValue(
+        query({
+          ...(interview as object),
+          meetLink: "https://zoom.us/j/confirmed",
+          zoomMeetingId: "zoom-id",
+        }),
+      );
+    mocks.syncInterviewToZoom.mockResolvedValueOnce({
+      joinUrl: "https://zoom.us/j/confirmed",
+      meetingId: "zoom-id",
+    });
+    await runApiInterviewSideEffects({
+      workspaceId: "ws-1",
+      actorUserId: "lead",
+      interview,
+      action: "scheduled",
+      meetingProvider: "zoom",
+      database: { select: mocks.dbSelect } as never,
+    });
+    expect(mocks.syncInterviewToGCal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: [
+          "lead@example.test",
+          "observer@example.test",
+          "candidate@example.test",
+        ],
+        location: "https://zoom.us/j/confirmed",
+        mode: undefined,
+      }),
+    );
+    expect(enqueueEmailOutbox).toHaveBeenCalledWith(
+      "ws-1",
+      "interview.scheduled",
+      expect.objectContaining({ location: "https://zoom.us/j/confirmed" }),
+      undefined,
+      "lead",
+      expect.anything(),
+    );
+  });
+
+  it("cancels the workspace calendar and provider through the retry ledger", async () => {
+    const { cancelInterviewGCalEvent } = await import("@/lib/gcal/sync");
+    const { cancelInterviewZoomMeeting } = await import("@/lib/zoom/sync");
+    const interview = {
+      id: "cancel-me",
+      workspaceId: "ws-1",
+      applicationId: "app-1",
+      candidateId: "candidate-1",
+      type: "technical",
+      mode: "video",
+      status: "canceled",
+      scheduledAt: new Date("2099-06-01T22:00Z"),
+      durationMins: 45,
+      gcalEventId: "gcal-id",
+      zoomMeetingId: "zoom-id",
+      meetLink: null,
+    } as never;
+    await runApiInterviewSideEffects({
+      workspaceId: "ws-1",
+      actorUserId: "lead",
+      interview,
+      previous: interview,
+      action: "canceled",
+      database: { select: mocks.dbSelect } as never,
+    });
+    expect(cancelInterviewGCalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ gcalEventId: "gcal-id" }),
+    );
+    expect(cancelInterviewZoomMeeting).toHaveBeenCalledWith(
+      expect.objectContaining({ zoomMeetingId: "zoom-id" }),
+    );
+    expect(mocks.trackInterviewSync).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "cancel", provider: "zoom" }),
     );
   });
 });

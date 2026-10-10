@@ -10,6 +10,8 @@ import {
   candidatePortalNotifications,
   db,
   interviews,
+  interviewParticipants,
+  interviewSchedulingRequests,
   jobs,
   type Interview,
 } from "@harly/db";
@@ -19,6 +21,14 @@ import {
   persistDomainEvent,
   publishPersistedDomainEvents,
 } from "@/server/events/emit";
+import {
+  InterviewTeamConflictError,
+  getInterviewTeam,
+  lockAndCheckTeam,
+  participantCondition,
+  validateInterviewTeam,
+} from "./participants";
+import { normalizeTeam, type InterviewParticipant } from "./scheduling-shared";
 import { deriveMeetLink } from "./shared";
 import {
   interviewPortalNotification,
@@ -27,6 +37,7 @@ import {
 } from "./api-side-effects";
 
 import { findWorkspaceMember } from "./core";
+import { existingSyncProviders, persistSyncIntents } from "./sync-intent";
 import { lockInterviewerSchedule } from "./booking-lock";
 import {
   retryInterviewSyncsForInterview,
@@ -47,6 +58,7 @@ export const INTERVIEW_MODES = ["video", "phone", "onsite"] as const;
 export const INTERVIEW_STATUSES = ["scheduled", "completed", "canceled"] as const;
 
 export type InterviewApiInput = {
+  participants?: InterviewParticipant[];
   applicationId: string;
   candidateId: string;
   interviewerId?: string | null;
@@ -94,6 +106,18 @@ function cursorWhere(cursor: Cursor | null) {
   );
 }
 
+async function lockApiInterviewTeam(
+  ...args: Parameters<typeof lockAndCheckTeam>
+) {
+  try {
+    await lockAndCheckTeam(...args);
+  } catch (error) {
+    if (error instanceof InterviewTeamConflictError)
+      throw ApiError.conflict(error.message);
+    throw error;
+  }
+}
+
 async function assertWorkspaceMember(
   workspaceId: string,
   userId: string,
@@ -139,7 +163,7 @@ async function assertNoInterviewerConflict(
     .where(
       and(
         eq(interviews.workspaceId, input.workspaceId),
-        eq(interviews.interviewerId, input.interviewerId),
+        participantCondition([input.interviewerId])!,
         eq(interviews.status, "scheduled"),
         input.excludeInterviewId
           ? ne(interviews.id, input.excludeInterviewId)
@@ -245,10 +269,19 @@ export async function createInterviewForApi(input: {
     assertInterviewerMember(input.workspaceId, input.values.interviewerId, database),
   ]);
   assertFutureWhen(input.values.scheduledAt);
+  const team = normalizeTeam(
+    input.values.interviewerId,
+    input.values.participants ?? [],
+  );
+  await validateInterviewTeam(input.workspaceId, team, database);
 
   const { created, event } = await database.transaction(async (tx) => {
     const [application] = await tx
-      .select({ id: applications.id, jobId: applications.jobId })
+      .select({
+        id: applications.id,
+        jobId: applications.jobId,
+        timeZone: candidates.timezone,
+      })
       .from(applications)
       .innerJoin(
         candidates,
@@ -292,6 +325,12 @@ export async function createInterviewForApi(input: {
       if (existing) return { created: existing, event: null };
     }
 
+    await lockApiInterviewTeam(tx, {
+      workspaceId: input.workspaceId,
+      userIds: team.map((p) => p.userId),
+      when: input.values.scheduledAt,
+      durationMins: input.values.durationMins,
+    });
     if (input.values.interviewerId) {
       await lockInterviewerSchedule(tx, input.workspaceId, input.values.interviewerId);
       await assertNoInterviewerConflict(
@@ -328,6 +367,10 @@ export async function createInterviewForApi(input: {
       .returning();
     if (!interview) throw ApiError.internal("Interview could not be created.");
 
+    if (team.length)
+      await tx
+        .insert(interviewParticipants)
+        .values(team.map((p) => ({ ...p, interviewId: interview.id })));
     await tx.insert(activityEvents).values({
       workspaceId: input.workspaceId,
       actorId: input.actorUserId,
@@ -342,7 +385,11 @@ export async function createInterviewForApi(input: {
     });
     await tx.insert(candidatePortalNotifications).values({
       workspaceId: input.workspaceId,
-      ...interviewPortalNotification({ action: "scheduled", interview }),
+      ...interviewPortalNotification({
+        action: "scheduled",
+        interview,
+        timeZone: application.timeZone,
+      }),
     });
     return {
       created: interview,
@@ -466,7 +513,29 @@ export async function updateInterviewForApi(input: {
     }
   }
 
+  const team = normalizeTeam(
+    interviewerId,
+    input.values.participants ??
+      (await getInterviewTeam(current.id, database)).filter(
+        (p) => p.role !== "lead",
+      ),
+  );
+  await validateInterviewTeam(input.workspaceId, team, database);
   const { updated, event } = await database.transaction(async (tx) => {
+    await lockApiInterviewTeam(tx, {
+      workspaceId: input.workspaceId,
+      userIds: team.map((p) => p.userId),
+      when: scheduledAt,
+      durationMins,
+      excludeInterviewId: current.id,
+    });
+    await tx
+      .delete(interviewParticipants)
+      .where(eq(interviewParticipants.interviewId, current.id));
+    if (team.length)
+      await tx
+        .insert(interviewParticipants)
+        .values(team.map((p) => ({ ...p, interviewId: current.id })));
     if (interviewerId) {
       await lockInterviewerSchedule(tx, input.workspaceId, interviewerId);
     }
@@ -574,7 +643,10 @@ export async function setInterviewStatusForApi(input: {
       .update(interviews)
       .set({
         status: input.status,
-        ...(input.workflowEffectId ? { workflowEffectId: input.workflowEffectId } : {}),
+        ...(input.status === "canceled" ? { meetLink: null } : {}),
+        ...(input.workflowEffectId
+          ? { workflowEffectId: input.workflowEffectId }
+          : {}),
         updatedAt: new Date(),
       })
       .where(
@@ -595,6 +667,11 @@ export async function setInterviewStatusForApi(input: {
       metadata: { interviewId: next.id, via: "api" },
     });
     if (input.status === "canceled") {
+      await persistSyncIntents(tx, next, existingSyncProviders(next), true);
+      await tx
+        .update(interviewSchedulingRequests)
+        .set({ status: "cancelled" })
+        .where(eq(interviewSchedulingRequests.interviewId, next.id));
       await tx.insert(candidatePortalNotifications).values({
         workspaceId: input.workspaceId,
         ...interviewPortalNotification({ action: "canceled", interview: next }),

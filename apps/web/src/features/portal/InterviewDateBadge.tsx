@@ -2,13 +2,28 @@
 
 type InterviewDateBadgeProps = {
   date: Date;
+  timeZone?: string;
   variant?: "default" | "compact";
 };
 
-export function InterviewDateBadge({ date, variant = "default" }: InterviewDateBadgeProps) {
-  const dayOfWeek = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date).toUpperCase();
-  const dayNum = new Intl.DateTimeFormat("en-US", { day: "numeric" }).format(date);
-  const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(date).toUpperCase();
+export function InterviewDateBadge({
+  date,
+  timeZone,
+  variant = "default",
+}: InterviewDateBadgeProps) {
+  const dayOfWeek = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  })
+    .format(date)
+    .toUpperCase();
+  const dayNum = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    day: "numeric",
+  }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", { timeZone, month: "short" })
+    .format(date)
+    .toUpperCase();
 
   if (variant === "compact") {
     return (

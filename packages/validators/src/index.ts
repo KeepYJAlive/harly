@@ -263,6 +263,15 @@ export const candidateFileConfirmSchema = z.object({
 });
 
 export const interviewCreateSchema = z.object({
+  participants: z
+    .array(
+      z.object({
+        userId: z.string().min(1),
+        role: z.enum(["lead", "interviewer", "observer"]),
+      }),
+    )
+    .max(30)
+    .optional(),
   candidateId: z.uuid(),
   applicationId: z.uuid(),
   type: z.enum(["screening", "culture_fit", "technical", "onsite", "final"]),

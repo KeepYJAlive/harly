@@ -1,4 +1,5 @@
 import "server-only";
+import { interviewParticipants } from "@harly/db";
 
 import { and, asc, between, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 
@@ -10,6 +11,7 @@ import {
   jobs,
   user as authUsers,
 } from "@harly/db";
+import { requireJobPermission } from "@/features/workspaces/permissions-server";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 import type {
   CandidateInterviewItem,
@@ -242,6 +244,7 @@ export async function listInterviewsForRange(
       interviewerImage: authUsers.image,
       jobId: jobs.id,
       jobTitle: jobs.title,
+      department: jobs.department,
       candidateId: candidates.id,
       first: candidates.firstName,
       last: candidates.lastName,
@@ -276,27 +279,56 @@ export async function listInterviewsForRange(
     )
     .orderBy(asc(interviews.scheduledAt));
 
-  return rows.map((row) => ({
-    id: row.id,
-    applicationId: row.applicationId,
-    type: row.type,
-    mode: row.mode,
-    status: row.status,
-    scheduledAt: row.scheduledAt.toISOString(),
-    durationMins: row.durationMins,
-    title: row.title,
-    location: row.location,
-    notes: row.notes,
-    interviewerId: row.interviewerId,
-    interviewerName: row.interviewerName,
-    interviewerImage: row.interviewerImage,
-    jobId: row.jobId,
-    jobTitle: row.jobTitle,
-    candidateId: row.candidateId,
-    candidateName: `${row.first} ${row.last}`,
-    gcalEventId: row.gcalEventId,
-    meetLink: row.meetLink,
-    teamsMeetingId: row.teamsMeetingId,
-    zoomMeetingId: row.zoomMeetingId,
-  }));
+  const accessibleJobs = new Set(
+    (
+      await Promise.all(
+        [...new Set(rows.map((r) => r.jobId))].map(async (id) => {
+          try {
+            await requireJobPermission("candidates:view", id);
+            return id;
+          } catch {
+            return null;
+          }
+        }),
+      )
+    ).filter((id): id is string => id !== null),
+  );
+  const team = await db
+    .select({
+      interviewId: interviewParticipants.interviewId,
+      userId: interviewParticipants.userId,
+      role: interviewParticipants.role,
+      name: authUsers.name,
+    })
+    .from(interviewParticipants)
+    .innerJoin(authUsers, eq(authUsers.id, interviewParticipants.userId))
+    .innerJoin(interviews, eq(interviews.id, interviewParticipants.interviewId))
+    .where(eq(interviews.workspaceId, workspace.id));
+  return rows
+    .filter((row) => accessibleJobs.has(row.jobId))
+    .map((row) => ({
+      id: row.id,
+      department: row.department,
+      participants: team.filter((p) => p.interviewId === row.id),
+      applicationId: row.applicationId,
+      type: row.type,
+      mode: row.mode,
+      status: row.status,
+      scheduledAt: row.scheduledAt.toISOString(),
+      durationMins: row.durationMins,
+      title: row.title,
+      location: row.location,
+      notes: row.notes,
+      interviewerId: row.interviewerId,
+      interviewerName: row.interviewerName,
+      interviewerImage: row.interviewerImage,
+      jobId: row.jobId,
+      jobTitle: row.jobTitle,
+      candidateId: row.candidateId,
+      candidateName: `${row.first} ${row.last}`,
+      gcalEventId: row.gcalEventId,
+      meetLink: row.meetLink,
+      teamsMeetingId: row.teamsMeetingId,
+      zoomMeetingId: row.zoomMeetingId,
+    }));
 }

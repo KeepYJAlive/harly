@@ -1,3 +1,5 @@
+import { SchedulingRequests } from "@/features/interviews/SchedulingRequests";
+import { listPortalSchedulingRequests } from "@/features/interviews/scheduling-data";
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
@@ -162,6 +164,10 @@ export default async function ApplicationDetailPage({
     .limit(1);
 
   if (!appRow) notFound();
+  const schedulingRequests = await listPortalSchedulingRequests(
+    session,
+    applicationId,
+  );
 
   const [settingsRow] = await db
     .select({ showStatus: workspaceSettings.portalShowApplicationStatus })
@@ -212,6 +218,7 @@ export default async function ApplicationDetailPage({
   return (
     <PortalShell>
       <div className="space-y-8">
+        <SchedulingRequests requests={schedulingRequests} portal />
         {/* Back link */}
         <Link
           href="/portal/applications"
@@ -317,6 +324,7 @@ export default async function ApplicationDetailPage({
             <div className="space-y-3">
               {upcomingInterviews.map((iv) => (
                 <PortalInterviewCard
+                  timeZone={iv.timeZone ?? "UTC"}
                   key={iv.id}
                   title={iv.title ?? formatEnumLabel(iv.type)}
                   scheduledAt={iv.scheduledAt}
@@ -341,6 +349,7 @@ export default async function ApplicationDetailPage({
             <div className="space-y-3">
               {pastInterviews.map((iv) => (
                 <PortalInterviewCard
+                  timeZone={iv.timeZone ?? "UTC"}
                   key={iv.id}
                   title={iv.title ?? formatEnumLabel(iv.type)}
                   scheduledAt={iv.scheduledAt}

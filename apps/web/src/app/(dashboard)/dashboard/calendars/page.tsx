@@ -1,3 +1,5 @@
+import { SchedulingRequests } from "@/features/interviews/SchedulingRequests";
+import { listWorkspaceSchedulingRequests } from "@/features/interviews/scheduling-data";
 import { listInterviewsForRange } from "@/features/interviews/data";
 import { CalendarBoard } from "@/features/interviews/CalendarBoard";
 import { listJobOptions } from "@/features/jobs/data";
@@ -8,7 +10,11 @@ const MONTH_LABEL_FORMAT = new Intl.DateTimeFormat("en", {
   year: "numeric",
 });
 
-function parseMonthParam(raw: string | undefined): { year: number; month: number; param: string } {
+function parseMonthParam(raw: string | undefined): {
+  year: number;
+  month: number;
+  param: string;
+} {
   const now = new Date();
   const match = raw ? /^(\d{4})-(\d{2})$/.exec(raw) : null;
   const year = match ? Number(match[1]) : now.getFullYear();
@@ -20,7 +26,9 @@ type CalendarsPageProps = {
   searchParams: Promise<{ month?: string }>;
 };
 
-export default async function CalendarsPage({ searchParams }: CalendarsPageProps) {
+export default async function CalendarsPage({
+  searchParams,
+}: CalendarsPageProps) {
   const { month: monthRaw } = await searchParams;
   const { year, month, param } = parseMonthParam(monthRaw);
 
@@ -36,13 +44,27 @@ export default async function CalendarsPage({ searchParams }: CalendarsPageProps
     listWorkspaceMembers(),
   ]);
 
+  const requests = await listWorkspaceSchedulingRequests();
   return (
-    <CalendarBoard
-      monthParam={param}
-      monthLabel={MONTH_LABEL_FORMAT.format(monthStart)}
-      interviews={interviews}
-      jobOptions={jobs.map((j) => ({ value: j.id, label: j.title }))}
-      interviewerOptions={members.map((m) => ({ value: m.userId, label: m.name }))}
-    />
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Master interview schedule</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage interviews in Harly. Confirmed interviews synchronize to the
+          connected workspace Google Calendar.
+        </p>
+      </header>
+      <SchedulingRequests requests={requests} />
+      <CalendarBoard
+        monthParam={param}
+        monthLabel={MONTH_LABEL_FORMAT.format(monthStart)}
+        interviews={interviews}
+        jobOptions={jobs.map((j) => ({ value: j.id, label: j.title }))}
+        interviewerOptions={members.map((m) => ({
+          value: m.userId,
+          label: m.name,
+        }))}
+      />
+    </div>
   );
 }

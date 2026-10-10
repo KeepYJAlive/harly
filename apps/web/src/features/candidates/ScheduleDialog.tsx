@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Link2, MapPin, Phone, Video } from "lucide-react";
 import { toast } from "@/lib/notification-island/toast";
 
+import { createSchedulingRequestAction } from "@/features/interviews/scheduling-actions";
+import {
+  InterviewTeamFields,
+  SlotFields,
+  useBrowserTimeZone,
+} from "@/features/interviews/CoordinationFields";
+import type { InterviewParticipant } from "@/features/interviews/scheduling-shared";
 import { scheduleInterview } from "@/features/interviews/actions";
 import { checkAvailability } from "@/lib/gcal/availability";
 import { buildCalBookingLink } from "@/lib/cal/link";
@@ -92,6 +99,15 @@ export function ScheduleDialog({
   trigger: ReactNode;
 }) {
   const router = useRouter();
+  const [meetingProvider, setMeetingProvider] = useState<
+    "auto" | "google_meet" | "zoom" | "teams" | "jitsi" | "external"
+  >("auto");
+  const [coordinate, setCoordinate] = useState(false);
+  const [slots, setSlots] = useState([""]);
+  const browserTimeZone = useBrowserTimeZone();
+  const [selectedTimeZone, setSlotTimeZone] = useState<string | null>(null);
+  const slotTimeZone = selectedTimeZone ?? browserTimeZone;
+  const [participants, setParticipants] = useState<InterviewParticipant[]>([]);
   const [open, setOpen] = useState(false);
   const [applicationId, setApplicationId] = useState(
     applications[0]?.applicationId ?? "",
@@ -136,6 +152,7 @@ export function ScheduleDialog({
         interviewerId: interviewer ?? (interviewerId || undefined),
       });
       const warnings: string[] = [];
+
       if (result.gcalBusy.length > 0) {
         warnings.push(
           `${result.gcalBusy.length} existing calendar event${result.gcalBusy.length > 1 ? "s" : ""}`,
@@ -149,10 +166,12 @@ export function ScheduleDialog({
       setAvailabilityWarning(
         warnings.length > 0
           ? `This time conflicts with ${warnings.join(" and ")}.`
-          : null,
+          : result.status === "unknown"
+            ? "External calendar availability is unknown."
+            : null,
       );
     } catch {
-      // Silently fail , don't block scheduling on availability check.
+      setAvailabilityWarning("Availability could not be checked.");
     } finally {
       setCheckingAvailability(false);
     }
@@ -175,6 +194,10 @@ export function ScheduleDialog({
   }
 
   function reset() {
+    setMeetingProvider("auto");
+    setCoordinate(false);
+    setSlots([""]);
+    setParticipants([]);
     setType("screening");
     setMode("video");
     setDate("");
@@ -196,13 +219,39 @@ export function ScheduleDialog({
       toast.error("Pick which role this interview is for.");
       return;
     }
-    if (!date || !time) {
+    if (!coordinate && (!date || !time)) {
       toast.error("Pick a date and time.");
       return;
     }
     startTransition(async () => {
       const timeZone = getBrowserTimeZone();
+      if (coordinate) {
+        const result = await createSchedulingRequestAction({
+          applicationId,
+          type,
+          mode,
+          durationMins: Number(durationMins),
+          interviewerId: interviewerId || null,
+          participants: participants.filter((p) => p.userId !== interviewerId),
+          location: location.trim() || null,
+          notes: notes.trim() || null,
+          slots,
+          timeZone: slotTimeZone,
+          meetingProvider,
+        });
+        if (!result.success) {
+          toast.error(result.error ?? "Could not offer times.");
+          return;
+        }
+        toast.success("Interview times offered in the candidate portal");
+        setOpen(false);
+        reset();
+        router.refresh();
+        return;
+      }
       const result = await scheduleInterview({
+        meetingProvider,
+        participants: participants.filter((p) => p.userId !== interviewerId),
         workspaceId,
         candidateId,
         applicationId,
@@ -244,7 +293,7 @@ export function ScheduleDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Schedule interview</DialogTitle>
           <DialogDescription>
@@ -254,11 +303,67 @@ export function ScheduleDialog({
 
         {!hasApplication ? (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            This candidate hasn&apos;t applied to any role yet. Interviews attach
-            to an application.
+            This candidate hasn&apos;t applied to any role yet. Interviews
+            attach to an application.
           </p>
         ) : (
           <div className="space-y-5">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={coordinate ? "outline" : "default"}
+                onClick={() => setCoordinate(false)}
+              >
+                Schedule Manually
+              </Button>
+              <Button
+                type="button"
+                variant={coordinate ? "default" : "outline"}
+                onClick={() => setCoordinate(true)}
+              >
+                Coordinate Times
+              </Button>
+            </div>
+            {coordinate && (
+              <SlotFields
+                values={slots}
+                onChange={setSlots}
+                timeZone={slotTimeZone}
+                onTimeZoneChange={setSlotTimeZone}
+              />
+            )}
+            <InterviewTeamFields
+              members={members}
+              lead={interviewerId}
+              value={participants}
+              onChange={setParticipants}
+            />
+            {mode === "video" && (
+              <label className="block space-y-2 text-sm">
+                Meeting provider
+                <select
+                  aria-label="Meeting provider"
+                  className="block w-full rounded border bg-background p-2"
+                  value={meetingProvider}
+                  onChange={(e) =>
+                    setMeetingProvider(e.target.value as typeof meetingProvider)
+                  }
+                >
+                  {[
+                    ["auto", "Workspace default"],
+                    ["google_meet", "Google Meet"],
+                    ["zoom", "Zoom"],
+                    ["teams", "Microsoft Teams"],
+                    ["jitsi", "Jitsi"],
+                    ["external", "External link"],
+                  ].map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {calLinkAvailable ? (
               <div className="space-y-2.5 rounded-xl border border-primary/30 bg-accent/40 p-3.5">
                 <div className="flex items-center gap-2">
@@ -292,7 +397,10 @@ export function ScheduleDialog({
               <div className="space-y-5">
                 {applications.length > 1 ? (
                   <Field label="Role">
-                    <Select value={applicationId} onValueChange={setApplicationId}>
+                    <Select
+                      value={applicationId}
+                      onValueChange={setApplicationId}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -349,30 +457,45 @@ export function ScheduleDialog({
                   </div>
                 </Field>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Date" htmlFor="schedule-date">
-                    <Input
-                      id="schedule-date"
-                      type="date"
-                      value={date}
-                      onChange={(e) => {
-                        setDate(e.target.value);
-                        checkTimeAvailability(e.target.value, time, durationMins);
-                      }}
-                    />
-                  </Field>
-                  <Field label="Time" htmlFor="schedule-time">
-                    <Input
-                      id="schedule-time"
-                      type="time"
-                      value={time}
-                      onChange={(e) => {
-                        setTime(e.target.value);
-                        checkTimeAvailability(date, e.target.value, durationMins);
-                      }}
-                    />
-                  </Field>
-                </div>
+                {!coordinate && (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Times in {browserTimeZone}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Date" htmlFor="schedule-date">
+                        <Input
+                          id="schedule-date"
+                          type="date"
+                          value={date}
+                          onChange={(e) => {
+                            setDate(e.target.value);
+                            checkTimeAvailability(
+                              e.target.value,
+                              time,
+                              durationMins,
+                            );
+                          }}
+                        />
+                      </Field>
+                      <Field label="Time" htmlFor="schedule-time">
+                        <Input
+                          id="schedule-time"
+                          type="time"
+                          value={time}
+                          onChange={(e) => {
+                            setTime(e.target.value);
+                            checkTimeAvailability(
+                              date,
+                              e.target.value,
+                              durationMins,
+                            );
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Right column */}
@@ -386,6 +509,7 @@ export function ScheduleDialog({
                 />
 
                 <InterviewerSelect
+                  label="Lead interviewer"
                   value={interviewerId}
                   onChange={(v) => {
                     setInterviewerId(v);
@@ -422,35 +546,39 @@ export function ScheduleDialog({
               </div>
             </div>
 
-            {availabilityWarning ? (
+            {!coordinate && availabilityWarning ? (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>{availabilityWarning}</span>
               </div>
             ) : null}
-            {checkingAvailability ? (
-              <p className="text-xs text-muted-foreground">Checking availability…</p>
+            {!coordinate && checkingAvailability ? (
+              <p className="text-xs text-muted-foreground">
+                Checking availability…
+              </p>
             ) : null}
 
-            <label className="flex items-start gap-3 rounded-lg border bg-muted/20 px-3.5 py-3">
-              <input
-                type="checkbox"
-                checked={sendEmail}
-                onChange={(event) => setSendEmail(event.target.checked)}
-                disabled={!hasCandidateEmail}
-                className="mt-0.5 size-4 accent-primary"
-              />
-              <span className="space-y-0.5">
-                <span className="block text-sm font-medium">
-                  Send invitation email
+            {!coordinate && (
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/20 px-3.5 py-3">
+                <input
+                  type="checkbox"
+                  checked={sendEmail}
+                  onChange={(event) => setSendEmail(event.target.checked)}
+                  disabled={!hasCandidateEmail}
+                  className="mt-0.5 size-4 accent-primary"
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">
+                    Send invitation email
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {hasCandidateEmail
+                      ? "The candidate will receive the interview details after scheduling."
+                      : "Add an email address to this candidate before sending an invitation."}
+                  </span>
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {hasCandidateEmail
-                    ? "The candidate will receive the interview details after scheduling."
-                    : "Add an email address to this candidate before sending an invitation."}
-                </span>
-              </span>
-            </label>
+              </label>
+            )}
           </div>
         )}
 
@@ -461,13 +589,17 @@ export function ScheduleDialog({
             </Button>
           </DialogClose>
           <Button onClick={submit} disabled={isPending || !hasApplication}>
-            {isPending
-              ? sendEmail && hasCandidateEmail
-                ? "Scheduling & sending…"
-                : "Scheduling…"
-              : sendEmail && hasCandidateEmail
-                ? "Schedule & send invite"
-                : "Schedule without email"}
+            {coordinate
+              ? isPending
+                ? "Offering times…"
+                : "Offer times in portal"
+              : isPending
+                ? sendEmail && hasCandidateEmail
+                  ? "Scheduling & sending…"
+                  : "Scheduling…"
+                : sendEmail && hasCandidateEmail
+                  ? "Schedule & send invite"
+                  : "Schedule without email"}
           </Button>
         </DialogFooter>
       </DialogContent>
