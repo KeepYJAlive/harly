@@ -1,4 +1,5 @@
 import "server-only";
+import { availablePortalSlots } from "./available-slots";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   applications,
@@ -69,6 +70,18 @@ async function listRequests(
         )
         .orderBy(asc(slots.scheduledAt))
     : [];
+  const visibleSlots = candidateId
+    ? (
+        await Promise.all(
+          rows.map(({ request }) =>
+            availablePortalSlots(
+              request,
+              allSlots.filter((s) => s.requestId === request.id),
+            ),
+          ),
+        )
+      ).flat()
+    : allSlots;
   return rows.map(({ request, ...context }) => ({
     ...context,
     id: request.id,
@@ -85,7 +98,7 @@ async function listRequests(
       )
         ? ("expired" as const)
         : request.status,
-    slots: allSlots
+    slots: visibleSlots
       .filter((s) => s.requestId === request.id)
       .map((s) => ({
         id: s.id,

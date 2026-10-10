@@ -172,6 +172,7 @@ export function RescheduleDrawer({
               selected.
             </p>
             <SlotFields
+                durationMins={Number(durationMins)}
               values={slots}
               onChange={setSlots}
               timeZone={slotTimeZone}
@@ -236,6 +237,7 @@ export function RescheduleDrawer({
             value={durationMins}
             onValueChange={(value) => {
               setDurationMins(value);
+                    if (coordinate) setSlots([]);
               checkTimeAvailability(date, time, value);
             }}
           >

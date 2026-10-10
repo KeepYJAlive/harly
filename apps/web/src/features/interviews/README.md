@@ -7,6 +7,17 @@ this feature does not add individual calendar connections.
 
 ## Coordination
 
+Recruiters drag availability ranges on a two-week calendar and navigate one week at a
+time. Each range becomes 15-minute start options that fit the full interview duration.
+Changing the duration clears the current selection so it can be offered again.
+
+Candidates open `/portal/applications/[applicationId]/schedule/[requestId]` to use the
+same calendar interface. Only recruiter-offered starts appear, with past times and
+confirmed interview-team conflicts removed. Master-calendar event details stay private.
+Confirmation checks conflicts again under transaction locks. A reschedule excludes its
+own existing reservation from availability filtering. Candidate alternatives use the
+range selector and remain tentative until recruiter approval.
+
 - `interview_scheduling_requests` holds interview details and coordination status.
   It references the application; candidate/job/department come from that application.
 - `interview_scheduling_slots` stores UTC instants plus the proposer's IANA timezone.

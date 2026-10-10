@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_AVAILABILITY_SLOTS } from "./availability-calendar";
 import { parseScheduledAt } from "./shared";
 
 export const timeZoneSchema = z
@@ -34,7 +35,7 @@ export function normalizeTeam(
 export const slotsSchema = z
   .array(z.string().min(1))
   .min(1, "Offer at least one time.")
-  .max(12);
+  .max(MAX_AVAILABILITY_SLOTS);
 export function parseSlots(values: string[], timeZone: string) {
   timeZoneSchema.parse(timeZone);
   const slots = slotsSchema

@@ -1,21 +1,19 @@
 "use client";
+import Link from "next/link";
+import type { Route } from "next";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/notification-island/toast";
-import {
-  formatSlot,
-  schedulingLabels,
-  timeZoneSchema,
-} from "./scheduling-shared";
+import { schedulingLabels, timeZoneSchema } from "./scheduling-shared";
 import type { SchedulingRequestItem } from "./scheduling-data";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import { localCalendarParts } from "./availability-calendar";
 import { SlotFields, useBrowserTimeZone } from "./CoordinationFields";
 import {
   approveSchedulingSlotAction,
   cancelSchedulingRequestAction,
   offerSchedulingSlotsAction,
-  proposePortalSchedulingSlotsAction,
-  selectPortalSchedulingSlotAction,
 } from "./scheduling-actions";
 
 export function SchedulingRequests({
@@ -45,6 +43,7 @@ function RequestCard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [selectedId, setSelectedId] = useState<string>();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState([""]);
   const browserTimeZone = useBrowserTimeZone();
@@ -85,62 +84,59 @@ function RequestCard({
         {request.durationMins} min · {request.mode} · {request.department} ·{" "}
         {timeZone}
       </p>
-      {open && (
+      {portal && open && (
+        <Button asChild>
+          <Link
+            href={
+              `/portal/applications/${request.applicationId}/schedule/${request.id}` as Route
+            }
+          >
+            {request.status === "pending_review"
+              ? "View proposed times"
+              : "Choose an interview time"}
+          </Link>
+        </Button>
+      )}
+      {open && !portal && (
         <>
           <p className="text-sm">
             {request.status === "pending_review"
-              ? portal
-                ? "Times proposed — awaiting review. Your proposed times are requests and are not confirmed until approved by the interview team."
-                : "Candidate proposed alternative interview times. Approve a time or offer different times."
+              ? "Candidate proposed alternative interview times. Approve a time or offer different times."
               : "Choose an interview time. These options are tentative until selected."}
           </p>
-          <div className="space-y-2">
-            {request.slots
-              .filter((s) => ["offered", "proposed"].includes(s.status))
-              .map((slot) => (
-                <div
-                  key={slot.id}
-                  className="flex flex-wrap items-center justify-between gap-2"
-                >
-                  <span>
-                    {formatSlot(slot.scheduledAt, displayTimeZone)} ·{" "}
-                    {slot.proposedBy === "candidate"
-                      ? "Candidate proposal"
-                      : "Offered"}
-                  </span>
-                  {(!portal || slot.status === "offered") && (
-                    <Button
-                      disabled={pending}
-                      variant="outline"
-                      onClick={() =>
-                        run(() =>
-                          portal
-                            ? selectPortalSchedulingSlotAction({
-                                requestId: request.id,
-                                slotId: slot.id,
-                                timeZone,
-                              })
-                            : approveSchedulingSlotAction({
-                                requestId: request.id,
-                                slotId: slot.id,
-                              }),
-                        )
-                      }
-                    >
-                      {portal ? "Select this time" : "Approve selected time"}
-                    </Button>
-                  )}
-                </div>
-              ))}
-          </div>
+          <AvailabilityCalendar
+            mode="choose"
+            choices={request.slots.filter((s) =>
+              ["offered", "proposed"].includes(s.status),
+            )}
+            selectedId={selectedId}
+            onSelect={(slot) => setSelectedId(slot.id)}
+            durationMins={request.durationMins}
+            timeZone={displayTimeZone}
+            today={localCalendarParts(new Date(), displayTimeZone).day}
+            disabled={pending}
+          />
+          {selectedId && (
+            <Button
+              disabled={pending}
+              onClick={() =>
+                run(() =>
+                  approveSchedulingSlotAction({
+                    requestId: request.id,
+                    slotId: selectedId,
+                  }),
+                )
+              }
+            >
+              Approve selected time
+            </Button>
+          )}
           <Button
             variant="outline"
             disabled={pending}
             onClick={() => setEditing(!editing)}
           >
-            {portal
-              ? "None of these work — propose alternatives"
-              : "Offer different times"}
+            Offer different times
           </Button>
           {!portal && (
             <Button
@@ -156,6 +152,7 @@ function RequestCard({
           {editing && (
             <div className="space-y-3">
               <SlotFields
+                durationMins={request.durationMins}
                 values={values}
                 onChange={setValues}
                 timeZone={timeZone}
@@ -165,21 +162,15 @@ function RequestCard({
                 disabled={pending}
                 onClick={() =>
                   run(() =>
-                    portal
-                      ? proposePortalSchedulingSlotsAction({
-                          requestId: request.id,
-                          slots: values,
-                          timeZone,
-                        })
-                      : offerSchedulingSlotsAction({
-                          requestId: request.id,
-                          slots: values,
-                          timeZone,
-                        }),
+                    offerSchedulingSlotsAction({
+                      requestId: request.id,
+                      slots: values,
+                      timeZone,
+                    }),
                   )
                 }
               >
-                {portal ? "Submit times for review" : "Send new options"}
+                Send new options
               </Button>
             </div>
           )}

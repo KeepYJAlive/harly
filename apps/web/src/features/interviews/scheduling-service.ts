@@ -263,7 +263,7 @@ export async function createSchedulingRequest(
       type: "interview_scheduled",
       title: "Choose an interview time",
       body: "The interview team has offered times. Choose a time or propose alternatives in your application.",
-      href: `/portal/applications/${application.id}`,
+      href: `/portal/applications/${application.id}/schedule/${request.id}`,
       metadata: { requestId: request.id },
     });
     return request.id;
@@ -329,7 +329,7 @@ export async function proposeSchedulingSlots(
         type: "interview_scheduled",
         title: "Choose an interview time",
         body: "The interview team has offered new times.",
-        href: `/portal/applications/${application.id}`,
+        href: `/portal/applications/${application.id}/schedule/${request.id}`,
       });
     await tx.insert(activityEvents).values({
       workspaceId: actor.workspaceId,
