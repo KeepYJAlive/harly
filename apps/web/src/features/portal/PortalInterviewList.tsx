@@ -17,8 +17,14 @@ type PortalInterviewListProps = {
   heading?: string;
 };
 
-function formatTimeRange(scheduledAt: Date, durationMins: number): string {
+function formatTimeRange(
+  scheduledAt: Date,
+  durationMins: number,
+  timeZone?: string,
+): string {
   const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "short",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -29,6 +35,7 @@ function formatTimeRange(scheduledAt: Date, durationMins: number): string {
 
 /** A video meeting link: explicit meetLink, or a URL that landed in `location`. */
 function resolveMeetingUrl(interview: PortalInterview): string | null {
+  if (interview.status !== "scheduled") return null;
   if (interview.meetingUrl) return interview.meetingUrl;
   if (interview.location && /^https?:\/\//i.test(interview.location)) {
     return interview.location;
@@ -135,14 +142,21 @@ export function PortalInterviewList({
                     : "flex items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
                 }
               >
-                <InterviewDateBadge date={interview.scheduledAt} />
+                <InterviewDateBadge
+                  timeZone={interview.timeZone ?? "UTC"}
+                  date={interview.scheduledAt}
+                />
 
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-semibold text-foreground">
                     {interview.title ?? formatEnumLabel(interview.type)}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    {formatTimeRange(interview.scheduledAt, interview.durationMins)}
+                    {formatTimeRange(
+                      interview.scheduledAt,
+                      interview.durationMins,
+                      interview.timeZone ?? "UTC",
+                    )}
                   </p>
                   {/* Onsite address line */}
                   {interview.mode === "onsite" && address && (

@@ -13,6 +13,8 @@ import {
   candidateFiles,
   candidates,
   interviews,
+  interviewParticipants,
+  interviewSchedulingRequests,
   jobs,
   organization,
   user as authUsers,
@@ -72,8 +74,22 @@ import {
   processEmailOutbox,
 } from "@/lib/email/outbox-processor";
 import { findWorkspaceMember } from "./core";
+import { existingSyncProviders, persistSyncIntents } from "./sync-intent";
 import { lockInterviewerSchedule } from "./booking-lock";
 import { serializeInterview } from "./service";
+
+import {
+  normalizeTeam,
+  teamSchema,
+  type InterviewParticipant,
+} from "./scheduling-shared";
+import {
+  getInterviewTeam,
+  lockAndCheckTeam,
+  participantCondition,
+  participantEmails,
+  validateInterviewTeam,
+} from "./participants";
 
 const log = createLogger("interviews");
 
@@ -144,7 +160,7 @@ async function hasInterviewerConflict(
 ): Promise<boolean> {
   const conditions = [
     eq(interviews.workspaceId, input.workspaceId),
-    eq(interviews.interviewerId, input.interviewerId),
+    participantCondition([input.interviewerId])!,
     eq(interviews.status, "scheduled"),
     sql`${interviews.scheduledAt} < ${new Date(input.when.getTime() + input.durationMins * 60_000).toISOString()}`,
     sql`${interviews.scheduledAt} + (${interviews.durationMins} * interval '1 minute') > ${input.when.toISOString()}`,
@@ -163,7 +179,7 @@ async function hasInterviewerConflict(
 function formatInterviewWhen(when: Date, timeZone?: string | null): string {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "long",
-    timeStyle: "short",
+    timeStyle: "long",
     // Never let the app server's process TZ decide what the candidate sees.
     timeZone: timeZone ?? "UTC",
   }).format(when);
@@ -188,6 +204,7 @@ const meetingProviders = [
 type MeetingProvider = (typeof meetingProviders)[number];
 
 const scheduleSchema = z.object({
+  participants: teamSchema,
   workspaceId: z.string().min(1),
   candidateId: z.string().min(1),
   applicationId: z
@@ -249,6 +266,7 @@ const scheduleSchema = z.object({
 export type InterviewEmailStatus = "sent" | "failed" | "skipped";
 
 export type ScheduleInterviewInput = {
+  participants?: InterviewParticipant[];
   workspaceId: string;
   candidateId: string;
   applicationId: string;
@@ -318,13 +336,20 @@ export async function scheduleInterview(
       };
     }
 
+    const team = normalizeTeam(data.interviewerId, data.participants);
+    await validateInterviewTeam(workspace.id, team);
+
     const scheduledEvent: { current: PersistedDomainEvent | null } = {
       current: null,
     };
     const result = await db.transaction(async (tx) => {
       // The application is the anchor: it ties the interview to a candidate AND a job.
       const [application] = await tx
-        .select({ id: applications.id, jobId: applications.jobId })
+        .select({
+          id: applications.id,
+          jobId: applications.jobId,
+          timeZone: candidates.timezone,
+        })
         .from(applications)
         .innerJoin(
           candidates,
@@ -355,6 +380,12 @@ export async function scheduleInterview(
         return { success: false as const, error: "Application not found." };
       }
 
+      await lockAndCheckTeam(tx, {
+        workspaceId: workspace.id,
+        userIds: team.map((p) => p.userId),
+        when,
+        durationMins: data.durationMins,
+      });
       if (data.interviewerId) {
         await lockInterviewerSchedule(tx, workspace.id, data.interviewerId);
         const conflict = await hasInterviewerConflict(tx, {
@@ -395,6 +426,11 @@ export async function scheduleInterview(
         throw new Error("Interview could not be created.");
       }
 
+      if (team.length)
+        await tx
+          .insert(interviewParticipants)
+          .values(team.map((p) => ({ ...p, interviewId: interview.id })));
+
       await tx.insert(activityEvents).values({
         workspaceId: workspace.id,
         actorId: user.id,
@@ -414,7 +450,7 @@ export async function scheduleInterview(
         candidateId: data.candidateId,
         type: "interview_scheduled",
         title: "Interview scheduled",
-        body: `Your interview is scheduled for ${formatInterviewWhen(when, data.timeZone)}.`,
+        body: `Your interview is scheduled for ${formatInterviewWhen(when, application.timeZone)}.`,
         href: `/portal/applications/${application.id}`,
         metadata: { interviewId: interview.id, applicationId: application.id },
       });
@@ -497,9 +533,15 @@ export async function scheduleInterview(
         interviewerName = interviewer?.name ?? undefined;
       }
 
-      const attendees = [recipient?.email, interviewerEmail].filter(
-        (e): e is string => Boolean(e),
-      );
+      const attendees = [
+        ...new Set(
+          [
+            ...(await participantEmails(result.interviewId)),
+            recipient?.email,
+            interviewerEmail,
+          ].filter((e): e is string => Boolean(e)),
+        ),
+      ];
 
       const summary =
         data.title ?? INTERVIEW_TYPE_LABEL[data.type] ?? "Interview";
@@ -534,7 +576,7 @@ export async function scheduleInterview(
               start: when,
               durationMins: data.durationMins,
               attendees: attendees.length > 0 ? attendees : undefined,
-              location: data.location ?? undefined,
+              location: deliveryLocation ?? data.location ?? undefined,
               mode: conferenceData ? "video" : undefined,
               timeZone: data.timeZone ?? "UTC",
             }),
@@ -724,7 +766,10 @@ export async function scheduleInterview(
           }
         }
         const [synced] = await db
-          .select({ meetLink: interviews.meetLink })
+          .select({
+            meetLink: interviews.meetLink,
+            gcalEventId: interviews.gcalEventId,
+          })
           .from(interviews)
           .where(
             and(
@@ -734,6 +779,11 @@ export async function scheduleInterview(
           )
           .limit(1);
         deliveryLocation = synced?.meetLink ?? deliveryLocation;
+        if (
+          !synced?.gcalEventId &&
+          (await getWorkspaceGCalConfig(workspace.id))
+        )
+          await syncCalendar(false);
         if (!deliveryLocation && warnings.length === 0) {
           warnings.push(
             "The interview was saved, but no video link could be created.",
@@ -879,7 +929,10 @@ export async function setInterviewStatus(input: {
     const updated = await db.transaction(async (tx) => {
       const next = await tx
         .update(interviews)
-        .set({ status: parsed.data.status })
+        .set({
+          status: parsed.data.status,
+          ...(parsed.data.status === "canceled" ? { meetLink: null } : {}),
+        })
         .where(
           and(
             eq(interviews.id, parsed.data.interviewId),
@@ -889,6 +942,18 @@ export async function setInterviewStatus(input: {
         )
         .returning();
       const nextInterview = next[0];
+      if (nextInterview && parsed.data.status === "canceled") {
+        await persistSyncIntents(
+          tx,
+          nextInterview,
+          existingSyncProviders(nextInterview),
+          true,
+        );
+        await tx
+          .update(interviewSchedulingRequests)
+          .set({ status: "cancelled" })
+          .where(eq(interviewSchedulingRequests.interviewId, nextInterview.id));
+      }
       if (nextInterview) {
         statusEvent.current = await persistDomainEvent(tx, {
           name: `interview.${parsed.data.status}`,
@@ -1183,6 +1248,7 @@ export async function rescheduleInterview(input: {
     const [info] = await db
       .select({
         email: candidates.email,
+        timeZone: candidates.timezone,
         firstName: candidates.firstName,
         companyName: organization.name,
         jobTitle: jobs.title,
@@ -1234,9 +1300,15 @@ export async function rescheduleInterview(input: {
         .limit(1);
       interviewerEmail = interviewer?.email ?? undefined;
     }
-    const attendees = [info?.email, interviewerEmail].filter((e): e is string =>
-      Boolean(e),
-    );
+    const attendees = [
+      ...new Set(
+        [
+          ...(await participantEmails(data.interviewId)),
+          info?.email,
+          interviewerEmail,
+        ].filter((e): e is string => Boolean(e)),
+      ),
+    ];
 
     // Re-validate interviewer availability at the new time (excluding self).
     // scheduleInterview checks this on create; reschedule previously skipped it,
@@ -1417,6 +1489,17 @@ export async function rescheduleInterview(input: {
     }
     let persistedEvent: PersistedDomainEvent | undefined;
     const persisted = await db.transaction(async (tx) => {
+      const team = await getInterviewTeam(data.interviewId, tx);
+      await lockAndCheckTeam(tx, {
+        workspaceId: workspace.id,
+        userIds: [
+          ...team.map((p) => p.userId),
+          ...(info.interviewerId ? [info.interviewerId] : []),
+        ],
+        when,
+        durationMins: data.durationMins,
+        excludeInterviewId: data.interviewId,
+      });
       if (info.interviewerId) {
         await lockInterviewerSchedule(tx, workspace.id, info.interviewerId);
         const conflict = await hasInterviewerConflict(tx, {
@@ -1457,7 +1540,7 @@ export async function rescheduleInterview(input: {
         candidateId: row.candidateId,
         type: "interview_rescheduled",
         title: "Interview rescheduled",
-        body: `Your interview is now scheduled for ${formatInterviewWhen(when, data.timeZone)}.`,
+        body: `Your interview is now scheduled for ${formatInterviewWhen(when, info.timeZone)}.`,
         href: info?.applicationId
           ? `/portal/applications/${info.applicationId}`
           : null,
@@ -1775,9 +1858,15 @@ export async function updateInterview(input: {
         .limit(1);
       interviewerEmail = interviewer?.email ?? undefined;
     }
-    const attendees = [info?.email, interviewerEmail].filter((e): e is string =>
-      Boolean(e),
-    );
+    const attendees = [
+      ...new Set(
+        [
+          ...(await participantEmails(data.interviewId)),
+          info?.email,
+          interviewerEmail,
+        ].filter((e): e is string => Boolean(e)),
+      ),
+    ];
 
     const effectiveScheduledAt = when ?? row.scheduledAt;
     const effectiveDurationMins = data.durationMins ?? row.durationMins;
@@ -2086,6 +2175,42 @@ export async function updateInterview(input: {
     // recreated, keeping DB and provider state consistent.
     let persistedEvent: PersistedDomainEvent | undefined;
     const persisted = await db.transaction(async (tx) => {
+      const team = await getInterviewTeam(data.interviewId, tx);
+      await lockAndCheckTeam(tx, {
+        workspaceId: workspace.id,
+        userIds: [
+          ...team.filter((p) => p.role !== "lead").map((p) => p.userId),
+          ...(effectiveInterviewerId ? [effectiveInterviewerId] : []),
+        ],
+        when: effectiveScheduledAt,
+        durationMins: effectiveDurationMins,
+        excludeInterviewId: data.interviewId,
+      });
+      if (data.interviewerId !== undefined) {
+        await tx
+          .delete(interviewParticipants)
+          .where(
+            and(
+              eq(interviewParticipants.interviewId, data.interviewId),
+              eq(interviewParticipants.role, "lead"),
+            ),
+          );
+        if (effectiveInterviewerId)
+          await tx
+            .insert(interviewParticipants)
+            .values({
+              interviewId: data.interviewId,
+              userId: effectiveInterviewerId,
+              role: "lead",
+            })
+            .onConflictDoUpdate({
+              target: [
+                interviewParticipants.interviewId,
+                interviewParticipants.userId,
+              ],
+              set: { role: "lead" },
+            });
+      }
       if (effectiveInterviewerId) {
         await lockInterviewerSchedule(tx, workspace.id, effectiveInterviewerId);
         if (

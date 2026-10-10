@@ -71,7 +71,20 @@ function txQuery(value: unknown) {
   return q;
 }
 
+vi.mock("./participants", () => ({
+  participantEmails: vi.fn(async () => []),
+  validateInterviewTeam: vi.fn(async () => undefined),
+  getInterviewTeam: vi.fn(async () => []),
+  lockAndCheckTeam: vi.fn(async () => undefined),
+  participantCondition: vi.fn(() => true),
+}));
+vi.mock("./sync-intent", () => ({
+  existingSyncProviders: () => [],
+  persistSyncIntents: vi.fn(async () => undefined),
+}));
 vi.mock("@harly/db", () => ({
+  interviewParticipants: {},
+  interviewSchedulingRequests: {},
   db: {
     select: vi.fn(makeQuery),
     insert: vi.fn(() => ({

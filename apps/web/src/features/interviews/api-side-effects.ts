@@ -46,6 +46,8 @@ import { createLogger } from "@/lib/logger";
 
 import type { Interview } from "@harly/db";
 
+import { participantEmails } from "./participants";
+
 const log = createLogger("interview-api-side-effects");
 
 type ApiInterviewAction = "scheduled" | "rescheduled" | "canceled";
@@ -177,10 +179,17 @@ async function syncCalendarForApi(
   action: ApiInterviewAction,
   strict = false,
   database: typeof db = db,
+  createConference = true,
 ) {
-  const attendees = [context.email, context.interviewerEmail].filter(
-    (email): email is string => Boolean(email),
-  );
+  const attendees = [
+    ...new Set(
+      [
+        ...(await participantEmails(interview.id, database)),
+        context.email,
+        context.interviewerEmail,
+      ].filter((email): email is string => Boolean(email)),
+    ),
+  ];
 
   if (action === "canceled") {
     if (!interview.gcalEventId) return;
@@ -215,7 +224,7 @@ async function syncCalendarForApi(
           start: interview.scheduledAt,
           durationMins: interview.durationMins,
           attendees: attendees.length > 0 ? attendees : undefined,
-          location: interview.location ?? undefined,
+          location: interview.meetLink ?? interview.location ?? undefined,
           timeZone: "UTC",
         }),
       isSuccess: Boolean,
@@ -238,8 +247,11 @@ async function syncCalendarForApi(
         start: interview.scheduledAt,
         durationMins: interview.durationMins,
         attendees: attendees.length > 0 ? attendees : undefined,
-        location: interview.location ?? undefined,
-        mode: interview.mode === "video" ? "video" : undefined,
+        location: interview.meetLink ?? interview.location ?? undefined,
+        mode:
+          createConference && interview.mode === "video" && !interview.meetLink
+            ? "video"
+            : undefined,
         timeZone: "UTC",
       }),
     isSuccess: (result) => result.ok,
@@ -662,20 +674,27 @@ export async function runApiInterviewSideEffects(input: {
     if (input.strictSideEffects) throw error;
   }
 
-  if (
-    videoSync !== "calendar" &&
-    (input.interview.mode !== "video" ||
-      videoSync === "none" ||
-      (input.action === "rescheduled" && Boolean(input.interview.gcalEventId)))
-  ) {
+  const [refreshed] = await database
+    .select()
+    .from(interviews)
+    .where(
+      and(
+        eq(interviews.id, input.interview.id),
+        eq(interviews.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1);
+  const effectiveInterview = refreshed?.id ? refreshed : input.interview;
+  if (videoSync !== "calendar") {
     try {
       await syncCalendarForApi(
         input.workspaceId,
-        input.interview,
+        effectiveInterview,
         context,
         input.action,
         input.strictSideEffects,
         database,
+        videoSync !== "video" && input.meetingProvider !== "external",
       );
     } catch (error) {
       log.error(
@@ -691,7 +710,7 @@ export async function runApiInterviewSideEffects(input: {
       input.workspaceId,
       input.actorUserId,
       input.action,
-      input.interview,
+      effectiveInterview,
       context,
       database,
     );
@@ -703,6 +722,7 @@ export async function runApiInterviewSideEffects(input: {
 export function interviewPortalNotification(input: {
   action: ApiInterviewAction;
   interview: Interview;
+  timeZone?: string | null;
 }) {
   const labels: Record<ApiInterviewAction, { title: string; type: string }> = {
     scheduled: { title: "Interview scheduled", type: "interview_scheduled" },
@@ -720,7 +740,7 @@ export function interviewPortalNotification(input: {
     body:
       input.action === "canceled"
         ? "Your interview has been canceled."
-        : `${label.title} for ${input.interview.scheduledAt.toISOString()}.`,
+        : `${label.title} for ${new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "long", timeZone: input.timeZone || "UTC" }).format(input.interview.scheduledAt)}.`,
     href: `/portal/applications/${input.interview.applicationId}`,
     metadata: {
       interviewId: input.interview.id,

@@ -208,7 +208,7 @@ export async function getFreeBusy(
   const data = await gcalFetch<{
     calendars?: Record<
       string,
-      { busy?: Array<{ start: string; end: string }> }
+      { busy?: Array<{ start: string; end: string }>; errors?: unknown[] }
     >;
   }>(client, "/freeBusy", {
     method: "POST",
@@ -219,5 +219,8 @@ export async function getFreeBusy(
     }),
   });
 
-  return data.calendars?.[calendarId]?.busy ?? [];
+  const calendar = data.calendars?.[calendarId];
+  if (!calendar || calendar.errors?.length || !calendar.busy)
+    throw new Error("Calendar availability is unknown.");
+  return calendar.busy;
 }

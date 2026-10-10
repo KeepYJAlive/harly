@@ -5,9 +5,11 @@ import { and, eq, gt, lt, ne } from "drizzle-orm";
 import { db, interviews } from "@harly/db";
 import { getWorkspaceGCalConfig } from "@/lib/gcal/config";
 import { getFreeBusy } from "@/lib/gcal/client";
+import { participantCondition } from "@/features/interviews/participants";
 import { getWorkspaceContext } from "@/features/workspaces/context";
 
 type AvailabilityResult = {
+  status: "available" | "conflict" | "unknown";
   gcalBusy: Array<{ start: string; end: string }>;
   internalConflicts: Array<{
     interviewId: string;
@@ -36,6 +38,7 @@ export async function checkAvailability(opts: {
 
     // 1. GCal free/busy
     let gcalBusy: Array<{ start: string; end: string }> = [];
+    let externalKnown = false;
     const config = await getWorkspaceGCalConfig(workspace.id);
     if (config) {
       try {
@@ -45,6 +48,7 @@ export async function checkAvailability(opts: {
           opts.timeMin,
           opts.timeMax,
         );
+        externalKnown = true;
       } catch {
         // GCal check failing shouldn't block scheduling.
       }
@@ -55,7 +59,7 @@ export async function checkAvailability(opts: {
     if (opts.interviewerId) {
       const conditions = [
         eq(interviews.workspaceId, workspace.id),
-        eq(interviews.interviewerId, opts.interviewerId),
+        participantCondition([opts.interviewerId])!,
         eq(interviews.status, "scheduled"),
         lt(interviews.scheduledAt, opts.timeMax),
         gt(
@@ -96,8 +100,22 @@ export async function checkAvailability(opts: {
       }));
     }
 
-    return { gcalBusy, internalConflicts };
+    return {
+      gcalBusy,
+      internalConflicts,
+      status:
+        gcalBusy.length || internalConflicts.length
+          ? "conflict"
+          : externalKnown
+            ? "available"
+            : "unknown",
+    };
   } catch {
-    return { gcalBusy: [], internalConflicts: [], error: "Could not check availability." };
+    return {
+      status: "unknown",
+      gcalBusy: [],
+      internalConflicts: [],
+      error: "Could not check availability.",
+    };
   }
 }

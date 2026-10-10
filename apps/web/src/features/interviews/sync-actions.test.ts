@@ -19,12 +19,28 @@ function query() {
   chain.innerJoin = () => chain;
   chain.leftJoin = () => chain;
   chain.where = () => chain;
+  chain.then = (resolve: (value: unknown[]) => void) =>
+    Promise.resolve([]).then(resolve);
   chain.limit = async () => (mocks.row ? [mocks.row] : []);
   return chain;
 }
 
+vi.mock("./participants", () => ({
+  participantEmails: vi.fn(async () => []),
+  validateInterviewTeam: vi.fn(async () => undefined),
+  getInterviewTeam: vi.fn(async () => []),
+  lockAndCheckTeam: vi.fn(async () => undefined),
+  participantCondition: vi.fn(() => true),
+}));
+vi.mock("./sync-intent", () => ({
+  existingSyncProviders: () => [],
+  persistSyncIntents: vi.fn(async () => undefined),
+}));
 vi.mock("@harly/db", () => ({
-  db: { select: () => query() },
+  db: {
+    select: () => query(),
+    update: () => ({ set: () => ({ where: async () => undefined }) }),
+  },
   candidates: {
     email: "candidateEmail",
     id: "candidateId",
@@ -43,7 +59,11 @@ vi.mock("@harly/db", () => ({
     jobId: "interviewJobId",
     interviewerId: "interviewerId",
   },
-  jobs: { id: "jobId", workspaceId: "jobWorkspaceId", deletedAt: "jobDeletedAt" },
+  jobs: {
+    id: "jobId",
+    workspaceId: "jobWorkspaceId",
+    deletedAt: "jobDeletedAt",
+  },
   organization: { id: "organizationId", name: "organizationName" },
   user: { id: "userId" },
 }));
@@ -51,6 +71,7 @@ vi.mock("@harly/db", () => ({
 vi.mock("drizzle-orm", () => ({
   and: (...values: unknown[]) => values,
   eq: (...values: unknown[]) => values,
+  ne: (...values: unknown[]) => values,
   isNull: (...values: unknown[]) => values,
 }));
 

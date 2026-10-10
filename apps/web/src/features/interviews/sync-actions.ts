@@ -1,7 +1,9 @@
 "use server";
 
+import { participantEmails } from "./participants";
+
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 
 import {
   candidates,
@@ -135,13 +137,19 @@ export async function retryInterviewSyncForWorkspace(input: {
     }
 
     const { sync, interview } = row;
-    const attendees = [row.candidateEmail, row.interviewerEmail].filter(
-      (email): email is string => Boolean(email),
-    );
+    const attendees = [
+      ...new Set(
+        [
+          ...(await participantEmails(interview.id, database)),
+          row.candidateEmail,
+          row.interviewerEmail,
+        ].filter((email): email is string => Boolean(email)),
+      ),
+    ];
     const summary = interview.title ?? TYPE_LABEL[interview.type] ?? "Interview";
     const providerLabel = PROVIDER_LABEL[sync.provider] ?? sync.provider;
 
-    if (sync.operation === "cancel") {
+    if (sync.operation === "cancel" || interview.status === "canceled") {
       const result = await trackInterviewSync({
         workspaceId: workspace.id,
         interviewId: interview.id,
@@ -151,27 +159,39 @@ export async function retryInterviewSyncForWorkspace(input: {
         run: async () => {
           switch (sync.provider) {
             case "google_calendar":
-              if (!interview.gcalEventId && !sync.providerResourceId) {
+              if (
+                !interview.gcalEventId &&
+                !sync.providerResourceId &&
+                interview.status !== "canceled"
+              )
                 return false;
-              }
-              return (await import("@/lib/gcal/sync")).cancelInterviewGCalEvent({
-                workspaceId: workspace.id,
-                interviewId: interview.id,
-                gcalEventId:
-                  interview.gcalEventId ??
-                  sync.providerResourceId ??
-                  gcalEventIdForInterview(interview.id),
-              });
+              return (await import("@/lib/gcal/sync")).cancelInterviewGCalEvent(
+                {
+                  workspaceId: workspace.id,
+                  interviewId: interview.id,
+                  gcalEventId:
+                    interview.gcalEventId ??
+                    sync.providerResourceId ??
+                    gcalEventIdForInterview(interview.id),
+                },
+              );
             case "zoom":
-              if (!interview.zoomMeetingId && !sync.providerResourceId) return false;
-              return (await import("@/lib/zoom/sync")).cancelInterviewZoomMeeting({
+              if (!interview.zoomMeetingId && !sync.providerResourceId)
+                return false;
+              return (
+                await import("@/lib/zoom/sync")
+              ).cancelInterviewZoomMeeting({
                 workspaceId: workspace.id,
                 interviewId: interview.id,
-                zoomMeetingId: interview.zoomMeetingId ?? sync.providerResourceId!,
+                zoomMeetingId:
+                  interview.zoomMeetingId ?? sync.providerResourceId!,
               });
             case "microsoft_teams":
-              if (!interview.teamsMeetingId && !sync.providerResourceId) return false;
-              return (await import("@/lib/outlook/teams-sync")).cancelInterviewTeamsMeeting({
+              if (!interview.teamsMeetingId && !sync.providerResourceId)
+                return false;
+              return (
+                await import("@/lib/outlook/teams-sync")
+              ).cancelInterviewTeamsMeeting({
                 workspaceId: workspace.id,
                 interviewId: interview.id,
                 teamsMeetingId:
@@ -179,7 +199,9 @@ export async function retryInterviewSyncForWorkspace(input: {
               });
             case "jitsi":
               if (!interview.jitsiRoom) return false;
-              return (await import("@/lib/jitsi/sync")).cancelInterviewJitsiMeeting({
+              return (
+                await import("@/lib/jitsi/sync")
+              ).cancelInterviewJitsiMeeting({
                 workspaceId: workspace.id,
                 interviewId: interview.id,
               });
@@ -211,6 +233,18 @@ export async function retryInterviewSyncForWorkspace(input: {
       run: async (): Promise<ProviderRetryResult> => {
         switch (sync.provider) {
           case "google_calendar": {
+            const videoIntents = await database
+              .select({ status: interviewSyncs.status })
+              .from(interviewSyncs)
+              .where(
+                and(
+                  eq(interviewSyncs.interviewId, interview.id),
+                  ne(interviewSyncs.provider, "google_calendar"),
+                  eq(interviewSyncs.operation, "upsert"),
+                ),
+              );
+            if (videoIntents.some((intent) => intent.status !== "synced"))
+              return { ok: false };
             if (interview.gcalEventId) {
               const ok = await updateInterviewGCalEvent({
                 workspaceId: workspace.id,
@@ -219,7 +253,7 @@ export async function retryInterviewSyncForWorkspace(input: {
                 start: interview.scheduledAt,
                 durationMins: interview.durationMins,
                 attendees: attendees.length > 0 ? attendees : undefined,
-                location: interview.location ?? undefined,
+                location: interview.meetLink ?? interview.location ?? undefined,
               });
               return { ok, resourceId: interview.gcalEventId };
             }
@@ -231,8 +265,13 @@ export async function retryInterviewSyncForWorkspace(input: {
               start: interview.scheduledAt,
               durationMins: interview.durationMins,
               attendees: attendees.length > 0 ? attendees : undefined,
-              location: interview.location ?? undefined,
-              mode: interview.mode === "video" ? "video" : undefined,
+              location: interview.meetLink ?? interview.location ?? undefined,
+              mode:
+                interview.mode === "video" &&
+                !interview.meetLink &&
+                videoIntents.length === 0
+                  ? "video"
+                  : undefined,
             });
             return providerResult.ok
               ? { ok: true, resourceId: providerResult.eventId, resourceUrl: providerResult.meetLink }
@@ -324,6 +363,24 @@ export async function retryInterviewSyncForWorkspace(input: {
         success: false,
         error: `${providerLabel} could not complete the synchronization.`,
       };
+    }
+    if (
+      sync.provider !== "google_calendar" &&
+      interview.status === "scheduled"
+    ) {
+      await database
+        .update(interviewSyncs)
+        .set({
+          status: "pending",
+          operation: "upsert",
+          nextRetryAt: new Date(),
+        })
+        .where(
+          and(
+            eq(interviewSyncs.interviewId, interview.id),
+            eq(interviewSyncs.provider, "google_calendar"),
+          ),
+        );
     }
     return { success: true };
   } catch (error) {

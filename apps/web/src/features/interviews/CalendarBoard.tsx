@@ -84,6 +84,8 @@ export function CalendarBoard({
 }) {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [jobFilter, setJobFilter] = useState("all");
   const [interviewerFilter, setInterviewerFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -109,13 +111,27 @@ export function CalendarBoard({
 
   const filtered = useMemo(() => {
     return interviews.filter((iv) => {
+      if (departmentFilter !== "all" && iv.department !== departmentFilter)
+        return false;
+      if (statusFilter !== "all" && iv.status !== statusFilter) return false;
       if (jobFilter !== "all" && iv.jobId !== jobFilter) return false;
-      if (interviewerFilter !== "all" && iv.interviewerId !== interviewerFilter)
+      if (
+        interviewerFilter !== "all" &&
+        iv.interviewerId !== interviewerFilter &&
+        !iv.participants?.some((p) => p.userId === interviewerFilter)
+      )
         return false;
       if (typeFilter !== "all" && iv.type !== typeFilter) return false;
       return true;
     });
-  }, [interviews, jobFilter, interviewerFilter, typeFilter]);
+  }, [
+    interviews,
+    jobFilter,
+    interviewerFilter,
+    typeFilter,
+    departmentFilter,
+    statusFilter,
+  ]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, UpcomingInterviewItem[]>();
@@ -147,7 +163,11 @@ export function CalendarBoard({
     ? (byDay.get(selectedDay) ?? [])
     : [];
   const hasAnyFilter =
-    jobFilter !== "all" || interviewerFilter !== "all" || typeFilter !== "all";
+    departmentFilter !== "all" ||
+    statusFilter !== "all" ||
+    jobFilter !== "all" ||
+    interviewerFilter !== "all" ||
+    typeFilter !== "all";
   const selectedDayHeading = useMemo(() => {
     if (!selectedDay) return "";
     const [y, m, d] = selectedDay.split("-").map(Number);
@@ -193,6 +213,34 @@ export function CalendarBoard({
       </header>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card/50 p-2.5">
+        <select
+          aria-label="Department"
+          className="rounded border bg-background p-2 text-xs"
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+        >
+          <option value="all">All departments</option>
+          {[
+            ...new Set(interviews.map((i) => i.department).filter(Boolean)),
+          ].map((d) => (
+            <option key={d} value={d!}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Status"
+          className="rounded border bg-background p-2 text-xs"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="all">All statuses</option>
+          {["scheduled", "completed", "canceled"].map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
         <FunnelIcon className="ml-1 size-4 text-muted-foreground" />
         <Select value={jobFilter} onValueChange={setJobFilter}>
           <SelectTrigger className="h-8 w-auto min-w-32 text-xs">
@@ -237,6 +285,8 @@ export function CalendarBoard({
           <button
             type="button"
             onClick={() => {
+              setDepartmentFilter("all");
+              setStatusFilter("all");
               setJobFilter("all");
               setInterviewerFilter("all");
               setTypeFilter("all");
@@ -297,7 +347,8 @@ export function CalendarBoard({
                                 {iv.candidateName}
                               </span>
                               <span className="block truncate text-xs text-muted-foreground">
-                                {interviewTypeLabel(iv.type)} · {iv.jobTitle}
+                                {interviewTypeLabel(iv.type)} · {iv.jobTitle} ·{" "}
+                                {iv.department} · {iv.status}
                               </span>
                             </span>
                           </Link>
@@ -485,8 +536,14 @@ export function CalendarBoard({
                               </span>
                               <span className="block truncate text-xs text-muted-foreground">
                                 {interviewTypeLabel(iv.type)} · {iv.jobTitle} ·{" "}
-                                {interviewModeLabel(iv.mode)}
+                                {interviewModeLabel(iv.mode)} · {iv.department}{" "}
+                                · {iv.status}
                               </span>
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {iv.participants
+                                ?.map((p) => `${p.name} (${p.role})`)
+                                .join(", ")}
                             </span>
                             {iv.interviewerName ? (
                               <UserAvatar
@@ -546,7 +603,7 @@ export function CalendarBoard({
                                     <span>{iv.location}</span>
                                   </div>
                                 ) : null}
-                                {iv.meetLink ? (
+                                {iv.status === "scheduled" && iv.meetLink ? (
                                   <div className="flex items-center gap-1.5">
                                     <VideoCameraIcon className="size-3.5 shrink-0" />
                                     <a

@@ -16,6 +16,7 @@ type Interviewer = {
 };
 
 type InterviewCardProps = {
+  timeZone?: string;
   title: string;
   scheduledAt: Date;
   durationMins: number;
@@ -28,6 +29,7 @@ type InterviewCardProps = {
 
 export function PortalInterviewCard({
   title,
+  timeZone,
   scheduledAt,
   durationMins,
   location,
@@ -37,6 +39,8 @@ export function PortalInterviewCard({
   compact = false,
 }: InterviewCardProps) {
   const timeStr = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "short",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -44,6 +48,8 @@ export function PortalInterviewCard({
 
   const endTime = new Date(scheduledAt.getTime() + durationMins * 60_000);
   const endTimeStr = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "short",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -54,7 +60,11 @@ export function PortalInterviewCard({
   if (compact) {
     const body = (
       <div className="flex items-start gap-3 py-3">
-        <InterviewDateBadge date={scheduledAt} variant="compact" />
+        <InterviewDateBadge
+          timeZone={timeZone}
+          date={scheduledAt}
+          variant="compact"
+        />
         <div className="min-w-0 flex-1">
           <h4 className="truncate text-sm font-semibold text-foreground">
             {title}
@@ -86,7 +96,7 @@ export function PortalInterviewCard({
 
   const card = (
     <div className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-all hover:shadow-md">
-      <InterviewDateBadge date={scheduledAt} />
+      <InterviewDateBadge timeZone={timeZone} date={scheduledAt} />
 
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-base font-semibold text-foreground group-hover:text-primary">
@@ -123,7 +133,7 @@ export function PortalInterviewCard({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all",
-              "bg-pine hover:bg-pine-strong active:scale-[0.98]"
+              "bg-pine hover:bg-pine-strong active:scale-[0.98]",
             )}
           >
             <VideoCameraIcon className="size-4" />
@@ -147,7 +157,7 @@ export function PortalInterviewCard({
                 >
                   {(interviewer.name ?? "?").charAt(0).toUpperCase()}
                 </div>
-              )
+              ),
             )}
             {interviewers.length > 3 && (
               <div className="flex size-8 items-center justify-center rounded-full border-2 border-background bg-foreground text-xs font-semibold text-background">

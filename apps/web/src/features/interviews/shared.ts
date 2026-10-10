@@ -59,6 +59,8 @@ export type UpcomingInterviewItem = CandidateInterviewItem & {
   candidateId: string;
   candidateName: string;
   jobId: string;
+  department?: string | null;
+  participants?: { userId: string; name: string; role: string }[];
 };
 
 /**
@@ -85,9 +87,13 @@ export function parseScheduledAt(value: string, timeZone?: string | null): Date 
     ? `${value}:00`
     : value;
   const wallTime = new Date(`${wallValue}Z`);
-  if (Number.isNaN(wallTime.getTime())) return new Date(value);
+  if (
+    Number.isNaN(wallTime.getTime()) ||
+    wallTime.toISOString().slice(0, 19) !== wallValue
+  )
+    throw new RangeError("Invalid interview date/time.");
 
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -96,22 +102,40 @@ export function parseScheduledAt(value: string, timeZone?: string | null): Date 
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(wallTime);
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, Number(part.value)]),
+  });
+  const represented = (instant: number) => {
+    const values = Object.fromEntries(
+      formatter
+        .formatToParts(new Date(instant))
+        .filter((p) => p.type !== "literal")
+        .map((p) => [p.type, Number(p.value)]),
+    );
+    return Date.UTC(
+      values.year,
+      values.month - 1,
+      values.day,
+      values.hour,
+      values.minute,
+      values.second,
+    );
+  };
+  // Sample both sides of any DST change, then round-trip each possible offset.
+  // Nonexistent and ambiguous local times require an explicit offset from the caller.
+  const target = wallTime.getTime();
+  const offsets = new Set(
+    [-36, 0, 36].map((hours) => {
+      const sample = target + hours * 3_600_000;
+      return represented(sample) - sample;
+    }),
   );
-  const represented = Date.UTC(
-    values.year,
-    values.month - 1,
-    values.day,
-    values.hour,
-    values.minute,
-    values.second,
-  );
-  const offset = represented - wallTime.getTime();
-  return new Date(wallTime.getTime() - offset);
+  const matches = [...offsets]
+    .map((offset) => target - offset)
+    .filter((instant) => represented(instant) === target);
+  if (matches.length !== 1)
+    throw new RangeError(
+      "This local time is ambiguous or does not exist because of daylight saving time. Choose another time or supply an ISO timestamp with an explicit offset.",
+    );
+  return new Date(matches[0]);
 }
 
 /** Resolve the browser's IANA timezone for client forms. */

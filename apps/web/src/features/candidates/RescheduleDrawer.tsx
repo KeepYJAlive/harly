@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "@/lib/notification-island/toast";
 
+import { coordinateRescheduleAction } from "@/features/interviews/scheduling-actions";
+import {
+  SlotFields,
+  useBrowserTimeZone,
+} from "@/features/interviews/CoordinationFields";
 import { rescheduleInterview } from "@/features/interviews/actions";
 import { checkAvailability } from "@/lib/gcal/availability";
 import { Button } from "@/components/ui/button";
@@ -39,6 +44,11 @@ export function RescheduleDrawer({
   trigger: ReactNode;
 }) {
   const router = useRouter();
+  const [coordinate, setCoordinate] = useState(false);
+  const [slots, setSlots] = useState([""]);
+  const browserTimeZone = useBrowserTimeZone();
+  const [selectedTimeZone, setSlotTimeZone] = useState<string | null>(null);
+  const slotTimeZone = selectedTimeZone ?? browserTimeZone;
   const [open, setOpen] = useState(false);
 
   const prev = new Date(currentScheduledAt);
@@ -69,7 +79,11 @@ export function RescheduleDrawer({
           `This time overlaps with ${result.gcalBusy.length} existing event${result.gcalBusy.length > 1 ? "s" : ""} on your calendar.`,
         );
       } else {
-        setAvailabilityWarning(null);
+        setAvailabilityWarning(
+          result.status === "unknown"
+            ? "External calendar availability is unknown."
+            : null,
+        );
       }
     } catch {
       // Silently fail , don't block rescheduling on availability check.
@@ -85,6 +99,23 @@ export function RescheduleDrawer({
     }
     startTransition(async () => {
       const timeZone = getBrowserTimeZone();
+      if (coordinate) {
+        const result = await coordinateRescheduleAction({
+          interviewId,
+          slots,
+          timeZone: slotTimeZone,
+        });
+        if (!result.success) {
+          toast.error(result.error ?? "Could not coordinate times.");
+          return;
+        }
+        toast.success(
+          "Replacement times offered; the current interview remains scheduled",
+        );
+        setOpen(false);
+        router.refresh();
+        return;
+      }
       const result = await rescheduleInterview({
         interviewId,
         scheduledAt: `${date}T${time}`,
@@ -108,106 +139,134 @@ export function RescheduleDrawer({
       open={open}
       onOpenChange={setOpen}
       trigger={trigger}
-        title="Reschedule interview"
-        description="Update the date, time, or duration. Google Calendar will be updated automatically."
-        footer={
+      title="Reschedule interview"
+      description="Update the date, time, or duration. Google Calendar will be updated automatically."
+      footer={
+        <>
+          <Button
+            variant="outline"
+            disabled={isPending}
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={isPending}>
+            {isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={coordinate}
+            onChange={(e) => setCoordinate(e.target.checked)}
+          />
+          Coordinate replacement times with candidate
+        </label>
+        {coordinate && (
           <>
-            <Button variant="outline" disabled={isPending} onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={isPending}>
-              {isPending ? "Saving…" : "Save changes"}
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Your existing interview stays confirmed until a replacement is
+              selected.
+            </p>
+            <SlotFields
+              values={slots}
+              onChange={setSlots}
+              timeZone={slotTimeZone}
+              onTimeZoneChange={setSlotTimeZone}
+            />
           </>
-        }
-      >
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <label
-                htmlFor="reschedule-date"
-                className="text-[13px] font-medium tracking-tight text-foreground/90"
-              >
-                Date
-              </label>
-              <Input
-                id="reschedule-date"
-                type="date"
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  checkTimeAvailability(e.target.value, time, durationMins);
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <label
-                htmlFor="reschedule-time"
-                className="text-[13px] font-medium tracking-tight text-foreground/90"
-              >
-                Time
-              </label>
-              <Input
-                id="reschedule-time"
-                type="time"
-                value={time}
-                onChange={(e) => {
-                  setTime(e.target.value);
-                  checkTimeAvailability(date, e.target.value, durationMins);
-                }}
-              />
-            </div>
-          </div>
-
-          {availabilityWarning ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>{availabilityWarning}</span>
-            </div>
-          ) : null}
-          {checkingAvailability ? (
-            <p className="text-xs text-muted-foreground">Checking availability…</p>
-          ) : null}
-
-          <div className="space-y-2">
-            <label className="text-[13px] font-medium tracking-tight text-foreground/90">
-              Duration
-            </label>
-            <Select
-              value={durationMins}
-              onValueChange={(value) => {
-                setDurationMins(value);
-                checkTimeAvailability(date, time, value);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DURATIONS.map((d) => (
-                  <SelectItem key={d} value={String(d)}>
-                    {d} min
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+        )}
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <label
-              htmlFor="reschedule-location"
+              htmlFor="reschedule-date"
               className="text-[13px] font-medium tracking-tight text-foreground/90"
             >
-              Location
+              Date
             </label>
             <Input
-              id="reschedule-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Meeting link or address…"
+              id="reschedule-date"
+              type="date"
+              value={date}
+              onChange={(e) => {
+                setDate(e.target.value);
+                checkTimeAvailability(e.target.value, time, durationMins);
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="reschedule-time"
+              className="text-[13px] font-medium tracking-tight text-foreground/90"
+            >
+              Time
+            </label>
+            <Input
+              id="reschedule-time"
+              type="time"
+              value={time}
+              onChange={(e) => {
+                setTime(e.target.value);
+                checkTimeAvailability(date, e.target.value, durationMins);
+              }}
             />
           </div>
         </div>
+
+        {availabilityWarning ? (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{availabilityWarning}</span>
+          </div>
+        ) : null}
+        {checkingAvailability ? (
+          <p className="text-xs text-muted-foreground">
+            Checking availability…
+          </p>
+        ) : null}
+
+        <div className="space-y-2">
+          <label className="text-[13px] font-medium tracking-tight text-foreground/90">
+            Duration
+          </label>
+          <Select
+            value={durationMins}
+            onValueChange={(value) => {
+              setDurationMins(value);
+              checkTimeAvailability(date, time, value);
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DURATIONS.map((d) => (
+                <SelectItem key={d} value={String(d)}>
+                  {d} min
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <label
+            htmlFor="reschedule-location"
+            className="text-[13px] font-medium tracking-tight text-foreground/90"
+          >
+            Location
+          </label>
+          <Input
+            id="reschedule-location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Meeting link or address…"
+          />
+        </div>
+      </div>
     </SidePanel>
   );
 }
