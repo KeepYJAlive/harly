@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/notification-island/toast";
 import { schedulingLabels, timeZoneSchema } from "./scheduling-shared";
 import type { SchedulingRequestItem } from "./scheduling-data";
+import { AvailabilityCalendarDialog } from "./AvailabilityCalendarDialog";
 import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import { localCalendarParts } from "./availability-calendar";
 import { SlotFields, useBrowserTimeZone } from "./CoordinationFields";
@@ -104,33 +105,35 @@ function RequestCard({
               ? "Candidate proposed alternative interview times. Approve a time or offer different times."
               : "Choose an interview time. These options are tentative until selected."}
           </p>
-          <AvailabilityCalendar
-            mode="choose"
-            choices={request.slots.filter((s) =>
-              ["offered", "proposed"].includes(s.status),
-            )}
-            selectedId={selectedId}
-            onSelect={(slot) => setSelectedId(slot.id)}
-            durationMins={request.durationMins}
-            timeZone={displayTimeZone}
-            today={localCalendarParts(new Date(), displayTimeZone).day}
-            disabled={pending}
-          />
-          {selectedId && (
-            <Button
+          <AvailabilityCalendarDialog label="Review available times">
+            <AvailabilityCalendar
+              mode="choose"
+              choices={request.slots.filter((s) =>
+                ["offered", "proposed"].includes(s.status),
+              )}
+              selectedId={selectedId}
+              onSelect={(slot) => setSelectedId(slot.id)}
+              durationMins={request.durationMins}
+              timeZone={displayTimeZone}
+              today={localCalendarParts(new Date(), displayTimeZone).day}
               disabled={pending}
-              onClick={() =>
-                run(() =>
-                  approveSchedulingSlotAction({
-                    requestId: request.id,
-                    slotId: selectedId,
-                  }),
-                )
-              }
-            >
-              Approve selected time
-            </Button>
-          )}
+            />
+            {selectedId && (
+              <Button
+                disabled={pending}
+                onClick={() =>
+                  run(() =>
+                    approveSchedulingSlotAction({
+                      requestId: request.id,
+                      slotId: selectedId,
+                    }),
+                  )
+                }
+              >
+                Approve selected time
+              </Button>
+            )}
+          </AvailabilityCalendarDialog>
           <Button
             variant="outline"
             disabled={pending}

@@ -24,6 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { SidePanel } from "@/components/ui/side-panel";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -98,6 +106,7 @@ export function ScheduleDrawer({
   const [selectedTimeZone, setSlotTimeZone] = useState<string | null>(null);
   const slotTimeZone = selectedTimeZone ?? browserTimeZone;
   const [participants, setParticipants] = useState<InterviewParticipant[]>([]);
+  const [methodOpen, setMethodOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [applicationId, setApplicationId] = useState(
     applications[0]?.applicationId ?? "",
@@ -111,7 +120,9 @@ export function ScheduleDrawer({
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [availabilityWarning, setAvailabilityWarning] = useState<string | null>(null);
+  const [availabilityWarning, setAvailabilityWarning] = useState<string | null>(
+    null,
+  );
   const [checkingAvailability, setCheckingAvailability] = useState(false);
 
   const hasApplication = applications.length > 0;
@@ -202,7 +213,9 @@ export function ScheduleDrawer({
 
   function submit() {
     if (!hasApplication) {
-      toast.error("This candidate has no application to attach the interview to.");
+      toast.error(
+        "This candidate has no application to attach the interview to.",
+      );
       return;
     }
     if (!applicationId) {
@@ -267,299 +280,390 @@ export function ScheduleDrawer({
   }
 
   return (
-    <SidePanel
-      open={open}
-      onOpenChange={setOpen}
-      trigger={trigger}
-      title="Schedule interview"
-      description="Set the date, time, and interviewers for this meeting."
-      footer={
-        <>
-          <Button
-            variant="outline"
-            disabled={isPending}
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={isPending || !hasApplication}>
-            {isPending
-              ? "Saving…"
-              : coordinate
-                ? "Offer times in portal"
-                : "Schedule"}
-          </Button>
-        </>
-      }
-    >
-      {!hasApplication ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          This candidate hasn&apos;t applied to any role yet. Interviews attach
-          to an application.
-        </p>
-      ) : (
-        <div className="space-y-5">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={coordinate ? "outline" : "default"}
-              onClick={() => setCoordinate(false)}
-            >
-              Schedule Manually
-            </Button>
-            <Button
-              type="button"
-              variant={coordinate ? "default" : "outline"}
-              onClick={() => setCoordinate(true)}
-            >
-              Coordinate Times
-            </Button>
-          </div>
-          {coordinate && (
-            <SlotFields
-                durationMins={Number(durationMins)}
-              values={slots}
-              onChange={setSlots}
-              timeZone={slotTimeZone}
-              onTimeZoneChange={setSlotTimeZone}
-            />
-          )}
-          <InterviewTeamFields
-            members={members}
-            lead={interviewerId}
-            value={participants}
-            onChange={setParticipants}
-          />
-          {mode === "video" && (
-            <label className="block space-y-2 text-sm">
-              Meeting provider
-              <select
-                aria-label="Meeting provider"
-                className="block w-full rounded border bg-background p-2"
-                value={meetingProvider}
-                onChange={(e) =>
-                  setMeetingProvider(e.target.value as typeof meetingProvider)
-                }
-              >
-                {[
-                  ["auto", "Workspace default"],
-                  ["google_meet", "Google Meet"],
-                  ["zoom", "Zoom"],
-                  ["teams", "Microsoft Teams"],
-                  ["jitsi", "Jitsi"],
-                  ["external", "External link"],
-                ].map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {calLinkAvailable ? (
-            <div className="space-y-2.5 rounded-xl border border-primary/30 bg-accent/40 p-3.5">
-              <div className="flex items-center gap-2">
-                <Link2 className="size-4 text-primary" strokeWidth={1.8} />
-                <p className="text-[13px] font-medium tracking-tight">
-                  Let the candidate self-schedule
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Send a Cal.com link. When they book, the interview syncs here
-                automatically.
-              </p>
-              <Button
+    <>
+      <Dialog open={methodOpen} onOpenChange={setMethodOpen}>
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            if (open) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              How would you like to schedule the interview?
+            </DialogTitle>
+            <DialogDescription>
+              Choose how to arrange a time with {candidateName}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            {[
+              {
+                coordinate: false,
+                title: "Schedule manually",
+                description:
+                  "You already have a date and time agreed with the candidate.",
+              },
+              {
+                coordinate: true,
+                title: "Coordinate times",
+                description:
+                  "Offer availability and let the candidate choose a time that works.",
+              },
+            ].map((method) => (
+              <button
+                key={method.title}
                 type="button"
-                variant="outline"
-                size="sm"
-                className="w-full bg-card"
-                onClick={copyBookingLink}
+                className="rounded-xl border p-4 text-left transition-colors hover:border-primary hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary"
+                onClick={() => {
+                  setCoordinate(method.coordinate);
+                  setMethodOpen(false);
+                  setOpen(true);
+                }}
               >
-                <Link2 className="size-4" />
-                Copy booking link
-              </Button>
-              <p className="text-center text-[11px] uppercase tracking-wide text-muted-foreground">
-                or log it manually
-              </p>
-            </div>
-          ) : null}
+                <span className="block font-medium">{method.title}</span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  {method.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <SidePanel
+        open={open}
+        onOpenChange={setOpen}
+        title={coordinate ? "Coordinate interview times" : "Schedule interview"}
+        description={`${candidateName} · ${coordinate ? "Offer times for the candidate to choose." : "Set the agreed date and time."}`}
+        className="sm:max-w-xl"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={isPending}
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={isPending || !hasApplication}>
+              {isPending
+                ? "Saving…"
+                : coordinate
+                  ? "Offer times in portal"
+                  : "Schedule"}
+            </Button>
+          </>
+        }
+      >
+        {!hasApplication ? (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            This candidate hasn&apos;t applied to any role yet. Interviews
+            attach to an application.
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {calLinkAvailable ? (
+              <details className="space-y-2.5 rounded-xl border p-3.5">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Use a Cal.com booking link
+                </summary>
+                <div className="flex items-center gap-2">
+                  <Link2 className="size-4 text-primary" strokeWidth={1.8} />
+                  <p className="text-[13px] font-medium tracking-tight">
+                    Let the candidate self-schedule
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Send a Cal.com link. When they book, the interview syncs here
+                  automatically.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full bg-card"
+                  onClick={copyBookingLink}
+                >
+                  <Link2 className="size-4" />
+                  Copy booking link
+                </Button>
+              </details>
+            ) : null}
 
-          {applications.length > 1 ? (
-            <Field label="Role">
-              <Select value={applicationId} onValueChange={setApplicationId}>
+            {applications.length > 1 ? (
+              <Field label="Role">
+                <Select value={applicationId} onValueChange={setApplicationId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {applications.map((application) => (
+                      <SelectItem
+                        key={application.applicationId}
+                        value={application.applicationId}
+                      >
+                        {application.jobTitle}
+                        {application.currentStageName
+                          ? ` · ${application.currentStageName}`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : (
+              <p className="text-[13px] text-muted-foreground">
+                For{" "}
+                <span className="font-medium text-foreground">
+                  {applications[0]?.jobTitle}
+                </span>
+              </p>
+            )}
+
+            <Field label="Interview type">
+              <Select
+                value={type}
+                onValueChange={(value) => setType(value as TypeKey)}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {applications.map((application) => (
-                    <SelectItem
-                      key={application.applicationId}
-                      value={application.applicationId}
-                    >
-                      {application.jobTitle}
-                      {application.currentStageName
-                        ? ` · ${application.currentStageName}`
-                        : ""}
+                  {TYPES.map((t) => (
+                    <SelectItem key={t.key} value={t.key}>
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
-          ) : (
-            <p className="text-[13px] text-muted-foreground">
-              For{" "}
-              <span className="font-medium text-foreground">
-                {applications[0]?.jobTitle}
-              </span>
-            </p>
-          )}
 
-          <Field label="Type">
-            <div className="grid grid-cols-3 gap-2">
-              {TYPES.map((t) => (
-                <SegButton
-                  key={t.key}
-                  active={type === t.key}
-                  onClick={() => setType(t.key)}
+            <Field label="Mode">
+              <div className="grid grid-cols-3 gap-2">
+                {MODES.map((m) => (
+                  <SegButton
+                    key={m.key}
+                    active={mode === m.key}
+                    onClick={() => setMode(m.key)}
+                  >
+                    <m.icon className="size-4" strokeWidth={1.8} />
+                    {m.label}
+                  </SegButton>
+                ))}
+              </div>
+            </Field>
+            {mode === "video" && (
+            <Field label="Meeting provider">
+             <Select
+                value={meetingProvider}
+                onValueChange={(value) => setMeetingProvider(value as typeof meetingProvider)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                   {[
+                    ["auto", "Workspace default"],
+                    ["google_meet", "Google Meet"],
+                    ["zoom", "Zoom"],
+                    ["teams", "Microsoft Teams"],
+                    ["jitsi", "Jitsi"],
+                    ["external", "External link"],
+                  ].map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            )}
+
+            {/*mode === "video" && (
+              <label className="block space-y-2 text-sm">
+                Meeting provider
+                <select
+                  aria-label="Meeting provider"
+                  className="block w-full rounded border bg-background p-2"
+                  value={meetingProvider}
+                  onChange={(e) =>
+                    setMeetingProvider(e.target.value as typeof meetingProvider)
+                  }
                 >
-                  {t.label}
-                </SegButton>
-              ))}
-            </div>
-          </Field>
+                  {[
+                    ["auto", "Workspace default"],
+                    ["google_meet", "Google Meet"],
+                    ["zoom", "Zoom"],
+                    ["teams", "Microsoft Teams"],
+                    ["jitsi", "Jitsi"],
+                    ["external", "External link"],
+                  ].map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )*/}
+            {!coordinate && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Times in {browserTimeZone}
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Date" htmlFor="schedule-date">
+                    <Input
+                      id="schedule-date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => {
+                        setDate(e.target.value);
+                        checkTimeAvailability(
+                          e.target.value,
+                          time,
+                          durationMins,
+                        );
+                      }}
+                    />
+                  </Field>
+                  <Field label="Time" htmlFor="schedule-time">
+                    <Input
+                      id="schedule-time"
+                      type="time"
+                      value={time}
+                      onChange={(e) => {
+                        setTime(e.target.value);
+                        checkTimeAvailability(
+                          date,
+                          e.target.value,
+                          durationMins,
+                        );
+                      }}
+                    />
+                  </Field>
+                </div>
+              </>
+            )}
 
-          <Field label="Mode">
-            <div className="grid grid-cols-3 gap-2">
-              {MODES.map((m) => (
-                <SegButton
-                  key={m.key}
-                  active={mode === m.key}
-                  onClick={() => setMode(m.key)}
-                >
-                  <m.icon className="size-4" strokeWidth={1.8} />
-                  {m.label}
-                </SegButton>
-              ))}
-            </div>
-          </Field>
-
-          {!coordinate && (
-            <>
+            {!coordinate && availabilityWarning ? (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>{availabilityWarning}</span>
+              </div>
+            ) : null}
+            {!coordinate && checkingAvailability ? (
               <p className="text-xs text-muted-foreground">
-                Times in {browserTimeZone}
+                Checking availability…
               </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Date" htmlFor="schedule-date">
-                  <Input
-                    id="schedule-date"
-                    type="date"
-                    value={date}
-                    onChange={(e) => {
-                      setDate(e.target.value);
-                      checkTimeAvailability(e.target.value, time, durationMins);
-                    }}
-                  />
-                </Field>
-                <Field label="Time" htmlFor="schedule-time">
-                  <Input
-                    id="schedule-time"
-                    type="time"
-                    value={time}
-                    onChange={(e) => {
-                      setTime(e.target.value);
-                      checkTimeAvailability(date, e.target.value, durationMins);
-                    }}
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Duration">
+                <Select
+                  value={durationMins}
+                  onValueChange={(value) => {
+                    setDurationMins(value);
+                    if (coordinate) setSlots([]);
+                    checkTimeAvailability(date, time, value);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DURATIONS.map((d) => (
+                      <SelectItem key={d} value={String(d)}>
+                        {d} min
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Interviewer">
+                <Select
+                  value={interviewerId || "unassigned"}
+                  onValueChange={(value) => {
+                    const newId = value === "unassigned" ? "" : value;
+                    setInterviewerId(newId);
+                    if (date && time) {
+                      checkTimeAvailability(date, time, durationMins, newId);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {members.map((m) => (
+                      <SelectItem key={m.userId} value={m.userId}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {coordinate && (
+              <SlotFields
+                durationMins={Number(durationMins)}
+                values={slots}
+                onChange={setSlots}
+                timeZone={slotTimeZone}
+                onTimeZoneChange={setSlotTimeZone}
+              />
+            )}
+            <details className="rounded-xl border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Additional participants
+                {participants.length ? ` (${participants.length})` : ""}
+              </summary>
+              <div className="pt-3">
+                <InterviewTeamFields
+                  members={members}
+                  lead={interviewerId}
+                  value={participants}
+                  onChange={setParticipants}
+                />
+              </div>
+            </details>
+            {(mode === "onsite" ||
+              (mode === "video" && meetingProvider === "external")) && (
+              <Field label={locationLabel} htmlFor="schedule-location">
+                <Input
+                  id="schedule-location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder={
+                    mode === "onsite"
+                      ? "Office address…"
+                      : "https://meet.google.com/…"
+                  }
+                />
+              </Field>
+            )}
+
+            <details className="rounded-xl border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Interview notes{notes.trim() ? " (added)" : " (optional)"}
+              </summary>
+              <div className="pt-3">
+                <Field label="Notes" htmlFor="schedule-notes">
+                  <Textarea
+                    id="schedule-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Focus areas, panel, prep…"
+                    className="min-h-20"
                   />
                 </Field>
               </div>
-            </>
-          )}
-
-          {!coordinate && availabilityWarning ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>{availabilityWarning}</span>
-            </div>
-          ) : null}
-          {!coordinate && checkingAvailability ? (
-            <p className="text-xs text-muted-foreground">
-              Checking availability…
-            </p>
-          ) : null}
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Duration">
-              <Select
-                value={durationMins}
-                onValueChange={(value) => {
-                  setDurationMins(value);
-                    if (coordinate) setSlots([]);
-                  checkTimeAvailability(date, time, value);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DURATIONS.map((d) => (
-                    <SelectItem key={d} value={String(d)}>
-                      {d} min
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Interviewer">
-              <Select
-                value={interviewerId || "unassigned"}
-                onValueChange={(value) => {
-                  const newId = value === "unassigned" ? "" : value;
-                  setInterviewerId(newId);
-                  if (date && time) {
-                    checkTimeAvailability(date, time, durationMins, newId);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {members.map((m) => (
-                    <SelectItem key={m.userId} value={m.userId}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+            </details>
           </div>
-
-          <Field label={locationLabel} htmlFor="schedule-location">
-            <Input
-              id="schedule-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder={
-                mode === "onsite"
-                  ? "Office address…"
-                  : "https://meet.google.com/…"
-              }
-            />
-          </Field>
-
-          <Field label="Notes" htmlFor="schedule-notes">
-            <Textarea
-              id="schedule-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Focus areas, panel, prep…"
-              className="min-h-20"
-            />
-          </Field>
-        </div>
-      )}
-    </SidePanel>
+        )}
+      </SidePanel>
+    </>
   );
 }
 
