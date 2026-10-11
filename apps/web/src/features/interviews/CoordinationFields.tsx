@@ -2,7 +2,8 @@
 import { useSyncExternalStore } from "react";
 import { getBrowserTimeZone } from "./shared";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import { localCalendarParts } from "./availability-calendar";
 import { timeZoneSchema, type InterviewParticipant } from "./scheduling-shared";
 
 export function SlotFields({
@@ -10,7 +11,9 @@ export function SlotFields({
   onChange,
   timeZone,
   onTimeZoneChange,
+  durationMins,
 }: {
+  durationMins: number;
   values: string[];
   onChange: (values: string[]) => void;
   timeZone: string;
@@ -31,34 +34,16 @@ export function SlotFields({
           Enter a valid timezone, such as America/New_York.
         </p>
       )}
-      {values.map((value, i) => (
-        <div key={i} className="flex gap-2">
-          <Input
-            aria-label={`Proposed time ${i + 1}`}
-            type="datetime-local"
-            value={value}
-            onChange={(e) =>
-              onChange(values.map((v, j) => (i === j ? e.target.value : v)))
-            }
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onChange(values.filter((_, j) => i !== j))}
-            disabled={values.length === 1}
-          >
-            Remove
-          </Button>
-        </div>
-      ))}
-      <Button
-        type="button"
-        variant="outline"
-        disabled={values.length >= 12}
-        onClick={() => onChange([...values, ""])}
-      >
-        Add possible time
-      </Button>
+      {timeZoneSchema.safeParse(timeZone).success && (
+        <AvailabilityCalendar
+          mode="offer"
+          values={values}
+          onChange={onChange}
+          timeZone={timeZone}
+          durationMins={durationMins}
+          today={localCalendarParts(new Date(), timeZone).day}
+        />
+      )}
     </div>
   );
 }

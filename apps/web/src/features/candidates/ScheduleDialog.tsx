@@ -326,6 +326,7 @@ export function ScheduleDialog({
             </div>
             {coordinate && (
               <SlotFields
+                durationMins={Number(durationMins)}
                 values={slots}
                 onChange={setSlots}
                 timeZone={slotTimeZone}
@@ -504,6 +505,7 @@ export function ScheduleDialog({
                   value={durationMins}
                   onChange={(v) => {
                     setDurationMins(v);
+                    if (coordinate) setSlots([]);
                     checkTimeAvailability(date, time, v);
                   }}
                 />

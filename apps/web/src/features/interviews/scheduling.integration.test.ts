@@ -48,6 +48,7 @@ import {
   proposeSchedulingSlots,
 } from "./scheduling-service";
 import { createInterviewForApi, setInterviewStatusForApi } from "./service";
+import { availablePortalSlots } from "./available-slots";
 import { participantEmails } from "./participants";
 import { formatSlot, parseSlots } from "./scheduling-shared";
 
@@ -160,6 +161,48 @@ suite("interview scheduling transactions", () => {
       .from(slots)
       .where(and(eq(slots.requestId, requestId), eq(slots.status, "offered")));
   }
+
+  it("portal availability hides team conflicts and retains adjacent starts and rescheduling choices", async () => {
+    const id = await createSchedulingRequest(recruiter(), {
+      ...input(),
+      slots: [first, "2099-06-01T15:45", second],
+    });
+    const choices = await offered(id);
+    const [request] = await db
+      .select()
+      .from(requests)
+      .where(eq(requests.id, id));
+    const interview = await createInterviewForApi({
+      workspaceId,
+      actorUserId: lead,
+      values: {
+        applicationId,
+        candidateId,
+        interviewerId: observer,
+        type: "screening",
+        mode: "phone",
+        scheduledAt: parseSlots([first], "America/Los_Angeles")[0],
+        durationMins: 45,
+      },
+    });
+    const visible = await availablePortalSlots(request, choices);
+    expect(visible.map((s) => s.scheduledAt.toISOString())).toEqual([
+      "2099-06-01T22:45:00.000Z",
+      "2099-06-02T22:00:00.000Z",
+    ]);
+    expect(
+      await availablePortalSlots(
+        { ...request, interviewId: interview.id },
+        choices,
+      ),
+    ).toHaveLength(3);
+    expect(
+      await availablePortalSlots(
+        { ...request, workspaceId: foreignWorkspaceId },
+        choices,
+      ),
+    ).toHaveLength(3);
+  });
 
   it("manual API scheduling remains compatible with legacy single-interviewer interviews", async () => {
     const interview = await createInterviewForApi({

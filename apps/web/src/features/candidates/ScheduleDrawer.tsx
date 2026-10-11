@@ -317,6 +317,7 @@ export function ScheduleDrawer({
           </div>
           {coordinate && (
             <SlotFields
+                durationMins={Number(durationMins)}
               values={slots}
               onChange={setSlots}
               timeZone={slotTimeZone}
@@ -492,6 +493,7 @@ export function ScheduleDrawer({
                 value={durationMins}
                 onValueChange={(value) => {
                   setDurationMins(value);
+                    if (coordinate) setSlots([]);
                   checkTimeAvailability(date, time, value);
                 }}
               >
