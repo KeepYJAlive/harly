@@ -83,3 +83,35 @@ export function overlapsReservation(
       r.scheduledAt.getTime() + r.durationMins * 60_000 > from,
   );
 }
+
+/** Group consecutive offered starts so a whole selected window can be removed. */
+export function availabilityRanges(
+  values: string[],
+  durationMins: number,
+  timeZone: string,
+) {
+  const ranges: {
+    day: string;
+    start: string;
+    end: string;
+    values: string[];
+  }[] = [];
+  for (const value of [...new Set(values.filter(Boolean))].sort()) {
+    const day = localCalendarParts(value, timeZone).day;
+    const previous = ranges.at(-1);
+    const end = new Date(
+      new Date(value).getTime() + durationMins * 60_000,
+    ).toISOString();
+    if (
+      previous &&
+      previous.day === day &&
+      new Date(value).getTime() -
+        new Date(previous.values.at(-1)!).getTime() ===
+        AVAILABILITY_STEP_MINS * 60_000
+    ) {
+      previous.end = end;
+      previous.values.push(value);
+    } else ranges.push({ day, start: value, end, values: [value] });
+  }
+  return ranges;
+}

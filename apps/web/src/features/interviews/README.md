@@ -7,8 +7,14 @@ this feature does not add individual calendar connections.
 
 ## Coordination
 
-Recruiters drag availability ranges on a two-week calendar and navigate one week at a
-time. Each range becomes 15-minute start options that fit the full interview duration.
+The candidate profile's Schedule interview action first asks whether to schedule
+manually or coordinate times, then opens the corresponding drawer. Additional
+participants and notes are collapsible. Selected availability windows can be removed
+with the × control on the calendar or in the drawer's range summary.
+
+Recruiters open a large availability modal and drag ranges on a single-week calendar.
+The calendar starts on the current week and allows navigation to future weeks. Past
+dates and elapsed times today are disabled. Selections persist when the modal closes. Each range becomes 15-minute start options that fit the full interview duration.
 Changing the duration clears the current selection so it can be offered again.
 
 Candidates open `/portal/applications/[applicationId]/schedule/[requestId]` to use the

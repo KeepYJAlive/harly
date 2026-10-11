@@ -2,6 +2,8 @@
 import { useSyncExternalStore } from "react";
 import { getBrowserTimeZone } from "./shared";
 import { Input } from "@/components/ui/input";
+import { SelectedAvailability } from "./SelectedAvailability";
+import { AvailabilityCalendarDialog } from "./AvailabilityCalendarDialog";
 import { AvailabilityCalendar } from "./AvailabilityCalendar";
 import { localCalendarParts } from "./availability-calendar";
 import { timeZoneSchema, type InterviewParticipant } from "./scheduling-shared";
@@ -12,14 +14,16 @@ export function SlotFields({
   timeZone,
   onTimeZoneChange,
   durationMins,
+  inline = false,
 }: {
+  inline?: boolean;
   durationMins: number;
   values: string[];
   onChange: (values: string[]) => void;
   timeZone: string;
   onTimeZoneChange: (value: string) => void;
 }) {
-  return (
+  const fields = (
     <div className="space-y-2">
       <label className="block text-sm">
         Timezone (IANA)
@@ -44,6 +48,23 @@ export function SlotFields({
           today={localCalendarParts(new Date(), timeZone).day}
         />
       )}
+    </div>
+  );
+  if (inline) return fields;
+  return (
+    <div className="space-y-2">
+      <AvailabilityCalendarDialog>{fields}</AvailabilityCalendarDialog>
+      <p className="text-sm text-muted-foreground">
+        {values.filter(Boolean).length
+          ? `${values.filter(Boolean).length} available start times selected`
+          : "Select time ranges in the availability calendar."}
+      </p>
+      <SelectedAvailability
+        values={values}
+        onChange={onChange}
+        durationMins={durationMins}
+        timeZone={timeZone}
+      />
     </div>
   );
 }

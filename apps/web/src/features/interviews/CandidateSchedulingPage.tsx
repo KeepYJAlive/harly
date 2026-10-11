@@ -169,6 +169,7 @@ export function CandidateSchedulingPage({
                 a time before it is confirmed.
               </p>
               <SlotFields
+                inline
                 values={values}
                 onChange={setValues}
                 durationMins={request.durationMins}

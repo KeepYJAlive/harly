@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   addCalendarDays,
+  availabilityRanges,
   calendarWeekStart,
   localCalendarParts,
   MAX_AVAILABILITY_SLOTS,
@@ -34,8 +35,6 @@ const clockLabel = (minutes: number) =>
 
 export function AvailabilityCalendar(props: Props) {
   const { timeZone, durationMins, today, disabled } = props;
-  const firstChoice =
-    props.mode === "choose" ? props.choices[0]?.scheduledAt : undefined;
   const [weekOffset, setWeekOffset] = useState(0);
   const [allHours, setAllHours] = useState(false);
   const [drag, setDrag] = useState<{
@@ -44,16 +43,13 @@ export function AvailabilityCalendar(props: Props) {
     to: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const initialDay = firstChoice
-    ? localCalendarParts(firstChoice, timeZone).day
-    : today;
-  const startDay = addCalendarDays(
-    calendarWeekStart(initialDay),
-    weekOffset * 7,
-  );
-  const days = Array.from({ length: 14 }, (_, i) =>
+  const startDay = addCalendarDays(calendarWeekStart(today), weekOffset * 7);
+  const days = Array.from({ length: 7 }, (_, i) =>
     addCalendarDays(startDay, i),
   );
+  const now = localCalendarParts(new Date(), timeZone);
+  const isPast = (day: string, minute: number) =>
+    day < today || day < now.day || (day === now.day && minute <= now.minutes);
   const values = props.mode === "offer" ? props.values : undefined;
   const choices = props.mode === "choose" ? props.choices : undefined;
   const entries = useMemo(
@@ -72,6 +68,10 @@ export function AvailabilityCalendar(props: Props) {
         ...localCalendarParts(entry.scheduledAt, timeZone),
       })),
     [entries, timeZone],
+  );
+  const ranges = useMemo(
+    () => availabilityRanges(values ?? [], durationMins, timeZone),
+    [values, durationMins, timeZone],
   );
   const visible = mapped.filter((entry) => days.includes(entry.day));
   const startHour = allHours
@@ -103,7 +103,8 @@ export function AvailabilityCalendar(props: Props) {
     }).format(new Date(`${day}T12:00Z`));
 
   function applyRange(day: string, from: number, to: number) {
-    if (props.mode !== "offer" || disabled) return;
+    if (props.mode !== "offer" || disabled || isPast(day, Math.min(from, to)))
+      return;
     try {
       const starts = rangeToSlots(
         day,
@@ -132,10 +133,10 @@ export function AvailabilityCalendar(props: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="font-medium">
-            {dayLabel(days[0])} – {dayLabel(days[13])}
+            {dayLabel(days[0])} – {dayLabel(days[6])}
           </p>
           <p className="text-xs text-muted-foreground">
-            Two-week availability · {timeZone} · {durationMins} minutes
+            Weekly availability · {timeZone} · {durationMins} minutes
           </p>
         </div>
         <div className="flex gap-1">
@@ -144,7 +145,8 @@ export function AvailabilityCalendar(props: Props) {
             variant="outline"
             size="sm"
             aria-label="Previous week"
-            onClick={() => setWeekOffset((v) => v - 1)}
+            disabled={weekOffset <= 0}
+            onClick={() => setWeekOffset((v) => Math.max(0, v - 1))}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -154,7 +156,7 @@ export function AvailabilityCalendar(props: Props) {
             size="sm"
             onClick={() => setWeekOffset(0)}
           >
-            First two weeks
+            This week
           </Button>
           <Button
             type="button"
@@ -185,172 +187,207 @@ export function AvailabilityCalendar(props: Props) {
           {error}
         </p>
       )}
-      {[0, 7].map((offset) => (
-        <div key={offset} className="overflow-x-auto rounded-xl border bg-card">
-          <div className="min-w-[700px]">
-            <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b bg-muted/40">
-              <span className="p-2 text-xs text-muted-foreground">Time</span>
-              {days.slice(offset, offset + 7).map((day) => (
-                <div
-                  key={day}
-                  className={cn(
-                    "border-l p-2 text-center text-xs font-medium",
-                    day === today && "bg-primary/10 text-primary",
-                  )}
-                >
-                  {dayLabel(day)}
-                </div>
-              ))}
-            </div>
-            <div className="max-h-[360px] overflow-y-auto">
-              <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))]">
-                <div>
-                  {minutes.map((minute) => (
-                    <div
-                      key={minute}
-                      style={{ height: ROW_HEIGHT }}
-                      className="pr-2 text-right text-[10px] text-muted-foreground"
-                    >
-                      {minute % 60 === 0 ? clockLabel(minute) : ""}
-                    </div>
-                  ))}
-                </div>
-                {days.slice(offset, offset + 7).map((day) => (
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <div className="min-w-[700px]">
+          <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b bg-muted/40">
+            <span className="p-2 text-xs text-muted-foreground">Time</span>
+            {days.map((day) => (
+              <div
+                key={day}
+                className={cn(
+                  "border-l p-2 text-center text-xs font-medium",
+                  day === today && "bg-primary/10 text-primary",
+                  day < today && "bg-muted text-muted-foreground opacity-60",
+                )}
+              >
+                {dayLabel(day)}
+              </div>
+            ))}
+          </div>
+          <div className="h-[min(56dvh,640px)] overflow-y-auto">
+            <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))]">
+              <div>
+                {minutes.map((minute) => (
                   <div
-                    key={day}
-                    className="relative border-l"
-                    style={{
-                      touchAction: props.mode === "offer" ? "none" : "auto",
-                    }}
-                    onPointerMove={(e) => {
-                      if (!drag || drag.day !== day) return;
-                      const row = Math.max(
-                        0,
-                        Math.min(
-                          minutes.length - 1,
-                          Math.floor(
-                            (e.clientY -
-                              e.currentTarget.getBoundingClientRect().top) /
-                              ROW_HEIGHT,
-                          ),
-                        ),
-                      );
-                      setDrag({ ...drag, to: minutes[row] });
-                    }}
-                    onPointerUp={(e) => {
-                      if (!drag) return;
-                      const current = drag;
-                      setDrag(null);
-                      if (e.currentTarget.hasPointerCapture(e.pointerId))
-                        e.currentTarget.releasePointerCapture(e.pointerId);
-                      applyRange(
-                        current.day,
-                        current.from,
-                        current.to === current.from
-                          ? current.from +
-                              Math.ceil(durationMins / 15) * 15 -
-                              15
-                          : current.to,
-                      );
-                    }}
-                    onPointerCancel={() => setDrag(null)}
+                    key={minute}
+                    style={{ height: ROW_HEIGHT }}
+                    className="pr-2 text-right text-[10px] text-muted-foreground"
                   >
-                    {minutes.map((minute) => {
-                      const choices = mapped.filter(
-                        (entry) =>
-                          entry.day === day &&
-                          entry.minutes >= minute &&
-                          entry.minutes < minute + 15,
-                      );
-                      const highlighted =
-                        props.mode === "offer" &&
-                        mapped.some(
-                          (entry) =>
-                            entry.day === day &&
-                            entry.minutes <= minute &&
-                            entry.minutes + durationMins > minute,
-                        );
-                      const preview =
-                        drag?.day === day &&
-                        minute >= Math.min(drag.from, drag.to) &&
-                        minute <= Math.max(drag.from, drag.to);
-                      return (
-                        <div
-                          key={minute}
-                          style={{ height: ROW_HEIGHT }}
-                          className={cn(
-                            "border-t",
-                            minute % 60 === 0
-                              ? "border-border"
-                              : "border-border/30",
-                            highlighted && "bg-primary/20",
-                            preview && "bg-primary/40",
-                          )}
-                        >
-                          {props.mode === "offer" ? (
-                            <button
-                              type="button"
-                              disabled={disabled}
-                              aria-label={`${dayLabel(day)} ${clockLabel(minute)}, offer ${durationMins} minutes`}
-                              aria-pressed={highlighted}
-                              className="h-full w-full hover:bg-primary/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                              onPointerDown={(e) => {
-                                if (e.button !== 0) return;
-                                e.preventDefault();
-                                e.currentTarget.parentElement?.parentElement?.setPointerCapture(
-                                  e.pointerId,
-                                );
-                                setDrag({ day, from: minute, to: minute });
-                              }}
-                              onClick={(e) => {
-                                if (e.detail === 0)
-                                  applyRange(
-                                    day,
-                                    minute,
-                                    minute +
-                                      Math.ceil(durationMins / 15) * 15 -
-                                      15,
-                                  );
-                              }}
-                            >
-                              {minute % 60 === 0 && highlighted && (
-                                <span className="text-[10px] text-primary">
-                                  Available
-                                </span>
-                              )}
-                            </button>
-                          ) : (
-                            choices.map((choice) => (
-                              <button
-                                key={choice.id}
-                                type="button"
-                                disabled={disabled}
-                                aria-label={formatSlot(
-                                  choice.scheduledAt,
-                                  timeZone,
-                                )}
-                                aria-pressed={props.selectedId === choice.id}
-                                onClick={() => props.onSelect(choice)}
-                                className={cn(
-                                  "h-full w-full rounded border border-primary/25 bg-primary/10 text-xs font-medium text-primary hover:bg-primary/25 focus-visible:outline",
-                                  props.selectedId === choice.id &&
-                                    "bg-primary text-primary-foreground",
-                                )}
-                              >
-                                {clockLabel(choice.minutes)}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      );
-                    })}
+                    {minute % 60 === 0 ? clockLabel(minute) : ""}
                   </div>
                 ))}
               </div>
+              {days.map((day) => (
+                <div
+                  key={day}
+                  className={cn(
+                    "relative border-l",
+                    day < today && "bg-muted/60",
+                  )}
+                  style={{
+                    touchAction: props.mode === "offer" ? "none" : "auto",
+                  }}
+                  onPointerMove={(e) => {
+                    if (!drag || drag.day !== day) return;
+                    const row = Math.max(
+                      0,
+                      Math.min(
+                        minutes.length - 1,
+                        Math.floor(
+                          (e.clientY -
+                            e.currentTarget.getBoundingClientRect().top) /
+                            ROW_HEIGHT,
+                        ),
+                      ),
+                    );
+                    if (!isPast(day, minutes[row]))
+                      setDrag({ ...drag, to: minutes[row] });
+                  }}
+                  onPointerUp={(e) => {
+                    if (!drag) return;
+                    const current = drag;
+                    setDrag(null);
+                    if (e.currentTarget.hasPointerCapture(e.pointerId))
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    applyRange(
+                      current.day,
+                      current.from,
+                      current.to === current.from
+                        ? current.from + Math.ceil(durationMins / 15) * 15 - 15
+                        : current.to,
+                    );
+                  }}
+                  onPointerCancel={() => setDrag(null)}
+                >
+                  {minutes.map((minute) => {
+                    const past = isPast(day, minute);
+                    const choices = mapped.filter(
+                      (entry) =>
+                        entry.day === day &&
+                        entry.minutes >= minute &&
+                        entry.minutes < minute + 15,
+                    );
+                    const highlighted =
+                      props.mode === "offer" &&
+                      mapped.some(
+                        (entry) =>
+                          entry.day === day &&
+                          entry.minutes <= minute &&
+                          entry.minutes + durationMins > minute,
+                      );
+                    const preview =
+                      drag?.day === day &&
+                      minute >= Math.min(drag.from, drag.to) &&
+                      minute <= Math.max(drag.from, drag.to);
+                    return (
+                      <div
+                        key={minute}
+                        style={{ height: ROW_HEIGHT }}
+                        className={cn(
+                          "border-t",
+                          minute % 60 === 0
+                            ? "border-border"
+                            : "border-border/30",
+                          highlighted && "bg-primary/20",
+                          preview && "bg-primary/40",
+                          past && "bg-muted/60 opacity-50",
+                        )}
+                      >
+                        {props.mode === "offer" ? (
+                          <button
+                            type="button"
+                            disabled={disabled || past}
+                            aria-label={`${dayLabel(day)} ${clockLabel(minute)}, offer ${durationMins} minutes`}
+                            aria-pressed={highlighted}
+                            className="h-full w-full enabled:hover:bg-primary/15 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                            onPointerDown={(e) => {
+                              if (e.button !== 0 || disabled || past) return;
+                              e.preventDefault();
+                              e.currentTarget.parentElement?.parentElement?.setPointerCapture(
+                                e.pointerId,
+                              );
+                              setDrag({ day, from: minute, to: minute });
+                            }}
+                            onClick={(e) => {
+                              if (e.detail === 0)
+                                applyRange(
+                                  day,
+                                  minute,
+                                  minute +
+                                    Math.ceil(durationMins / 15) * 15 -
+                                    15,
+                                );
+                            }}
+                          >
+                            {minute % 60 === 0 && highlighted && (
+                              <span className="text-[10px] text-primary">
+                                Available
+                              </span>
+                            )}
+                          </button>
+                        ) : (
+                          choices.map((choice) => (
+                            <button
+                              key={choice.id}
+                              type="button"
+                              disabled={disabled || past}
+                              aria-label={formatSlot(
+                                choice.scheduledAt,
+                                timeZone,
+                              )}
+                              aria-pressed={props.selectedId === choice.id}
+                              onClick={() => props.onSelect(choice)}
+                              className={cn(
+                                "h-full w-full rounded border border-primary/25 bg-primary/10 text-xs font-medium text-primary hover:bg-primary/25 focus-visible:outline",
+                                props.selectedId === choice.id &&
+                                  "bg-primary text-primary-foreground",
+                              )}
+                            >
+                              {clockLabel(choice.minutes)}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })}
+                  {props.mode === "offer" &&
+                    ranges
+                      .filter((range) => range.day === day)
+                      .map((range) => (
+                        <button
+                          key={range.start}
+                          type="button"
+                          disabled={disabled}
+                          aria-label={`Remove availability ${formatSlot(range.start, timeZone)}`}
+                          className="absolute right-1 z-10 rounded bg-background/90 p-1 shadow-sm hover:bg-muted focus-visible:outline-2"
+                          style={{
+                            top:
+                              ((localCalendarParts(range.start, timeZone)
+                                .minutes -
+                                startHour * 60) /
+                                15) *
+                              ROW_HEIGHT,
+                          }}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onPointerUp={(event) => event.stopPropagation()}
+                          onClick={() =>
+                            props.onChange(
+                              props.values.filter(
+                                (value) => !range.values.includes(value),
+                              ),
+                            )
+                          }
+                        >
+                          <X className="size-3" />
+                        </button>
+                      ))}
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      ))}
+      </div>
+
       {props.mode === "offer" ? (
         <div className="flex items-center justify-between text-sm">
           <span>{entries.length} available start times</span>
@@ -366,7 +403,7 @@ export function AvailabilityCalendar(props: Props) {
       ) : (
         !visible.length && (
           <p className="rounded border border-dashed p-4 text-sm text-muted-foreground">
-            No available times in these weeks. Browse another week or propose
+            No available times this week. Browse another week or propose
             alternatives.
           </p>
         )
